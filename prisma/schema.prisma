@@ -1,0 +1,380 @@
+// ChapterHub — Prisma schema
+// Postgres. Run `npx prisma migrate dev --name init` after copying into a project.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  MEMBER
+  OFFICER
+  EXEC
+  SUPER_ADMIN
+}
+
+enum MemberStatus {
+  ACTIVE
+  ALUMNI
+  SUSPENDED
+  PLEDGE
+}
+
+enum EventCategory {
+  BROTHERHOOD
+  SERVICE
+  PROFESSIONAL
+  RUSH
+  ADMIN
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum RsvpStatus {
+  GOING
+  MAYBE
+  NOT_GOING
+}
+
+enum CheckInMethod {
+  QR
+  MANUAL
+}
+
+enum LedgerType {
+  ATTENDANCE
+  BONUS
+  PENALTY
+  MANUAL_ADJUSTMENT
+}
+
+enum CommitteeRole {
+  MEMBER
+  CHAIR
+}
+
+enum ChannelType {
+  GENERAL
+  COMMITTEE
+  OFFICERS
+  DM
+}
+
+enum ChannelMemberRole {
+  MEMBER
+  ADMIN
+}
+
+enum DuesStatus {
+  PAID
+  PARTIAL
+  UNPAID
+  WAIVED
+}
+
+enum PaymentMethod {
+  STRIPE
+  CASH
+  VENMO
+  CHECK
+  OTHER
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Core identity
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String        @id @default(cuid())
+  authProviderId String       @unique // Clerk/Firebase UID
+  email         String        @unique
+  firstName     String
+  lastName      String
+  phone         String?
+  avatarUrl     String?
+  role          UserRole      @default(MEMBER)
+  status        MemberStatus  @default(ACTIVE)
+  pledgeClassLabel String?    // e.g. "Fall 2024" — free text by design, cosmetic only
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  committeeMemberships CommitteeMembership[]
+  rsvps                Rsvp[]
+  attendances          Attendance[]          @relation("AttendanceUser")
+  recordedAttendances  Attendance[]          @relation("AttendanceRecordedBy")
+  pointsLedgerEntries  PointsLedger[]        @relation("LedgerOwner")
+  awardedLedgerEntries PointsLedger[]        @relation("LedgerAwardedBy")
+  duesRecords          DuesRecord[]
+  recordedPayments     Payment[]             @relation("PaymentRecordedBy")
+  channelMemberships   ChannelMembership[]
+  messages             Message[]
+  createdEvents        Event[]               @relation("EventCreatedBy")
+  auditLogs            AuditLog[]            @relation("AuditActor")
+
+  @@index([role])
+  @@index([status])
+}
+
+model Semester {
+  id        String   @id @default(cuid())
+  label     String   @unique // "Fall 2026"
+  startDate DateTime
+  endDate   DateTime
+
+  duesRecords   DuesRecord[]
+  ledgerEntries PointsLedger[]
+
+  @@index([startDate, endDate])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Committees
+// ─────────────────────────────────────────────────────────────────────────
+
+model Committee {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships CommitteeMembership[]
+  events      Event[]
+  channel     Channel?
+
+  @@index([name])
+}
+
+model CommitteeMembership {
+  id          String        @id @default(cuid())
+  committeeId String
+  userId      String
+  role        CommitteeRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([committeeId, userId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Events, RSVPs, Attendance
+// ─────────────────────────────────────────────────────────────────────────
+
+model Event {
+  id                  String        @id @default(cuid())
+  title               String
+  description         String?
+  location            String?
+  latitude            Float?
+  longitude           Float?
+  startTime           DateTime
+  endTime             DateTime
+  category            EventCategory
+  status              EventStatus   @default(DRAFT)
+  attendanceRequired  Boolean       @default(false)
+  pointValue          Int           @default(0)
+  checkInWindowStart  DateTime?
+  checkInWindowEnd    DateTime?
+  lateThresholdMinutes Int          @default(15)
+  checkInTokenSecret  String        // rotating QR signing secret, not exposed directly to clients
+  committeeId         String?
+  createdById         String
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  committee   Committee?   @relation(fields: [committeeId], references: [id])
+  createdBy   User         @relation("EventCreatedBy", fields: [createdById], references: [id])
+  rsvps       Rsvp[]
+  attendances Attendance[]
+  ledgerEntries PointsLedger[]
+
+  @@index([startTime])
+  @@index([category])
+  @@index([committeeId])
+}
+
+model Rsvp {
+  id          String     @id @default(cuid())
+  eventId     String
+  userId      String
+  status      RsvpStatus
+  respondedAt DateTime   @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+}
+
+model Attendance {
+  id              String        @id @default(cuid())
+  eventId         String
+  userId          String
+  checkInTime     DateTime      @default(now())
+  method          CheckInMethod
+  late            Boolean       @default(false)
+  pointsAwarded   Int           // snapshot — independent of later Event.pointValue edits
+  recordedById    String?       // set when an officer manually marks attendance
+  overrideReason  String?
+  createdAt       DateTime      @default(now())
+
+  event      Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user       User  @relation("AttendanceUser", fields: [userId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation("AttendanceRecordedBy", fields: [recordedById], references: [id])
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Points (append-only ledger)
+// ─────────────────────────────────────────────────────────────────────────
+
+model PointsLedger {
+  id           String     @id @default(cuid())
+  userId       String
+  eventId      String?
+  semesterId   String
+  amount       Int        // can be negative for PENALTY/adjustment
+  type         LedgerType
+  reason       String?
+  awardedById  String?    // null for system-generated ATTENDANCE entries
+  createdAt    DateTime   @default(now())
+
+  user      User      @relation("LedgerOwner", fields: [userId], references: [id], onDelete: Cascade)
+  event     Event?    @relation(fields: [eventId], references: [id])
+  semester  Semester  @relation(fields: [semesterId], references: [id])
+  awardedBy User?     @relation("LedgerAwardedBy", fields: [awardedById], references: [id])
+
+  @@index([userId, semesterId])
+  @@index([semesterId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Dues & Payments
+// ─────────────────────────────────────────────────────────────────────────
+
+model DuesRecord {
+  id          String     @id @default(cuid())
+  userId      String
+  semesterId  String
+  amountOwed  Decimal    @db.Decimal(10, 2)
+  amountPaid  Decimal    @default(0) @db.Decimal(10, 2)
+  status      DuesStatus @default(UNPAID)
+  dueDate     DateTime?
+  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime   @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  semester Semester  @relation(fields: [semesterId], references: [id])
+  payments Payment[]
+
+  @@unique([userId, semesterId])
+  @@index([status])
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  duesRecordId  String
+  amount        Decimal       @db.Decimal(10, 2)
+  method        PaymentMethod
+  externalRef   String?       // Stripe payment intent id, etc.
+  recordedById  String?       // null for webhook-originated payments
+  paidAt        DateTime      @default(now())
+
+  duesRecord DuesRecord @relation(fields: [duesRecordId], references: [id], onDelete: Cascade)
+  recordedBy User?      @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+
+  @@index([duesRecordId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Messaging
+// ─────────────────────────────────────────────────────────────────────────
+
+model Channel {
+  id          String      @id @default(cuid())
+  name        String
+  type        ChannelType
+  committeeId String?     @unique // set only for COMMITTEE-type channels
+  createdAt   DateTime    @default(now())
+
+  committee Committee?          @relation(fields: [committeeId], references: [id])
+  members   ChannelMembership[]
+  messages  Message[]
+
+  @@index([type])
+}
+
+model ChannelMembership {
+  id        String            @id @default(cuid())
+  channelId String
+  userId    String
+  role      ChannelMemberRole @default(MEMBER)
+  joinedAt  DateTime          @default(now())
+
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@index([userId])
+}
+
+model Message {
+  id              String    @id @default(cuid())
+  channelId       String
+  senderId        String
+  content         String
+  parentMessageId String?
+  pinned          Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  editedAt        DateTime?
+  deletedAt       DateTime?
+
+  channel Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender  User      @relation(fields: [senderId], references: [id])
+  parent  Message?  @relation("Thread", fields: [parentMessageId], references: [id])
+  replies Message[] @relation("Thread")
+
+  @@index([channelId, createdAt])
+  @@index([channelId, deletedAt, createdAt])  // last-message-per-channel query: filters deletedAt=null then sorts createdAt desc
+  @@index([parentMessageId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Audit trail
+// ─────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String   // e.g. "EVENT_UPDATE", "ATTENDANCE_OVERRIDE", "ROLE_CHANGE"
+  entityType String   // e.g. "Event", "Attendance", "DuesRecord"
+  entityId   String
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now())
+
+  actor User @relation("AuditActor", fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}

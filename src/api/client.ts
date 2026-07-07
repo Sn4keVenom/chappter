@@ -1,0 +1,71 @@
+// src/api/client.ts
+//
+// Axios instance shared by all api/*.ts modules. Centralizes:
+//   · Base URL from environment / config
+//   · Authorization header injection (token set by AuthNavigator after Clerk sign-in)
+//   · Error normalization into ApiError so screens can handle them uniformly
+//
+// Integration points:
+//   · setAuthToken() called by AuthNavigator.tsx after Clerk sign-in
+//   · getAuthToken() called by ProfileScreen sign-out to clear it
+//   · All api/*.ts modules import `apiClient` from here (same pattern as
+//     the existing mobile/api/events.ts which already imports from "./client")
+//   · ApiError.status is used in screens to distinguish 401/403/4xx/5xx
+
+import axios, { AxiosError, AxiosInstance } from "axios";
+
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+
+// Module-level token — survives component remounts but resets on full JS reload.
+// For persistence across app restarts, write to SecureStore in setAuthToken.
+let _authToken: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+  _authToken = token;
+}
+
+export function getAuthToken(): string | null {
+  return _authToken;
+}
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export const apiClient: AxiosInstance = axios.create({
+  baseURL: BASE_URL,
+  timeout: 15_000,
+  headers: { "Content-Type": "application/json" },
+});
+
+// Inject Bearer token on every request
+apiClient.interceptors.request.use((config) => {
+  if (_authToken) {
+    config.headers.Authorization = `Bearer ${_authToken}`;
+  }
+  return config;
+});
+
+// Normalize errors to ApiError
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<{ error?: string; code?: string }>) => {
+    if (error.response) {
+      const status = error.response.status;
+      const message = error.response.data?.error ?? error.message;
+      const code = error.response.data?.code;
+      return Promise.reject(new ApiError(status, message, code));
+    }
+    // Network error / timeout
+    return Promise.reject(
+      new ApiError(0, "Network error — check your connection and try again.")
+    );
+  }
+);
