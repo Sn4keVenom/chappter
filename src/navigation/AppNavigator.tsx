@@ -38,6 +38,10 @@ import RosterDetailScreen from "../screens/admin/RosterDetailScreen";
 import DuesDetailScreen from "../screens/admin/DuesDetailScreen";
 import MapViewScreen from "../screens/MapViewScreen";
 import NotImplementedScreen from "../screens/NotImplementedScreen";
+import TeamDetailScreen from "../screens/TeamDetailScreen";
+import SubmitExpenseScreen from "../screens/SubmitExpenseScreen";
+import ExpensesScreen from "../screens/admin/ExpensesScreen";
+import CommitteeBudgetsScreen from "../screens/admin/CommitteeBudgetsScreen";
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -167,6 +171,14 @@ export default function AppNavigator() {
       <Stack.Screen name="PointsAdjust" component={PointsAdjustScreen} options={{ title: "Adjust Points" }} />
       <Stack.Screen name="RosterDetail" component={RosterDetailScreen} options={{ title: "Roster" }} />
       <Stack.Screen name="DuesDetail" component={DuesDetailScreen} options={{ title: "Dues" }} />
+
+      {/* Teams (Feature 2) */}
+      <Stack.Screen name="TeamDetail" component={TeamDetailScreen} options={{ title: "Team" }} />
+
+      {/* Committee budgets & reimbursements (Feature 5) */}
+      <Stack.Screen name="SubmitExpense" component={SubmitExpenseScreen} options={{ title: "Submit Expense" }} />
+      <Stack.Screen name="Expenses" component={ExpensesScreen} options={{ title: "Reimbursements" }} />
+      <Stack.Screen name="CommitteeBudgets" component={CommitteeBudgetsScreen} options={{ title: "Committee Budgets" }} />
     </Stack.Navigator>
   );
 }

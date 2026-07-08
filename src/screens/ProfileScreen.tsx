@@ -19,7 +19,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, ScrollView, Pressable, StyleSheet,
-  ActivityIndicator, Alert, RefreshControl
+  ActivityIndicator, Alert, RefreshControl, Modal
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useAppAuth } from "../hooks/useAppAuth";
@@ -27,14 +27,14 @@ import { useAppAuth } from "../hooks/useAppAuth";
 import { colors } from "../theme/colors";
 import { useAuthStore } from "../store/useAuthStore";
 import { getMe, getLeaderboard, getPointsLedger } from "../api/users";
-import { getMyDues } from "../api/dues";
+import { getMyDues, payDuesWithPyli } from "../api/dues";
 import { getMyAttendanceHistory } from "../api/attendance";
 import { setAuthToken } from "../api/client";
 import { DEMO_MODE } from "../config/demo";
 import { DEMO_SWITCHABLE_USERS, DEMO_DEFAULT_USER_ID } from "../mocks/identity";
 import { switchDemoUser } from "../mocks/bootstrap";
 import { computeAchievements, type Achievement } from "../utils/achievements";
-import type { User, DuesRecord, DuesStatus, AttendanceRecord } from "../types";
+import type { User, DuesRecord, DuesStatus, DuesPlan, AttendanceRecord } from "../types";
 import { formatCurrency, fullName } from "../types";
 
 const DUES_COLOR: Record<DuesStatus, string> = {
@@ -43,6 +43,94 @@ const DUES_COLOR: Record<DuesStatus, string> = {
   UNPAID: colors.danger,
   WAIVED: colors.textMuted,
 };
+
+const MONTHLY_INSTALLMENTS = 3;
+
+// Pay-with-Pyli modal (Feature 4). Pyli is the chapter's external payment
+// provider — this deliberately isn't a real payment integration (no SDK,
+// no card entry). It's an honest stand-in: pick a plan, brief "processing"
+// state (the demo-mode network adapter's artificial latency covers this),
+// payment posts exactly like an officer-recorded one would, just
+// self-initiated with method="PYLI". See src/mocks/api.ts payDuesWithPyli.
+function PyliPayModal({
+  visible, dues, onClose, onPaid,
+}: {
+  visible: boolean;
+  dues: DuesRecord | null;
+  onClose: () => void;
+  onPaid: () => void;
+}) {
+  const [plan, setPlan] = useState<DuesPlan>("FULL");
+  const [paying, setPaying] = useState(false);
+
+  useEffect(() => { if (visible) setPlan("FULL"); }, [visible]);
+
+  if (!dues) return null;
+  const remaining = dues.amountOwed - dues.amountPaid;
+  const monthlyInstallment = Math.min(remaining, Math.ceil(dues.amountOwed / MONTHLY_INSTALLMENTS));
+  const amount = plan === "FULL" ? remaining : monthlyInstallment;
+
+  async function handlePay() {
+    setPaying(true);
+    try {
+      await payDuesWithPyli({ semesterId: dues!.semesterId, amount, plan });
+      onPaid();
+      onClose();
+      Alert.alert("Payment complete", `${formatCurrency(amount)} paid via Pyli.`);
+    } catch (e: any) {
+      Alert.alert("Payment failed", e?.message ?? "Could not process payment via Pyli.");
+    } finally {
+      setPaying(false);
+    }
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Pay Dues with Pyli</Text>
+          <Text style={styles.modalSub}>{dues.semester.label} · {formatCurrency(remaining)} remaining</Text>
+
+          <View style={styles.planRow}>
+            <Pressable
+              style={[styles.planOption, plan === "FULL" && styles.planOptionSelected]}
+              onPress={() => setPlan("FULL")}
+            >
+              <Text style={[styles.planLabel, plan === "FULL" && styles.planLabelSelected]}>Pay in Full</Text>
+              <Text style={[styles.planAmount, plan === "FULL" && styles.planLabelSelected]}>
+                {formatCurrency(remaining)}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.planOption, plan === "MONTHLY" && styles.planOptionSelected]}
+              onPress={() => setPlan("MONTHLY")}
+            >
+              <Text style={[styles.planLabel, plan === "MONTHLY" && styles.planLabelSelected]}>Monthly</Text>
+              <Text style={[styles.planAmount, plan === "MONTHLY" && styles.planLabelSelected]}>
+                {formatCurrency(monthlyInstallment)}/mo
+              </Text>
+            </Pressable>
+          </View>
+
+          {plan === "MONTHLY" && (
+            <Text style={styles.planHint}>
+              First installment charged now via Pyli — {MONTHLY_INSTALLMENTS} installments total.
+            </Text>
+          )}
+
+          <View style={styles.modalActions}>
+            <Pressable style={styles.modalCancelBtn} onPress={onClose} disabled={paying}>
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={[styles.modalPayBtn, paying && styles.disabledBtn]} onPress={handlePay} disabled={paying}>
+              {paying ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalPayText}>Pay {formatCurrency(amount)}</Text>}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
@@ -59,6 +147,7 @@ export default function ProfileScreen() {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [payModalVisible, setPayModalVisible] = useState(false);
 
   const load = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -221,6 +310,17 @@ export default function ProfileScreen() {
         </Pressable>
       )}
 
+      {/* Team card */}
+      {profile?.teamId && profile.teamName && (
+        <Pressable
+          style={styles.card}
+          onPress={() => navigation.navigate("TeamDetail", { teamId: profile.teamId! })}
+        >
+          <Text style={styles.cardLabel}>Team</Text>
+          <Text style={styles.teamName}>{profile.teamName}</Text>
+        </Pressable>
+      )}
+
       {/* Dues card */}
       {dues && (
         <View style={[styles.card, { borderLeftColor: DUES_COLOR[dues.status], borderLeftWidth: 4 }]}>
@@ -233,10 +333,18 @@ export default function ProfileScreen() {
               {formatCurrency(dues.amountPaid)} paid of {formatCurrency(dues.amountOwed)}
             </Text>
           </View>
+          {dues.plan && (
+            <Text style={styles.duesPlan}>{dues.plan === "MONTHLY" ? "Monthly plan via Pyli" : "Paid in full via Pyli"}</Text>
+          )}
           {dues.dueDate && dues.status !== "PAID" && dues.status !== "WAIVED" && (
             <Text style={styles.dueDue}>
               Due {new Date(dues.dueDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
             </Text>
+          )}
+          {(dues.status === "UNPAID" || dues.status === "PARTIAL") && (
+            <Pressable style={styles.payBtn} onPress={() => setPayModalVisible(true)}>
+              <Text style={styles.payBtnText}>Pay with Pyli</Text>
+            </Pressable>
           )}
         </View>
       )}
@@ -309,6 +417,13 @@ export default function ProfileScreen() {
       <Pressable style={styles.signOutBtn} onPress={handleSignOut}>
         <Text style={styles.signOutText}>{DEMO_MODE ? "Reset demo session" : "Sign out"}</Text>
       </Pressable>
+
+      <PyliPayModal
+        visible={payModalVisible}
+        dues={dues}
+        onClose={() => setPayModalVisible(false)}
+        onPaid={() => load()}
+      />
     </ScrollView>
   );
 }
@@ -351,6 +466,7 @@ const styles = StyleSheet.create({
     fontSize: 11, fontWeight: "700", color: colors.textMuted,
     textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10,
   },
+  teamName: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
 
   // Points
   pointsRow: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -365,7 +481,29 @@ const styles = StyleSheet.create({
   duesRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   duesStatus: { fontSize: 18, fontWeight: "800" },
   duesAmount: { fontSize: 13, color: colors.textSecondary },
+  duesPlan: { fontSize: 11, color: colors.textMuted, marginTop: 6 },
   dueDue: { fontSize: 12, color: colors.warning, marginTop: 6 },
+  payBtn: { marginTop: 12, backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
+  payBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 13 },
+
+  // Pyli pay modal
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 },
+  modalCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 20 },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
+  modalSub: { fontSize: 13, color: colors.textSecondary, marginTop: 4, marginBottom: 16 },
+  planRow: { flexDirection: "row", gap: 10 },
+  planOption: { flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 14, alignItems: "center", backgroundColor: colors.background },
+  planOptionSelected: { borderColor: colors.primary, backgroundColor: colors.primary },
+  planLabel: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+  planLabelSelected: { color: colors.primaryText },
+  planAmount: { fontSize: 15, fontWeight: "800", color: colors.textPrimary, marginTop: 4 },
+  planHint: { fontSize: 12, color: colors.textMuted, marginTop: 10, lineHeight: 17 },
+  modalActions: { flexDirection: "row", gap: 10, marginTop: 20 },
+  modalCancelBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.border },
+  modalCancelText: { color: colors.textPrimary, fontWeight: "600" },
+  modalPayBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.primary },
+  modalPayText: { color: "#FFF", fontWeight: "700" },
+  disabledBtn: { opacity: 0.5 },
 
   // Section
   section: { marginBottom: 24 },

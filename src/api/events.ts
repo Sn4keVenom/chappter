@@ -15,11 +15,11 @@
 //   · EventDetailScreen — calls getEvent, expects EventDetail
 
 import { apiClient } from "./client";
-import type { EventSummary, EventDetail, RsvpStatus } from "../types";
+import type { EventSummary, EventDetail, RsvpStatus, EventDelegate } from "../types";
 
 // Re-export so screens that already import RsvpStatus from here continue to
 // work without a migration step. They're the same type — this is just an alias.
-export type { RsvpStatus, EventDetail };
+export type { RsvpStatus, EventDetail, EventDelegate };
 
 export async function getEvent(eventId: string): Promise<EventDetail> {
   const { data } = await apiClient.get<{ event: EventDetail }>(`/events/${eventId}`);
@@ -38,4 +38,17 @@ export async function listEvents(params: {
 
 export async function setRsvp(eventId: string, status: RsvpStatus): Promise<void> {
   await apiClient.post(`/events/${eventId}/rsvp`, { status });
+}
+
+// Event-scoped attendance-code delegation (Feature 3) — lets an event
+// organizer who can't personally attend hand check-in-code generation to
+// another member without granting them general attendance-management access.
+export async function addEventDelegate(eventId: string, userId: string): Promise<EventDelegate[]> {
+  const { data } = await apiClient.post<{ delegates: EventDelegate[] }>(`/events/${eventId}/delegates`, { userId });
+  return data.delegates;
+}
+
+export async function removeEventDelegate(eventId: string, userId: string): Promise<EventDelegate[]> {
+  const { data } = await apiClient.delete<{ delegates: EventDelegate[] }>(`/events/${eventId}/delegates/${userId}`);
+  return data.delegates;
 }

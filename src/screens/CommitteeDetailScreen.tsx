@@ -40,7 +40,9 @@ import {
   removeCommitteeMember,
 } from "../api/committees";
 import { getRoster } from "../api/users";
-import type { Committee, CommitteeMemberSummary, UserSummary, CommitteeRole } from "../types";
+import { getCommitteeBudget } from "../api/finance";
+import { formatCurrency } from "../types";
+import type { Committee, CommitteeMemberSummary, UserSummary, CommitteeRole, CommitteeBudget } from "../types";
 import type { AppStackParamList } from "../navigation/types";
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
@@ -299,6 +301,7 @@ export default function CommitteeDetailScreen() {
   const { isExecOrAbove, isOfficerOrAbove } = usePermissions();
 
   const [committee, setCommittee] = useState<Committee | null>(null);
+  const [budget, setBudget] = useState<CommitteeBudget | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -324,6 +327,15 @@ export default function CommitteeDetailScreen() {
   }, [committeeId, navigation]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  // Budget visibility (Feature 5) mirrors the mock's own authorization —
+  // Treasurer/Exec+ always, the committee's own chair too. Fetched
+  // separately since a regular member's 403 here shouldn't block the rest
+  // of the screen from loading.
+  useEffect(() => {
+    if (!canManage) { setBudget(null); return; }
+    getCommitteeBudget(committeeId).then(setBudget).catch(() => setBudget(null));
+  }, [committeeId, canManage]);
 
   async function handleSaveEdit(name: string, description: string) {
     const updated = await updateCommittee(committeeId, { name, description });
@@ -418,6 +430,32 @@ export default function CommitteeDetailScreen() {
           >
             <Text style={styles.channelBtnText}>✉  Open Committee Channel</Text>
           </Pressable>
+        )}
+
+        {/* Budget summary + expense submission (Feature 5) — Treasurer/Exec+
+            and this committee's own chair only */}
+        {budget && (
+          <View style={styles.budgetCard}>
+            <Text style={styles.budgetLabel}>Budget this semester</Text>
+            <View style={styles.budgetStatsRow}>
+              <View style={styles.budgetStat}>
+                <Text style={styles.budgetStatValue}>{formatCurrency(budget.remaining)}</Text>
+                <Text style={styles.budgetStatLabel}>Remaining</Text>
+              </View>
+              <View style={styles.budgetStat}>
+                <Text style={styles.budgetStatValue}>{formatCurrency(budget.allocated)}</Text>
+                <Text style={styles.budgetStatLabel}>Allocated</Text>
+              </View>
+            </View>
+            {isChair && (
+              <Pressable
+                style={styles.submitExpenseBtn}
+                onPress={() => navigation.navigate("SubmitExpense", { committeeId, committeeName: committee.name })}
+              >
+                <Text style={styles.submitExpenseBtnText}>Submit Expense</Text>
+              </Pressable>
+            )}
+          </View>
         )}
 
         {/* Chairs section */}
@@ -521,6 +559,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   channelBtnText: { color: colors.primaryText, fontWeight: "600", fontSize: 15 },
+
+  // Budget card (Feature 5)
+  budgetCard: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 12 },
+  budgetLabel: { fontSize: 11, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 },
+  budgetStatsRow: { flexDirection: "row", gap: 24, marginBottom: 12 },
+  budgetStat: { alignItems: "flex-start" },
+  budgetStatValue: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
+  budgetStatLabel: { fontSize: 10, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 },
+  submitExpenseBtn: { backgroundColor: colors.accent, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
+  submitExpenseBtnText: { color: colors.primary, fontWeight: "700", fontSize: 13 },
 
   // Sections
   section: {

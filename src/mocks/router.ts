@@ -73,6 +73,8 @@ route("post", "/events/:id/rsvp", (p, _q, body) => {
 });
 route("post", "/events/:id/checkin", (p, _q, body) => api.selfCheckIn(p.id, body.token));
 route("post", "/events/:id/attendance/:userId", (p, _q, body) => api.manualMarkAttendance(p.id, p.userId, body));
+route("post", "/events/:id/delegates", (p, _q, body) => ({ delegates: api.addEventDelegate(p.id, body.userId) }));
+route("delete", "/events/:id/delegates/:userId", (p) => ({ delegates: api.removeEventDelegate(p.id, p.userId) }));
 
 // Users / points
 route("get", "/users/me/dashboard", () => api.getDashboard());
@@ -87,6 +89,13 @@ route("post", "/points/adjust", (_p, _q, body) => ({ entry: api.adjustPoints(bod
 // Attendance
 route("get", "/attendance/history/:userId", (p) => api.getMemberAttendanceHistory(p.userId));
 route("get", "/attendance/history", (_p, q) => api.getMyAttendanceHistory(q));
+
+// Teams (Feature 2 — gamification groupings, not committees)
+route("get", "/teams/leaderboard", () => api.getTeamLeaderboard());
+route("get", "/teams", () => ({ teams: api.listTeams() }));
+route("get", "/teams/:id", (p) => ({ team: api.getTeam(p.id) }));
+route("post", "/teams/:id/members", (p, _q, body) => ({ team: api.addTeamMember(p.id, body.userId) }));
+route("delete", "/teams/:id/members/:userId", (p) => ({ team: api.removeTeamMember(p.id, p.userId) }));
 
 // Committees
 route("get", "/committees", () => ({ committees: api.listCommittees() }));
@@ -115,8 +124,17 @@ route("get", "/dues/me", () => ({ records: api.getMyDues() }));
 route("get", "/dues", (_p, q) => api.getAllDues(q));
 route("post", "/dues/initialize", (_p, _q, body) => api.initializeSemesterDues(body));
 route("post", "/dues/reminders/send", (_p, _q, body) => api.sendDuesReminders(body.semesterId));
+route("post", "/dues/pay-pyli", (_p, _q, body) => api.payDuesWithPyli(body));
 route("post", "/dues/:userId/payment", (p, _q, body) => api.recordPayment(p.userId, body));
 route("post", "/dues/:userId/waive", (p, _q, body) => api.waiveDues(p.userId, body.semesterId, body.reason));
+
+// Committee budgets & reimbursements (Feature 5 — tracking only)
+route("get", "/budgets", () => ({ budgets: api.listCommitteeBudgets() }));
+route("get", "/committees/:id/budget", (p) => ({ budget: api.getCommitteeBudget(p.id) }));
+route("patch", "/committees/:id/budget", (p, _q, body) => ({ budget: api.setCommitteeBudget(p.id, body) }));
+route("get", "/expenses", (_p, q) => ({ expenses: api.listExpenses(q) }));
+route("post", "/expenses", (_p, _q, body) => ({ expense: api.submitExpense(body) }));
+route("patch", "/expenses/:id", (p, _q, body) => ({ expense: api.updateExpenseStatus(p.id, body) }));
 
 // ── Adapter plumbing ─────────────────────────────────────────────────────
 

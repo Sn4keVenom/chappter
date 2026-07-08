@@ -27,7 +27,10 @@ import type {
   ChannelType,
   ChannelMemberRole,
   DuesStatus,
+  DuesPlan,
   PaymentMethod,
+  OfficerTitle,
+  ReimbursementStatus,
 } from "../types";
 
 // ── Date helpers ────────────────────────────────────────────────────────────
@@ -63,8 +66,10 @@ export interface MockUser {
   phone?: string;
   avatarUrl?: string | null;
   role: UserRole;
+  title?: OfficerTitle | null;
   status: MemberStatus;
   pledgeClassLabel?: string | null;
+  teamId?: string | null; // gamification team — see MockTeam below
 }
 
 export interface MockSemester {
@@ -143,6 +148,7 @@ export interface MockDuesRecord {
   amountPaid: number;
   status: DuesStatus;
   dueDate?: string | null;
+  plan?: DuesPlan | null;
 }
 
 export interface MockPayment {
@@ -189,24 +195,49 @@ export const semester: MockSemester = {
   endDate: daysFromNow(90, 0, 0),
 };
 
+// ── Teams ────────────────────────────────────────────────────────────────
+// Gamification-only groupings — NOT committees, no leaders. Defined ahead
+// of `users` so team ids are available for the roster's `teamId` field.
+
+export interface MockTeam {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export const teams: MockTeam[] = [
+  { id: "team_a", name: "Team Vanguard", color: "#5B6CC0" },
+  { id: "team_b", name: "Team Ironclad", color: "#2F8F6E" },
+  { id: "team_c", name: "Team Apex", color: "#C8A24A" },
+  { id: "team_d", name: "Team Catalyst", color: "#8B5FBF" },
+];
+
+export function findTeam(id: string): MockTeam | undefined {
+  return teams.find((t) => t.id === id);
+}
+
 // ── Users ────────────────────────────────────────────────────────────────
-// A realistic 14-person roster spanning every role and membership status.
+// A realistic 15-person roster spanning every role, exec-board title, and
+// membership status. Regent/Vice Regent/Scribe/Treasurer map to Feature 1–5
+// permission gating (see usePermissions.ts) — SUSPENDED/ALUMNI members are
+// excluded from teams since they aren't active participants.
 
 export const users: MockUser[] = [
-  { id: "u1", firstName: "Marcus", lastName: "Reyes", email: "marcus.reyes@thetatau.demo", role: "SUPER_ADMIN", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0101" },
-  { id: "u2", firstName: "Sofia", lastName: "Nguyen", email: "sofia.nguyen@thetatau.demo", role: "EXEC", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0102" },
-  { id: "u3", firstName: "Jordan", lastName: "Blake", email: "jordan.blake@thetatau.demo", role: "EXEC", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0103" },
-  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Fall 2024" },
-  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Fall 2024" },
-  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Spring 2025" },
-  { id: "u7", firstName: "Noah", lastName: "Bennett", email: "noah.bennett@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024" },
-  { id: "u8", firstName: "Ava", lastName: "Torres", email: "ava.torres@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025" },
-  { id: "u9", firstName: "Liam", lastName: "Osei", email: "liam.osei@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025" },
-  { id: "u10", firstName: "Chloe", lastName: "Martinez", email: "chloe.martinez@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2025" },
-  { id: "u11", firstName: "Dylan", lastName: "Foster", email: "dylan.foster@thetatau.demo", role: "MEMBER", status: "PLEDGE", pledgeClassLabel: "Fall 2026" },
-  { id: "u12", firstName: "Maya", lastName: "Singh", email: "maya.singh@thetatau.demo", role: "MEMBER", status: "PLEDGE", pledgeClassLabel: "Fall 2026" },
+  { id: "u1", firstName: "Marcus", lastName: "Reyes", email: "marcus.reyes@thetatau.demo", role: "SUPER_ADMIN", title: "REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0101", teamId: "team_a" },
+  { id: "u2", firstName: "Sofia", lastName: "Nguyen", email: "sofia.nguyen@thetatau.demo", role: "EXEC", title: "VICE_REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0102", teamId: "team_b" },
+  { id: "u3", firstName: "Jordan", lastName: "Blake", email: "jordan.blake@thetatau.demo", role: "EXEC", title: "TREASURER", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0103", teamId: "team_c" },
+  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_d" },
+  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_a" },
+  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_b" },
+  { id: "u7", firstName: "Noah", lastName: "Bennett", email: "noah.bennett@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_c" },
+  { id: "u8", firstName: "Ava", lastName: "Torres", email: "ava.torres@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_d" },
+  { id: "u9", firstName: "Liam", lastName: "Osei", email: "liam.osei@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_a" },
+  { id: "u10", firstName: "Chloe", lastName: "Martinez", email: "chloe.martinez@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2025", teamId: "team_b" },
+  { id: "u11", firstName: "Dylan", lastName: "Foster", email: "dylan.foster@thetatau.demo", role: "MEMBER", status: "PLEDGE", pledgeClassLabel: "Fall 2026", teamId: "team_c" },
+  { id: "u12", firstName: "Maya", lastName: "Singh", email: "maya.singh@thetatau.demo", role: "MEMBER", status: "PLEDGE", pledgeClassLabel: "Fall 2026", teamId: "team_a" },
   { id: "u13", firstName: "Ryan", lastName: "O'Connell", email: "ryan.oconnell@thetatau.demo", role: "MEMBER", status: "SUSPENDED", pledgeClassLabel: "Fall 2024" },
   { id: "u14", firstName: "Isabella", lastName: "Cruz", email: "isabella.cruz@thetatau.demo", role: "MEMBER", status: "ALUMNI", pledgeClassLabel: "Fall 2021" },
+  { id: "u15", firstName: "Emma", lastName: "Chavez", email: "emma.chavez@thetatau.demo", role: "EXEC", title: "SCRIBE", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0115", teamId: "team_c" },
 ];
 
 export function findUser(id: string): MockUser | undefined {
@@ -303,12 +334,12 @@ interface AttendanceSeed {
 }
 
 const attendanceSeed: AttendanceSeed[] = [
-  { eventId: "e1", attended: ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9", "u10"], late: ["u9"] },
+  { eventId: "e1", attended: ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9", "u10", "u15"], late: ["u9"] },
   { eventId: "e2", attended: ["u2", "u5", "u7", "u8", "u9", "u10"] },
   { eventId: "e3", attended: ["u3", "u6", "u9", "u10"] },
   { eventId: "e4", attended: ["u1", "u4", "u7", "u11", "u12"] },
   { eventId: "e5", attended: ["u2", "u7", "u8", "u10", "u12"] },
-  { eventId: "e6", attended: ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u10"], late: ["u4", "u10"] },
+  { eventId: "e6", attended: ["u1", "u2", "u3", "u4", "u5", "u6", "u7", "u10", "u15"], late: ["u4", "u10"] },
 ];
 
 export const attendances: MockAttendance[] = [];
@@ -358,6 +389,27 @@ export function findAttendance(eventId: string, userId: string): MockAttendance 
   return attendances.find((a) => a.eventId === eventId && a.userId === userId);
 }
 
+// ── Event attendance-code delegation (Feature 3) ────────────────────────
+// A committee head can't always attend their own event — they can delegate
+// just the check-in-code generation to another member without granting
+// them general attendance-management (Scribe) access. See
+// usePermissions.canGenerateCheckIn.
+
+export interface MockEventDelegate {
+  eventId: string;
+  userId: string;
+}
+
+export const eventDelegates: MockEventDelegate[] = [
+  // Ethan (Service chair, u5) created Food Bank Volunteer Day but is out of
+  // town that weekend — delegated check-in generation to Ava, a committee member.
+  { eventId: "e7", userId: "u8" },
+];
+
+export function getEventDelegates(eventId: string): MockEventDelegate[] {
+  return eventDelegates.filter((d) => d.eventId === eventId);
+}
+
 // ── Dues (Fall 2026 semester) ────────────────────────────────────────────
 
 export const duesRecords: MockDuesRecord[] = [];
@@ -365,20 +417,25 @@ export const payments: MockPayment[] = [];
 let duesIdCounter = 1;
 let paymentIdCounter = 1;
 
-const duesSeed: { userId: string; amountPaid: number; status: DuesStatus; method?: PaymentMethod }[] = [
-  { userId: "u1", amountPaid: 150, status: "PAID", method: "STRIPE" },
+// Pyli is the chapter's primary payment provider (self-service, member-
+// initiated — see api/dues.ts payDuesWithPyli). Officer-recorded manual
+// payments (cash/check/venmo received in person) still happen and don't
+// carry a `plan`, since those are one-off, not a Pyli installment schedule.
+const duesSeed: { userId: string; amountPaid: number; status: DuesStatus; method?: PaymentMethod; plan?: DuesPlan | null }[] = [
+  { userId: "u1", amountPaid: 150, status: "PAID", method: "PYLI", plan: "FULL" },
   { userId: "u2", amountPaid: 150, status: "PAID", method: "VENMO" },
-  { userId: "u3", amountPaid: 75, status: "PARTIAL", method: "CASH" },
-  { userId: "u4", amountPaid: 150, status: "PAID", method: "STRIPE" },
+  { userId: "u3", amountPaid: 75, status: "PARTIAL", method: "PYLI", plan: "MONTHLY" },
+  { userId: "u4", amountPaid: 150, status: "PAID", method: "PYLI", plan: "FULL" },
   { userId: "u5", amountPaid: 0, status: "UNPAID" },
-  { userId: "u6", amountPaid: 100, status: "PARTIAL", method: "VENMO" },
+  { userId: "u6", amountPaid: 100, status: "PARTIAL", method: "PYLI", plan: "MONTHLY" },
   { userId: "u7", amountPaid: 0, status: "UNPAID" },
   { userId: "u8", amountPaid: 0, status: "WAIVED" },
   { userId: "u9", amountPaid: 150, status: "PAID", method: "CHECK" },
-  { userId: "u10", amountPaid: 50, status: "PARTIAL", method: "CASH" },
+  { userId: "u10", amountPaid: 50, status: "PARTIAL", method: "PYLI", plan: "MONTHLY" },
   { userId: "u11", amountPaid: 0, status: "UNPAID" },
   { userId: "u12", amountPaid: 0, status: "UNPAID" },
   { userId: "u13", amountPaid: 0, status: "UNPAID" },
+  { userId: "u15", amountPaid: 150, status: "PAID", method: "PYLI", plan: "FULL" },
 ];
 
 for (const seed of duesSeed) {
@@ -391,6 +448,7 @@ for (const seed of duesSeed) {
     amountPaid: seed.amountPaid,
     status: seed.status,
     dueDate: daysFromNow(21, 23, 59),
+    plan: seed.plan ?? null,
   });
   if (seed.amountPaid > 0 && seed.method) {
     payments.push({
@@ -399,13 +457,76 @@ for (const seed of duesSeed) {
       amount: seed.amountPaid,
       method: seed.method,
       paidAt: daysFromNow(-Math.floor(Math.random() * 15) - 1),
-      recordedById: seed.method === "STRIPE" ? null : "u3",
+      // Pyli payments are self-service (member-initiated) — no officer
+      // "recorded" them. Manual methods were recorded by the Treasurer.
+      recordedById: seed.method === "PYLI" ? null : "u3",
     });
   }
 }
 
 export function findDuesRecord(userId: string, semesterId: string): MockDuesRecord | undefined {
   return duesRecords.find((d) => d.userId === userId && d.semesterId === semesterId);
+}
+
+// ── Committee Budgets & Expenses (Feature 5) ────────────────────────────
+// Tracking only, per docs/DEMO_MODE.md — no real money moves. The
+// Treasurer allocates a per-semester budget to each committee; chairs
+// submit expenses against it; the Treasurer reviews and marks
+// reimbursement status/method. "spent" and "pending" are derived at read
+// time from expense status (see mocks/api.ts), not stored here.
+
+export interface MockCommitteeBudget {
+  committeeId: string;
+  semesterId: string;
+  allocated: number;
+}
+
+export const committeeBudgets: MockCommitteeBudget[] = [
+  { committeeId: "c1", semesterId: semester.id, allocated: 800 },
+  { committeeId: "c2", semesterId: semester.id, allocated: 600 },
+  { committeeId: "c3", semesterId: semester.id, allocated: 500 },
+  { committeeId: "c4", semesterId: semester.id, allocated: 1200 },
+];
+
+export function findCommitteeBudget(committeeId: string, semesterId: string): MockCommitteeBudget | undefined {
+  return committeeBudgets.find((b) => b.committeeId === committeeId && b.semesterId === semesterId);
+}
+
+export interface MockExpense {
+  id: string;
+  committeeId: string;
+  submittedById: string;
+  amount: number;
+  description: string;
+  date: string;
+  receiptLabel?: string | null;
+  status: ReimbursementStatus;
+  reimbursementMethod?: PaymentMethod | null;
+  reimbursementNote?: string | null;
+  reviewedById?: string | null;
+  createdAt: string;
+}
+
+export const expenses: MockExpense[] = [];
+let expenseIdCounter = 1;
+
+const expenseSeed: Omit<MockExpense, "id" | "createdAt">[] = [
+  { committeeId: "c1", submittedById: "u4", amount: 220, description: "Rush Info Night catering", date: daysFromNow(-9), receiptLabel: "receipt_infonight.jpg", status: "REIMBURSED", reimbursementMethod: "VENMO", reimbursementNote: "Paid same week", reviewedById: "u3" },
+  { committeeId: "c1", submittedById: "u4", amount: 85, description: "Bid Night decorations and signage", date: daysFromNow(-2), receiptLabel: "receipt_bidnight_decor.jpg", status: "APPROVED", reviewedById: "u3" },
+  { committeeId: "c2", submittedById: "u5", amount: 140, description: "Habitat build supplies — gloves, tarps, paint", date: daysFromNow(-17), receiptLabel: "receipt_habitat_supplies.jpg", status: "REIMBURSED", reimbursementMethod: "CASH", reviewedById: "u3" },
+  { committeeId: "c2", submittedById: "u5", amount: 95, description: "Food Bank volunteer t-shirts (12 count)", date: daysFromNow(-1), receiptLabel: "receipt_tshirts.jpg", status: "SUBMITTED" },
+  { committeeId: "c3", submittedById: "u6", amount: 60, description: "Resume workshop printing + snacks", date: daysFromNow(-12), receiptLabel: "receipt_workshop.jpg", status: "REIMBURSED", reimbursementMethod: "VENMO", reviewedById: "u3" },
+  { committeeId: "c3", submittedById: "u6", amount: 300, description: "Networking mixer venue deposit", date: daysFromNow(-4), receiptLabel: "receipt_venue_deposit.jpg", status: "APPROVED", reviewedById: "u3" },
+  { committeeId: "c4", submittedById: "u2", amount: 150, description: "Bowling night lane rental (4 lanes, 2hr)", date: daysFromNow(-5), receiptLabel: "receipt_bowling.jpg", status: "REIMBURSED", reimbursementMethod: "CHECK", reviewedById: "u3" },
+  { committeeId: "c4", submittedById: "u2", amount: 400, description: "Founders Day Formal — DJ deposit", date: daysFromNow(-1), receiptLabel: "receipt_dj_deposit.jpg", status: "REJECTED", reimbursementNote: "Exceeds remaining committee budget this semester — resubmit after Q2 reallocation or split cost with chapter-wide budget.", reviewedById: "u3" },
+];
+
+for (const seed of expenseSeed) {
+  expenses.push({ ...seed, id: `exp_${expenseIdCounter++}`, createdAt: seed.date });
+}
+
+export function findExpense(id: string): MockExpense | undefined {
+  return expenses.find((e) => e.id === id);
 }
 
 // ── Channels & Messages ──────────────────────────────────────────────────
@@ -446,14 +567,15 @@ function seedMessage(channelId: string, senderId: string, content: string, minut
   });
 }
 
-seedMessage("ch1", "u1", "Welcome back everyone! Fall 2026 semester is officially underway. Check your dues status on the Profile tab — deadline is in 3 weeks.", 60 * 24 * 6, true);
+seedMessage("ch1", "u1", "Welcome back everyone! Fall 2026 semester is officially underway. Check your dues status on the Profile tab — deadline is in 3 weeks. Pay in full or monthly through Pyli, right from the app.", 60 * 24 * 6, true);
 seedMessage("ch1", "u2", "Reminder: Big/Little Reveal is this Saturday at 7pm. RSVP on the Events tab if you haven't already!", 60 * 24 * 2);
 seedMessage("ch1", "u5", "Food Bank volunteer shift got moved to 10am — updated on the event page.", 60 * 10);
 seedMessage("ch1", "u9", "Does anyone have an extra chapter polo? Lost mine at the last mixer 😅", 45);
 
 seedMessage("ch2", "u1", "Exec board meeting agenda: budget review, Rush Bid Night logistics, dues follow-up for the 5 members still unpaid.", 60 * 20);
-seedMessage("ch2", "u3", "Pulled the numbers — we're at 62% dues collected chapter-wide. Full breakdown in the Admin panel.", 60 * 18);
+seedMessage("ch2", "u3", "Pulled the numbers — we're at 62% dues collected chapter-wide, mostly via Pyli now. Full breakdown in the Admin panel. Also reviewing the DJ deposit expense from Social — it's over Social's remaining budget, following up with Sofia.", 60 * 18);
 seedMessage("ch2", "u2", "I'll follow up with the Service and Professional Dev chairs about committee budgets this week.", 60 * 16);
+seedMessage("ch2", "u15", "Attendance is caught up through this week's chapter meeting — 2 late check-ins, noted in each record. Ethan delegated check-in for Food Bank to Ava since he can't make it, so I don't need to be on-site for that one.", 60 * 14);
 
 seedMessage("ch3", "u4", "Info Night went great — 40+ prospects showed up. Bid Night is set for the 19th.", 60 * 24 * 8);
 seedMessage("ch3", "u7", "I can help run the sign-in table again for Bid Night.", 60 * 24 * 7);

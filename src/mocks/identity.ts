@@ -32,9 +32,11 @@ export function toAppUser(user: MockUser): AppUser {
     firstName: user.firstName,
     lastName: user.lastName,
     role: user.role,
+    title: user.title ?? null,
     committeeChairOf: committeeMemberships
       .filter((m) => m.userId === user.id && m.role === "CHAIR")
       .map((m) => m.committeeId),
+    teamId: user.teamId ?? null,
   };
 }
 
@@ -42,13 +44,16 @@ export function getCurrentDemoUser(): MockUser {
   return findUser(currentDemoUserId) ?? findUser(DEMO_DEFAULT_USER_ID)!;
 }
 
-// A curated one-per-role roster for the "Switch demo role" picker — enough
-// to exercise every permission-gated code path (Member/Officer/Exec/Admin)
-// without overwhelming the picker with all 14 mock users.
+// A curated roster for the "Switch demo role" picker — one per named
+// exec-board title plus a committee-chair officer and a standard member,
+// enough to exercise every permission-gated code path (Feature 1–5 included)
+// without overwhelming the picker with all 15 mock users.
 export const DEMO_SWITCHABLE_USERS: { user: MockUser; blurb: string }[] = [
-  { user: findUser("u1")!, blurb: "Sees every tab and admin action" },
-  { user: findUser("u3")!, blurb: "Chapter-wide event & dues management" },
-  { user: findUser("u5")!, blurb: "Manages Service Committee only" },
+  { user: findUser("u1")!, blurb: "Regent — sees every tab and admin action" },
+  { user: findUser("u2")!, blurb: "Vice Regent — points system oversight" },
+  { user: findUser("u15")!, blurb: "Scribe — attendance tracking & check-in delegation" },
+  { user: findUser("u3")!, blurb: "Treasurer — dues, budgets & reimbursements" },
+  { user: findUser("u5")!, blurb: "Officer — manages Service Committee only" },
   { user: findUser("u9")!, blurb: "Standard member view — no admin tab" },
 ];
 

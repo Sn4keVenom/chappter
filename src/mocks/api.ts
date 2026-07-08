@@ -18,6 +18,7 @@ import type {
   UserSummary,
   EventSummary,
   EventDetail,
+  EventDelegate,
   DashboardData,
   RsvpStatus,
   LeaderboardEntry,
@@ -33,8 +34,15 @@ import type {
   DuesRecord,
   Payment,
   DuesStatus,
+  DuesPlan,
   PaymentMethod,
   UserRole,
+  Team,
+  TeamMemberSummary,
+  TeamLeaderboardEntry,
+  CommitteeBudget,
+  Expense,
+  ReimbursementStatus,
 } from "../types";
 
 // ── Shared helpers ─────────────────────────────────────────────────────────
@@ -51,10 +59,45 @@ function isOfficerOrAbove(userId: string): boolean {
   return !!u && ROLE_RANK[u.role] >= ROLE_RANK.OFFICER;
 }
 
+function isSuperAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return !!u && u.role === "SUPER_ADMIN";
+}
+
+// Named exec-board title checks (Vice Regent/Scribe/Treasurer). Additive to
+// the tier checks above — see usePermissions.ts for the client-side mirror
+// and the "why additive, not exclusive" reasoning.
+function isViceRegentOrAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return isSuperAdmin(userId) || u?.title === "VICE_REGENT";
+}
+
+function isScribeOrAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return isSuperAdmin(userId) || u?.title === "SCRIBE";
+}
+
+function isTreasurerOrAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return isSuperAdmin(userId) || u?.title === "TREASURER";
+}
+
 function committeeChairOf(userId: string): string[] {
   return db.committeeMemberships
     .filter((m) => m.userId === userId && m.role === "CHAIR")
     .map((m) => m.committeeId);
+}
+
+// Can this user generate/display THIS event's check-in code? Exec+, Scribe,
+// the committee chair who owns this event, or an explicitly delegated
+// member (Feature 3) — delegation grants access to ONLY this one event,
+// not general attendance-management authority.
+function canAccessCheckIn(userId: string, event: db.MockEvent): boolean {
+  if (isExecOrAbove(userId) || isScribeOrAdmin(userId)) return true;
+  if (isOfficerOrAbove(userId) && event.committeeId && committeeChairOf(userId).includes(event.committeeId)) {
+    return true;
+  }
+  return db.getEventDelegates(event.id).some((d) => d.userId === userId);
 }
 
 export class DemoApiError extends Error {
@@ -85,6 +128,14 @@ function toEventSummary(event: db.MockEvent, forUserId: string): EventSummary {
   };
 }
 
+function toEventDelegates(eventId: string): EventDelegate[] {
+  return db
+    .getEventDelegates(eventId)
+    .map((d) => db.findUser(d.userId))
+    .filter((u): u is db.MockUser => !!u)
+    .map((u) => ({ userId: u.id, firstName: u.firstName, lastName: u.lastName }));
+}
+
 function toEventDetail(event: db.MockEvent, forUserId: string): EventDetail {
   const checkedInCount = db.attendances.filter((a) => a.eventId === event.id).length;
   return {
@@ -94,6 +145,7 @@ function toEventDetail(event: db.MockEvent, forUserId: string): EventDetail {
     checkInWindowStart: event.checkInWindowStart ?? null,
     checkInWindowEnd: event.checkInWindowEnd ?? null,
     checkedInCount,
+    attendanceDelegates: toEventDelegates(event.id),
   };
 }
 
@@ -167,6 +219,7 @@ function toUserSummary(u: db.MockUser): UserSummary {
     email: u.email,
     avatarUrl: u.avatarUrl ?? null,
     role: u.role,
+    title: u.title ?? null,
     status: u.status,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
   };
@@ -180,6 +233,7 @@ function toFullUser(u: db.MockUser): User {
       committeeName: db.committees.find((c) => c.id === m.committeeId)?.name ?? "",
       role: m.role,
     }));
+  const team = u.teamId ? db.findTeam(u.teamId) : undefined;
   return {
     id: u.id,
     firstName: u.firstName,
@@ -188,10 +242,13 @@ function toFullUser(u: db.MockUser): User {
     phone: u.phone ?? null,
     avatarUrl: u.avatarUrl ?? null,
     role: u.role,
+    title: u.title ?? null,
     status: u.status,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
     committeeChairOf: committeeChairOf(u.id),
     committeeMemberships: memberships,
+    teamId: u.teamId ?? null,
+    teamName: team?.name ?? null,
   };
 }
 
@@ -205,20 +262,56 @@ function userTotalPoints(userId: string): number {
     .reduce((sum, l) => sum + l.amount, 0);
 }
 
+interface PointsBreakdown {
+  total: number;
+  attendanceCount: number;
+  attendancePoints: number;
+  bonusPoints: number;
+  penaltyPoints: number;
+}
+
+// Individual point totals come primarily from attendance/event
+// participation (Feature 1) — this breaks the ledger down by type so the
+// leaderboard can show "how" someone earned their points, not just the sum.
+function userPointsBreakdown(userId: string): PointsBreakdown {
+  const entries = db.ledgerEntries.filter((l) => l.userId === userId && l.semesterId === db.semester.id);
+  let total = 0;
+  let attendanceCount = 0;
+  let attendancePoints = 0;
+  let bonusPoints = 0;
+  let penaltyPoints = 0;
+  for (const l of entries) {
+    total += l.amount;
+    if (l.type === "ATTENDANCE") {
+      attendanceCount += 1;
+      attendancePoints += l.amount;
+    } else if (l.type === "BONUS") {
+      bonusPoints += l.amount;
+    } else if (l.type === "PENALTY") {
+      penaltyPoints += l.amount;
+    }
+  }
+  return { total, attendanceCount, attendancePoints, bonusPoints, penaltyPoints };
+}
+
 function leaderboardRows(): LeaderboardEntry[] {
   const userId = getCurrentDemoUserId();
   const scored = db.users
     .filter((u) => u.status === "ACTIVE" || u.status === "PLEDGE")
-    .map((u) => ({ u, total: userTotalPoints(u.id) }))
-    .sort((a, b) => b.total - a.total);
-  return scored.map(({ u, total }, i) => ({
+    .map((u) => ({ u, breakdown: userPointsBreakdown(u.id) }))
+    .sort((a, b) => b.breakdown.total - a.breakdown.total);
+  return scored.map(({ u, breakdown }, i) => ({
     rank: i + 1,
     userId: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
     avatarUrl: u.avatarUrl ?? null,
-    total,
+    total: breakdown.total,
     isMe: u.id === userId,
+    attendanceCount: breakdown.attendanceCount,
+    attendancePoints: breakdown.attendancePoints,
+    bonusPoints: breakdown.bonusPoints,
+    penaltyPoints: breakdown.penaltyPoints,
   }));
 }
 
@@ -527,7 +620,11 @@ export function getMemberAttendanceHistory(userId: string): { records: Attendanc
 const activeCheckInTokens = new Map<string, { eventId: string; expiresAt: number }>();
 
 export function getCheckInToken(eventId: string): { token: string; expiresAt: number } {
-  if (!db.findEvent(eventId)) throw new DemoApiError(404, "Event not found");
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+  if (!canAccessCheckIn(getCurrentDemoUserId(), event)) {
+    throw new DemoApiError(403, "You don't have access to generate this event's check-in code");
+  }
   const token = `demo-checkin:${eventId}:${db.nextId("tok")}`;
   const expiresAt = Date.now() + 60_000;
   activeCheckInTokens.set(token, { eventId, expiresAt });
@@ -577,6 +674,38 @@ export function selfCheckIn(eventId: string, token: string): { attendance: Atten
   });
 
   return { attendance: toAttendanceRecord(attendance) };
+}
+
+// Who can ADD/REMOVE delegates for an event — deliberately narrower than
+// canAccessCheckIn (a delegate can generate the code but can't delegate
+// further; only the people who'd manage the event generally can).
+function canManageDelegates(userId: string, event: db.MockEvent): boolean {
+  if (isExecOrAbove(userId) || isScribeOrAdmin(userId)) return true;
+  return isOfficerOrAbove(userId) && !!event.committeeId && committeeChairOf(userId).includes(event.committeeId);
+}
+
+export function addEventDelegate(eventId: string, userId: string): EventDelegate[] {
+  const event = db.findEvent(eventId);
+  const user = db.findUser(userId);
+  if (!event || !user) throw new DemoApiError(404, "Event or user not found");
+  if (!canManageDelegates(getCurrentDemoUserId(), event)) {
+    throw new DemoApiError(403, "Only the event's organizer can assign check-in delegates");
+  }
+  if (!db.eventDelegates.some((d) => d.eventId === eventId && d.userId === userId)) {
+    db.eventDelegates.push({ eventId, userId });
+  }
+  return toEventDelegates(eventId);
+}
+
+export function removeEventDelegate(eventId: string, userId: string): EventDelegate[] {
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+  if (!canManageDelegates(getCurrentDemoUserId(), event)) {
+    throw new DemoApiError(403, "Only the event's organizer can remove check-in delegates");
+  }
+  const idx = db.eventDelegates.findIndex((d) => d.eventId === eventId && d.userId === userId);
+  if (idx >= 0) db.eventDelegates.splice(idx, 1);
+  return toEventDelegates(eventId);
 }
 
 // ── Committees ───────────────────────────────────────────────────────────
@@ -646,6 +775,80 @@ export function addCommitteeMember(
 export function removeCommitteeMember(committeeId: string, userId: string): void {
   const idx = db.committeeMemberships.findIndex((m) => m.committeeId === committeeId && m.userId === userId);
   if (idx >= 0) db.committeeMemberships.splice(idx, 1);
+}
+
+// ── Teams ────────────────────────────────────────────────────────────────
+// Gamification-only groupings (Feature 2) — NOT committees, no leaders. A
+// member belongs to at most one team at a time; team points are always
+// derived by summing current members' individual point totals, never
+// stored separately, so they can never drift from the individual
+// leaderboard (Feature 1).
+
+function toTeam(t: db.MockTeam): Team {
+  const memberUsers = db.users.filter((u) => u.teamId === t.id);
+  const members: TeamMemberSummary[] = memberUsers
+    .map((u) => ({
+      userId: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      avatarUrl: u.avatarUrl ?? null,
+      points: userTotalPoints(u.id),
+    }))
+    .sort((a, b) => b.points - a.points);
+  return {
+    id: t.id,
+    name: t.name,
+    color: t.color,
+    memberCount: members.length,
+    totalPoints: members.reduce((sum, m) => sum + m.points, 0),
+    members,
+  };
+}
+
+export function listTeams(): Team[] {
+  return db.teams.map(toTeam);
+}
+
+export function getTeam(id: string): Team {
+  const t = db.findTeam(id);
+  if (!t) throw new DemoApiError(404, "Team not found");
+  return toTeam(t);
+}
+
+export function getTeamLeaderboard(): { leaderboard: TeamLeaderboardEntry[]; semesterLabel: string | null } {
+  const userId = getCurrentDemoUserId();
+  const myTeamId = db.findUser(userId)?.teamId ?? null;
+  const ranked = db.teams
+    .map((t) => toTeam(t))
+    .sort((a, b) => b.totalPoints - a.totalPoints);
+  const leaderboard: TeamLeaderboardEntry[] = ranked.map((t, i) => ({
+    rank: i + 1,
+    teamId: t.id,
+    teamName: t.name,
+    color: t.color,
+    totalPoints: t.totalPoints,
+    memberCount: t.memberCount,
+    isMyTeam: t.id === myTeamId,
+  }));
+  return { leaderboard, semesterLabel: db.semester.label };
+}
+
+export function addTeamMember(teamId: string, userId: string): Team {
+  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  const team = db.findTeam(teamId);
+  const user = db.findUser(userId);
+  if (!team || !user) throw new DemoApiError(404, "Team or user not found");
+  user.teamId = teamId; // a member is on at most one team — this reassigns
+  return toTeam(team);
+}
+
+export function removeTeamMember(teamId: string, userId: string): Team {
+  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  const team = db.findTeam(teamId);
+  const user = db.findUser(userId);
+  if (!team || !user) throw new DemoApiError(404, "Team or user not found");
+  if (user.teamId === teamId) user.teamId = null;
+  return toTeam(team);
 }
 
 // ── Messaging ────────────────────────────────────────────────────────────
@@ -803,6 +1006,7 @@ function toDuesRecord(d: db.MockDuesRecord): DuesRecord {
     amountPaid: d.amountPaid,
     status: d.status,
     dueDate: d.dueDate ?? null,
+    plan: d.plan ?? null,
     semester: { id: db.semester.id, label: db.semester.label },
     payments: recordPayments.map(toPayment),
   };
@@ -880,6 +1084,42 @@ export function recordPayment(
   return { payment: toPayment(payment), duesRecord: toDuesRecord(record) };
 }
 
+// Self-service Pyli payment (Feature 4) — Pyli is the chapter's external
+// payment provider; this is intentionally NOT a real payment integration
+// (no SDK, no card entry, no webhook). It's a thin, honest stand-in: the
+// member picks Full or Monthly, the screen shows a brief "processing"
+// state, and the payment posts here exactly like an officer-recorded one
+// would, just self-initiated and with method="PYLI". No officer approval
+// needed — this mirrors a real Pyli checkout completing instantly from the
+// chapter's point of view.
+export function payDuesWithPyli(payload: {
+  semesterId: string;
+  amount: number;
+  plan: DuesPlan;
+}): { payment: Payment; duesRecord: DuesRecord } {
+  const userId = getCurrentDemoUserId();
+  if (payload.amount <= 0) throw new DemoApiError(400, "Enter an amount greater than zero");
+  const record = db.findDuesRecord(userId, payload.semesterId);
+  if (!record) throw new DemoApiError(404, "Dues record not found");
+  if (record.status === "WAIVED") throw new DemoApiError(400, "Dues have already been waived");
+
+  const payment: db.MockPayment = {
+    id: db.nextId("pay"),
+    duesRecordId: record.id,
+    amount: payload.amount,
+    method: "PYLI",
+    externalRef: `pyli_${db.nextId("txn")}`,
+    paidAt: new Date().toISOString(),
+    recordedById: null,
+  };
+  db.payments.push(payment);
+  record.amountPaid += payload.amount;
+  record.plan = payload.plan;
+  recalcDuesStatus(record);
+
+  return { payment: toPayment(payment), duesRecord: toDuesRecord(record) };
+}
+
 export function waiveDues(userId: string, semesterId: string, reason: string): DuesRecord {
   if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
   const record = db.findDuesRecord(userId, semesterId);
@@ -929,4 +1169,138 @@ export function sendDuesReminders(semesterId: string): {
     return { userId: u.id, firstName: u.firstName, email: u.email, status: d.status };
   });
   return { sent: members.length, members };
+}
+
+// ── Committee Budgets & Reimbursements ──────────────────────────────────
+// Tracking only (Feature 5) — see types/index.ts CommitteeBudget/Expense
+// doc comments for the "no real money moves" note. `spent`/`pending` are
+// always derived from expense status, never stored, so they can't drift.
+
+function toCommitteeBudget(committeeId: string): CommitteeBudget {
+  const committee = db.committees.find((c) => c.id === committeeId);
+  const budget = db.findCommitteeBudget(committeeId, db.semester.id);
+  const committeeExpenses = db.expenses.filter((e) => e.committeeId === committeeId);
+  const spent = committeeExpenses.filter((e) => e.status === "REIMBURSED").reduce((s, e) => s + e.amount, 0);
+  const pending = committeeExpenses
+    .filter((e) => e.status === "SUBMITTED" || e.status === "APPROVED")
+    .reduce((s, e) => s + e.amount, 0);
+  const allocated = budget?.allocated ?? 0;
+  return {
+    committeeId,
+    committeeName: committee?.name ?? "",
+    semesterId: db.semester.id,
+    allocated,
+    spent,
+    pending,
+    remaining: allocated - spent - pending,
+  };
+}
+
+export function listCommitteeBudgets(): CommitteeBudget[] {
+  if (!isTreasurerOrAdmin(getCurrentDemoUserId())) throw new DemoApiError(403, "Treasurer required");
+  return db.committees.map((c) => toCommitteeBudget(c.id));
+}
+
+// Broader read access than listCommitteeBudgets — a committee chair needs
+// to see their own remaining budget before submitting an expense.
+export function getCommitteeBudget(committeeId: string): CommitteeBudget {
+  const userId = getCurrentDemoUserId();
+  if (!isTreasurerOrAdmin(userId) && !isExecOrAbove(userId) && !committeeChairOf(userId).includes(committeeId)) {
+    throw new DemoApiError(403, "Not authorized to view this committee's budget");
+  }
+  if (!db.committees.some((c) => c.id === committeeId)) throw new DemoApiError(404, "Committee not found");
+  return toCommitteeBudget(committeeId);
+}
+
+export function setCommitteeBudget(committeeId: string, payload: { allocated: number }): CommitteeBudget {
+  if (!isTreasurerOrAdmin(getCurrentDemoUserId())) throw new DemoApiError(403, "Treasurer required");
+  if (!db.committees.some((c) => c.id === committeeId)) throw new DemoApiError(404, "Committee not found");
+  const existing = db.findCommitteeBudget(committeeId, db.semester.id);
+  if (existing) existing.allocated = payload.allocated;
+  else db.committeeBudgets.push({ committeeId, semesterId: db.semester.id, allocated: payload.allocated });
+  return toCommitteeBudget(committeeId);
+}
+
+function toExpense(e: db.MockExpense): Expense {
+  const committee = db.committees.find((c) => c.id === e.committeeId);
+  const submittedBy = db.findUser(e.submittedById)!;
+  const reviewedBy = e.reviewedById ? db.findUser(e.reviewedById) : null;
+  return {
+    id: e.id,
+    committeeId: e.committeeId,
+    committeeName: committee?.name ?? "",
+    submittedBy: { id: submittedBy.id, firstName: submittedBy.firstName, lastName: submittedBy.lastName },
+    amount: e.amount,
+    description: e.description,
+    date: e.date,
+    receiptLabel: e.receiptLabel ?? null,
+    status: e.status,
+    reimbursementMethod: e.reimbursementMethod ?? null,
+    reimbursementNote: e.reimbursementNote ?? null,
+    reviewedBy: reviewedBy ? { firstName: reviewedBy.firstName, lastName: reviewedBy.lastName } : null,
+    createdAt: e.createdAt,
+  };
+}
+
+export function listExpenses(params: { committeeId?: string; status?: string }): Expense[] {
+  const userId = getCurrentDemoUserId();
+  let list = db.expenses.slice();
+  if (params.committeeId) list = list.filter((e) => e.committeeId === params.committeeId);
+  if (params.status) list = list.filter((e) => e.status === params.status);
+
+  // Treasurer/Exec see every committee's expenses; a committee chair sees
+  // only their own committee's — same "own scope only" pattern as
+  // canManageEvent for non-Exec officers.
+  if (!isTreasurerOrAdmin(userId) && !isExecOrAbove(userId)) {
+    const chairOf = new Set(committeeChairOf(userId));
+    list = list.filter((e) => chairOf.has(e.committeeId));
+  }
+
+  return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(toExpense);
+}
+
+export function submitExpense(payload: {
+  committeeId: string;
+  amount: number;
+  description: string;
+  date: string;
+  receiptLabel?: string;
+}): Expense {
+  const userId = getCurrentDemoUserId();
+  if (!isExecOrAbove(userId) && !committeeChairOf(userId).includes(payload.committeeId)) {
+    throw new DemoApiError(403, "Only this committee's chair can submit an expense against its budget");
+  }
+  if (!db.committees.some((c) => c.id === payload.committeeId)) throw new DemoApiError(404, "Committee not found");
+  if (payload.amount <= 0) throw new DemoApiError(400, "Amount must be greater than zero");
+  if (!payload.description.trim()) throw new DemoApiError(400, "Description is required");
+
+  const expense: db.MockExpense = {
+    id: db.nextId("exp"),
+    committeeId: payload.committeeId,
+    submittedById: userId,
+    amount: payload.amount,
+    description: payload.description.trim(),
+    date: payload.date,
+    receiptLabel: payload.receiptLabel ?? null,
+    status: "SUBMITTED",
+    createdAt: new Date().toISOString(),
+  };
+  db.expenses.push(expense);
+  return toExpense(expense);
+}
+
+export function updateExpenseStatus(
+  expenseId: string,
+  payload: { status: ReimbursementStatus; reimbursementMethod?: PaymentMethod; reimbursementNote?: string }
+): Expense {
+  if (!isTreasurerOrAdmin(getCurrentDemoUserId())) throw new DemoApiError(403, "Treasurer required");
+  const expense = db.findExpense(expenseId);
+  if (!expense) throw new DemoApiError(404, "Expense not found");
+
+  expense.status = payload.status;
+  if (payload.reimbursementMethod) expense.reimbursementMethod = payload.reimbursementMethod;
+  if (payload.reimbursementNote !== undefined) expense.reimbursementNote = payload.reimbursementNote;
+  expense.reviewedById = getCurrentDemoUserId();
+
+  return toExpense(expense);
 }

@@ -26,7 +26,18 @@ export type CommitteeRole = "MEMBER" | "CHAIR";
 export type ChannelType = "GENERAL" | "COMMITTEE" | "OFFICERS" | "DM";
 export type ChannelMemberRole = "MEMBER" | "ADMIN";
 export type DuesStatus = "PAID" | "PARTIAL" | "UNPAID" | "WAIVED";
-export type PaymentMethod = "STRIPE" | "CASH" | "VENMO" | "CHECK" | "OTHER";
+export type PaymentMethod = "STRIPE" | "PYLI" | "CASH" | "VENMO" | "CHECK" | "OTHER";
+export type DuesPlan = "FULL" | "MONTHLY";
+
+// Named exec-board positions — distinct from the coarse-grained UserRole
+// tier (MEMBER/OFFICER/EXEC/SUPER_ADMIN) used for broad permission checks.
+// A title holder is typically also role=EXEC, but the title itself is what
+// gates the specific admin surfaces named after it (see usePermissions.ts).
+// No backing schema.prisma field exists yet — see docs/DEMO_MODE.md and the
+// PR notes for what production would need.
+export type OfficerTitle = "REGENT" | "VICE_REGENT" | "SCRIBE" | "TREASURER";
+
+export type ReimbursementStatus = "SUBMITTED" | "APPROVED" | "REIMBURSED" | "REJECTED";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Core entities
@@ -40,10 +51,13 @@ export interface User {
   phone?: string | null;
   avatarUrl?: string | null;
   role: UserRole;
+  title?: OfficerTitle | null;
   status: MemberStatus;
   pledgeClassLabel?: string | null;
   committeeChairOf: string[];
   committeeMemberships?: CommitteeMembershipSummary[];
+  teamId?: string | null;
+  teamName?: string | null;
 }
 
 export interface UserSummary {
@@ -53,6 +67,7 @@ export interface UserSummary {
   email: string;
   avatarUrl?: string | null;
   role: UserRole;
+  title?: OfficerTitle | null;
   status: MemberStatus;
   pledgeClassLabel?: string | null;
 }
@@ -118,6 +133,16 @@ export interface EventDetail extends EventSummary {
   checkInWindowStart?: string | null;
   checkInWindowEnd?: string | null;
   checkedInCount: number;
+  // Members delegated by the event creator/committee chair to generate this
+  // event's check-in code without needing general attendance-management
+  // access (see Feature 3 — event-scoped delegation).
+  attendanceDelegates: EventDelegate[];
+}
+
+export interface EventDelegate {
+  userId: string;
+  firstName: string;
+  lastName: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -168,12 +193,50 @@ export interface LeaderboardEntry {
   avatarUrl?: string | null;
   total: number;
   isMe: boolean;
+  // Breakdown — additive, computed from the same ledger that produces
+  // `total`. attendanceCount is events checked into (ATTENDANCE-type ledger
+  // rows), not a separate counter.
+  attendanceCount: number;
+  attendancePoints: number;
+  bonusPoints: number;
+  penaltyPoints: number;
 }
 
 export interface PointsSummary {
   total: number;
   rank: number | null;
   semesterLabel: string | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Teams (gamification — NOT committees, no leaders, one team per member)
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface TeamMemberSummary {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string | null;
+  points: number;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  color?: string | null;
+  memberCount: number;
+  totalPoints: number;
+  members: TeamMemberSummary[];
+}
+
+export interface TeamLeaderboardEntry {
+  rank: number;
+  teamId: string;
+  teamName: string;
+  color?: string | null;
+  totalPoints: number;
+  memberCount: number;
+  isMyTeam: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -188,6 +251,10 @@ export interface DuesRecord {
   amountPaid: number;
   status: DuesStatus;
   dueDate?: string | null;
+  // Payment plan the member selected when paying via Pyli. Null until they
+  // pick one — officer-recorded manual payments (cash/check/etc.) don't set
+  // a plan since those are typically one-off.
+  plan?: DuesPlan | null;
   semester: { id: string; label: string };
   payments?: Payment[];
 }
@@ -198,6 +265,44 @@ export interface Payment {
   method: PaymentMethod;
   externalRef?: string | null;
   paidAt: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Committee Budgets & Reimbursements
+//
+// Tracking only — actual money movement (paying a committee head back)
+// happens outside the app. The Treasurer assigns each committee a budget
+// for the semester; committee chairs submit expenses against it; the
+// Treasurer reviews and records reimbursement status/method.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface CommitteeBudget {
+  committeeId: string;
+  committeeName: string;
+  semesterId: string;
+  allocated: number;
+  spent: number; // sum of REIMBURSED expenses
+  pending: number; // sum of SUBMITTED + APPROVED expenses, not yet paid out
+  remaining: number; // allocated - spent - pending
+}
+
+export interface Expense {
+  id: string;
+  committeeId: string;
+  committeeName: string;
+  submittedBy: { id: string; firstName: string; lastName: string };
+  amount: number;
+  description: string;
+  date: string;
+  // Demo mode stores only a placeholder label (e.g. "receipt_1.jpg") — no
+  // real file upload/storage. A production build would need real object
+  // storage (S3/GCS) and a signed-URL upload flow.
+  receiptLabel?: string | null;
+  status: ReimbursementStatus;
+  reimbursementMethod?: PaymentMethod | null;
+  reimbursementNote?: string | null;
+  reviewedBy?: { firstName: string; lastName: string } | null;
+  createdAt: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

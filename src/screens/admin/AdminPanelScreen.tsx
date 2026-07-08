@@ -5,13 +5,26 @@
 // (active members, dues collection, semester points) and provides action
 // shortcuts for the most common admin tasks.
 //
+// Named exec-board titles (Feature 1–5): each section below is labeled with
+// the role that "owns" it in the product spec — Vice Regent (points),
+// Scribe (attendance), Treasurer (dues + the new Finance section). This is
+// intentionally additive, not exclusive: any Exec+ member can still see and
+// use these sections (unchanged from before this feature set), the title
+// holder is just called out so it's clear who's meant to drive it day to
+// day. The Finance section is the one exception — it's brand new, so it's
+// gated to Treasurer/SuperAdmin outright (isTreasurerOrAdmin) since there's
+// no prior behavior to preserve there.
+//
 // Integration:
 //   - getRoster          → api/users.ts (member count)
 //   - getAllDues          → api/dues.ts (collection summary) — Exec+ only
 //   - getLeaderboard     → api/users.ts (points summary)
-//   - usePermissions     → isExecOrAbove gates dues card + initialize dues
+//   - listCommitteeBudgets → api/finance.ts (Finance section preview) — Treasurer+ only
+//   - usePermissions     → isExecOrAbove gates dues card + initialize dues;
+//                          isTreasurerOrAdmin gates the Finance section
 //   - navigation         → RosterDetail, DuesDetail, PointsAdjust, AuditLog,
-//                          CommitteeDetail (via committee list), EventsFeed
+//                          CommitteeDetail (via committee list), EventsFeed,
+//                          CommitteeBudgets, Expenses
 //   - types/index.ts: DuesStatus
 //   - colors.ts
 
@@ -34,6 +47,8 @@ import { usePermissions } from "../../hooks/usePermissions";
 import { getRoster, getLeaderboard } from "../../api/users";
 import { getAllDues, sendDuesReminders } from "../../api/dues";
 import { listCommittees } from "../../api/committees";
+import { listCommitteeBudgets } from "../../api/finance";
+import { formatCurrency } from "../../types";
 import type { AppStackParamList } from "../../navigation/types";
 import type { Committee } from "../../types";
 
@@ -118,11 +133,13 @@ interface AdminStats {
   currentSemesterId: string | null;
   topPoints: number;
   committees: Committee[];
+  financeRemaining: number;
+  financePending: number;
 }
 
 export default function AdminPanelScreen() {
   const navigation = useNavigation<NavProp>();
-  const { isExecOrAbove } = usePermissions();
+  const { isExecOrAbove, isTreasurerOrAdmin } = usePermissions();
 
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -161,6 +178,20 @@ export default function AdminPanelScreen() {
         } catch { /**/ }
       }
 
+      let financeRemaining = 0;
+      let financePending = 0;
+
+      // Finance summary (Feature 5) — Treasurer/SuperAdmin only
+      if (isTreasurerOrAdmin) {
+        try {
+          const budgets = await listCommitteeBudgets();
+          for (const b of budgets) {
+            financeRemaining += b.remaining;
+            if (b.pending > 0) financePending += 1;
+          }
+        } catch { /**/ }
+      }
+
       const top = boardResult.leaderboard[0];
 
       setStats({
@@ -174,6 +205,8 @@ export default function AdminPanelScreen() {
         currentSemesterId,
         topPoints: top?.total ?? 0,
         committees: committeeList,
+        financeRemaining,
+        financePending,
       });
     } catch {
       // Partial failure is OK — show what's available
@@ -181,7 +214,7 @@ export default function AdminPanelScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isExecOrAbove]);
+  }, [isExecOrAbove, isTreasurerOrAdmin]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -282,7 +315,7 @@ export default function AdminPanelScreen() {
         <ActionRow
           icon="◷"
           label="All Events"
-          sub="Create or manage chapter events"
+          sub="Create or manage chapter events — attendance is tracked by the Scribe"
           onPress={() => navigation.navigate("Tabs", { screen: "EventsFeed" })}
         />
       </View>
@@ -300,7 +333,7 @@ export default function AdminPanelScreen() {
           <ActionRow
             icon="⭐"
             label="Adjust Points"
-            sub="Find a member on the roster, then adjust from their profile"
+            sub="Vice Regent oversight — find a member on the roster, then adjust from their profile"
             onPress={() => navigation.navigate("RosterDetail")}
           />
         )}
@@ -314,17 +347,17 @@ export default function AdminPanelScreen() {
         )}
       </View>
 
-      {/* Dues — Exec+ only */}
+      {/* Dues — Exec+ only, Treasurer-owned */}
       {isExecOrAbove && (
         <>
-          <SectionHeader title="Dues" />
+          <SectionHeader title="Dues — Treasurer" />
           <View style={styles.actionGroup}>
             <ActionRow
               icon="💰"
               label="Dues Overview"
               sub={
                 stats
-                  ? `$${stats.duesAmountPaid.toFixed(0)} / $${stats.duesAmountOwed.toFixed(0)} collected`
+                  ? `$${stats.duesAmountPaid.toFixed(0)} / $${stats.duesAmountOwed.toFixed(0)} collected via Pyli`
                   : "View all dues records"
               }
               onPress={() => navigation.navigate("DuesDetail", { userId: "", userName: "" })}
@@ -334,6 +367,32 @@ export default function AdminPanelScreen() {
               label="Send Reminders"
               sub="Email UNPAID and PARTIAL members"
               onPress={handleSendReminders}
+            />
+          </View>
+        </>
+      )}
+
+      {/* Finance — Treasurer/SuperAdmin only (Feature 5, brand new — no
+          prior broader access to preserve) */}
+      {isTreasurerOrAdmin && (
+        <>
+          <SectionHeader title="Finance — Treasurer" />
+          <View style={styles.actionGroup}>
+            <ActionRow
+              icon="🏦"
+              label="Committee Budgets"
+              sub={stats ? `${formatCurrency(stats.financeRemaining)} remaining across all committees` : "Allocate and track committee spending"}
+              onPress={() => navigation.navigate("CommitteeBudgets")}
+            />
+            <ActionRow
+              icon="🧾"
+              label="Expense Reimbursements"
+              sub={
+                stats && stats.financePending > 0
+                  ? `${stats.financePending} committee${stats.financePending === 1 ? "" : "s"} with pending expenses`
+                  : "Review submitted expenses and settle reimbursements"
+              }
+              onPress={() => navigation.navigate("Expenses")}
             />
           </View>
         </>

@@ -1,11 +1,24 @@
 // src/api/dues.ts
 
 import { apiClient } from "./client";
-import type { DuesRecord, Payment } from "../types";
+import type { DuesRecord, Payment, DuesPlan } from "../types";
 
 export async function getMyDues(): Promise<DuesRecord[]> {
   const { data } = await apiClient.get<{ records: DuesRecord[] }>("/dues/me");
   return data.records;
+}
+
+// Self-service payment via Pyli, the chapter's external payment provider
+// (Feature 4). Not a real payment integration — see docs/DEMO_MODE.md and
+// src/mocks/api.ts's payDuesWithPyli for what this stands in for. Any
+// member can pay their own dues this way; no officer approval needed.
+export async function payDuesWithPyli(payload: {
+  semesterId: string;
+  amount: number;
+  plan: DuesPlan;
+}): Promise<{ payment: Payment; duesRecord: DuesRecord }> {
+  const { data } = await apiClient.post("/dues/pay-pyli", payload);
+  return data;
 }
 
 export async function getAllDues(params?: {

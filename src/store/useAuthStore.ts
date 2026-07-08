@@ -4,12 +4,19 @@ import { create } from "zustand";
 
 export type AppUserRole = "MEMBER" | "OFFICER" | "EXEC" | "SUPER_ADMIN";
 
+// Named exec-board position — separate from the coarse-grained role tier
+// above. Gates the specific admin surfaces named after it (points/
+// attendance/dues+budgets) in usePermissions.ts.
+export type AppOfficerTitle = "REGENT" | "VICE_REGENT" | "SCRIBE" | "TREASURER";
+
 export interface AppUser {
   id: string;
   firstName: string;
   lastName: string;
   role: AppUserRole;
+  title?: AppOfficerTitle | null;
   committeeChairOf: string[]; // committee IDs this user chairs, for scoped officer checks
+  teamId?: string | null; // gamification team — not a committee, no leader
 }
 
 interface AuthState {

@@ -5,6 +5,12 @@
 // Officer+ AND only when this user is scoped to this event's committee),
 // and the RSVP vs. Attendance distinction called out in the product spec
 // (RSVPing never implies points — only a confirmed check-in does).
+//
+// Feature 3 (event-scoped attendance-code delegation): the event's
+// organizer (creator/committee chair/Exec/Scribe) sees full "Manage"
+// tools, including assigning delegates who can generate the check-in code
+// for THIS event only, without general attendance-management access. A
+// delegate who isn't otherwise an organizer sees just the check-in button.
 
 import React, { useEffect, useState, useCallback } from "react";
 import {
@@ -14,12 +20,21 @@ import {
   Pressable,
   StyleSheet,
   ActivityIndicator,
+  Alert,
+  Modal,
+  TextInput,
+  FlatList,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { usePermissions } from "../hooks/usePermissions";
 import { useAuthStore } from "../store/useAuthStore";
-import { getEvent, setRsvp, type EventDetail, type RsvpStatus } from "../api/events";
+import {
+  getEvent, setRsvp, addEventDelegate, removeEventDelegate,
+  type EventDetail, type RsvpStatus, type EventDelegate,
+} from "../api/events";
+import { getRoster } from "../api/users";
+import type { UserSummary } from "../types";
 
 const CATEGORY_COLOR: Record<string, string> = {
   BROTHERHOOD: colors.categoryBrotherhood,
@@ -35,18 +50,117 @@ const RSVP_OPTIONS: { label: string; value: RsvpStatus }[] = [
   { label: "Not going", value: "NOT_GOING" },
 ];
 
+function DelegateModal({
+  visible, onClose, onAdd, existingIds,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onAdd: (userId: string) => Promise<void>;
+  existingIds: Set<string>;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<UserSummary[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [addingId, setAddingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!visible) { setQuery(""); setResults([]); }
+  }, [visible]);
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); return; }
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const { users } = await getRoster({ q: query, status: "ACTIVE", limit: 10 });
+        setResults(users.filter((u) => !existingIds.has(u.id)));
+      } catch { /**/ }
+      finally { setLoading(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, existingIds]);
+
+  async function handleAdd(userId: string) {
+    setAddingId(userId);
+    try {
+      await onAdd(userId);
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "Could not assign delegate");
+    } finally {
+      setAddingId(null);
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={styles.modalContainer}>
+        <View style={styles.modalHeader}>
+          <Pressable onPress={onClose}>
+            <Text style={styles.modalCancel}>Cancel</Text>
+          </Pressable>
+          <Text style={styles.modalTitle}>Assign Check-In Delegate</Text>
+          <View style={{ width: 50 }} />
+        </View>
+        <Text style={styles.modalHint}>
+          A delegate can generate this event's check-in code without needing general attendance-management access.
+        </Text>
+
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by name…"
+          placeholderTextColor={colors.textMuted}
+          value={query}
+          onChangeText={setQuery}
+          autoFocus
+        />
+
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 24 }} color={colors.accent} />
+        ) : (
+          <FlatList
+            data={results}
+            keyExtractor={(u) => u.id}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.resultRow}
+                onPress={() => handleAdd(item.id)}
+                disabled={addingId === item.id}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.resultName}>{item.firstName} {item.lastName}</Text>
+                  <Text style={styles.resultMeta}>{item.email}</Text>
+                </View>
+                {addingId === item.id && <ActivityIndicator color={colors.accent} />}
+              </Pressable>
+            )}
+            ListEmptyComponent={
+              query.length >= 2 ? (
+                <Text style={styles.emptyText}>No results</Text>
+              ) : (
+                <Text style={styles.emptyText}>Type to search members…</Text>
+              )
+            }
+          />
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 export default function EventDetailScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { eventId } = route.params as { eventId: string };
 
   const currentUser = useAuthStore((s) => s.user);
-  const { canManageEvent } = usePermissions();
+  const { canManageEvent, canGenerateCheckIn } = usePermissions();
 
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [rsvpSaving, setRsvpSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [delegateModalVisible, setDelegateModalVisible] = useState(false);
 
   const loadEvent = useCallback(async () => {
     try {
@@ -79,6 +193,35 @@ export default function EventDetailScreen() {
     }
   };
 
+  async function handleAddDelegate(userId: string) {
+    if (!event) return;
+    const delegates = await addEventDelegate(event.id, userId);
+    setEvent({ ...event, attendanceDelegates: delegates });
+  }
+
+  function confirmRemoveDelegate(delegate: EventDelegate) {
+    if (!event) return;
+    Alert.alert(
+      "Remove Delegate",
+      `Remove ${delegate.firstName} ${delegate.lastName} as a check-in delegate for this event?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const delegates = await removeEventDelegate(event.id, delegate.userId);
+              setEvent({ ...event, attendanceDelegates: delegates });
+            } catch {
+              Alert.alert("Error", "Could not remove delegate");
+            }
+          },
+        },
+      ]
+    );
+  }
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -95,8 +238,10 @@ export default function EventDetailScreen() {
     );
   }
 
-  const isOfficerForThisEvent = canManageEvent(event);
+  const canManage = canManageEvent(event); // full organizer tools: attendance override + delegate assignment
+  const canCheckIn = canGenerateCheckIn(event); // organizer OR a delegate — just the check-in button
   const isPastEvent = new Date(event.endTime) < new Date();
+  const existingDelegateIds = new Set(event.attendanceDelegates.map((d) => d.userId));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -170,8 +315,9 @@ export default function EventDetailScreen() {
         </View>
       )}
 
-      {/* Officer / Exec tools — scoped to this event's committee, server-enforced regardless */}
-      {isOfficerForThisEvent && (
+      {/* Organizer tools — event creator/chair/Exec/Scribe. Scoped to this
+          event's committee for officers, server-enforced regardless. */}
+      {canManage && (
         <View style={styles.officerSection}>
           <Text style={styles.sectionLabel}>Manage</Text>
           <Pressable
@@ -186,6 +332,44 @@ export default function EventDetailScreen() {
           >
             <Text style={styles.secondaryButtonText}>Manage attendance →</Text>
           </Pressable>
+
+          {/* Check-in delegation (Feature 3) */}
+          <View style={styles.delegateBlock}>
+            <Text style={styles.delegateLabel}>Check-in delegates</Text>
+            <Text style={styles.delegateHint}>
+              Can't be there yourself? Delegate check-in-code generation to another member for this event only.
+            </Text>
+            {event.attendanceDelegates.length > 0 && (
+              <View style={styles.delegateChipRow}>
+                {event.attendanceDelegates.map((d) => (
+                  <Pressable
+                    key={d.userId}
+                    style={styles.delegateChip}
+                    onPress={() => confirmRemoveDelegate(d)}
+                  >
+                    <Text style={styles.delegateChipText}>{d.firstName} {d.lastName} ✕</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            <Pressable style={styles.delegateAddBtn} onPress={() => setDelegateModalVisible(true)}>
+              <Text style={styles.delegateAddBtnText}>+ Assign delegate</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Delegate-only check-in access — assigned to this event but not
+          otherwise an organizer, so no attendance-management tools. */}
+      {!canManage && canCheckIn && (
+        <View style={styles.officerSection}>
+          <Text style={styles.sectionLabel}>You're a check-in delegate for this event</Text>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() => navigation.navigate("CheckIn", { eventId: event.id, mode: "officer" })}
+          >
+            <Text style={styles.primaryButtonText}>Open Check-In ({event.checkedInCount} checked in)</Text>
+          </Pressable>
         </View>
       )}
 
@@ -194,8 +378,8 @@ export default function EventDetailScreen() {
             · the member hasn't already checked in
             · the check-in window is open (or no window is set)
           The server enforces all of these; we just surface the button.
-          Only non-officers see this — officers use the Manage section above. */}
-      {!isPastEvent && !event.myAttendance && !isOfficerForThisEvent && (
+          Only non-organizers/non-delegates see this. */}
+      {!isPastEvent && !event.myAttendance && !canCheckIn && (
         <View style={styles.officerSection}>
           <Pressable
             style={styles.primaryButton}
@@ -205,6 +389,13 @@ export default function EventDetailScreen() {
           </Pressable>
         </View>
       )}
+
+      <DelegateModal
+        visible={delegateModalVisible}
+        onClose={() => setDelegateModalVisible(false)}
+        onAdd={handleAddDelegate}
+        existingIds={existingDelegateIds}
+      />
     </ScrollView>
   );
 }
@@ -268,4 +459,26 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: colors.primaryText, fontSize: 15, fontWeight: "700" },
   secondaryButton: { paddingVertical: 8, alignItems: "center" },
   secondaryButtonText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
+
+  // Delegate block
+  delegateBlock: { marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border },
+  delegateLabel: { fontSize: 13, fontWeight: "700", color: colors.textPrimary, marginBottom: 4 },
+  delegateHint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginBottom: 10 },
+  delegateChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
+  delegateChip: { backgroundColor: colors.accent + "22", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.accent + "55" },
+  delegateChipText: { fontSize: 12, fontWeight: "600", color: colors.textPrimary },
+  delegateAddBtn: { alignSelf: "flex-start" },
+  delegateAddBtnText: { color: colors.primary, fontSize: 13, fontWeight: "700" },
+
+  // Delegate modal
+  modalContainer: { flex: 1, backgroundColor: colors.background, padding: 16 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12, paddingTop: 8 },
+  modalTitle: { fontSize: 17, fontWeight: "700", color: colors.textPrimary },
+  modalCancel: { color: colors.textMuted, fontSize: 16 },
+  modalHint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginBottom: 16 },
+  searchInput: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, color: colors.textPrimary, fontSize: 15, marginBottom: 12 },
+  resultRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border },
+  resultName: { color: colors.textPrimary, fontWeight: "500", fontSize: 15 },
+  resultMeta: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
+  emptyText: { color: colors.textMuted, textAlign: "center", padding: 20, fontSize: 14 },
 });

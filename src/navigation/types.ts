@@ -52,6 +52,14 @@ export type AppStackParamList = {
 
   // Dues management
   DuesDetail: { userId: string; userName: string };
+
+  // Teams (Feature 2)
+  TeamDetail: { teamId: string };
+
+  // Committee budgets & reimbursements (Feature 5)
+  SubmitExpense: { committeeId: string; committeeName: string };
+  Expenses: undefined;
+  CommitteeBudgets: undefined;
 };
 
 export type RootStackParamList = {

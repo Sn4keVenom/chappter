@@ -192,7 +192,8 @@ export default function AttendanceOverrideScreen() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { eventId } = route.params;
-  const { isOfficerOrAbove } = usePermissions();
+  const { isOfficerOrAbove, isScribeOrAdmin } = usePermissions();
+  const canManage = isOfficerOrAbove || isScribeOrAdmin;
 
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [eventInfo, setEventInfo] = useState<{ title: string; pointValue: number } | null>(null);
@@ -220,10 +221,11 @@ export default function AttendanceOverrideScreen() {
   useEffect(() => { load(); }, [load]);
 
   // Guard — should never be reachable if AppNavigator gates it, but defensive.
-  if (!isOfficerOrAbove) {
+  // Officer+ (existing) or Scribe (Feature 3 — attendance is the Scribe's job).
+  if (!canManage) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.permError}>Officer access required</Text>
+        <Text style={styles.permError}>Officer or Scribe access required</Text>
       </View>
     );
   }
