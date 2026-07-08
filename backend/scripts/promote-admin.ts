@@ -1,4 +1,4 @@
-// scripts/promote-admin.ts
+// backend/scripts/promote-admin.ts
 //
 // Promotes a user to SUPER_ADMIN by email address.
 //
@@ -6,11 +6,7 @@
 //
 // Run from the BACKEND directory:
 //   cd backend
-//   DATABASE_URL="..." npx ts-node ../scripts/promote-admin.ts user@example.com
-//
-// Or using the backend's own dotenv:
-//   cd backend
-//   npx ts-node -e "require('dotenv').config(); require('../scripts/promote-admin')"
+//   DATABASE_URL="..." npx tsx scripts/promote-admin.ts user@example.com
 //
 // The user must have logged in at least once (POST /auth/sync creates the row).
 
@@ -22,7 +18,7 @@ async function main() {
   const email = process.argv[2];
 
   if (!email) {
-    console.error("Usage: cd backend && npx ts-node ../scripts/promote-admin.ts <email>");
+    console.error("Usage: cd backend && npx tsx scripts/promote-admin.ts <email>");
     process.exit(1);
   }
 

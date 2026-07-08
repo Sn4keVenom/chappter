@@ -30,7 +30,7 @@ function getStripe(): Stripe {
         "STRIPE_SECRET_KEY is not set. Add it to .env to enable Stripe webhooks."
       );
     }
-    _stripe = new Stripe(key, { apiVersion: "2024-06-20" });
+    _stripe = new Stripe(key, { apiVersion: "2026-06-24.dahlia" });
   }
   return _stripe;
 }

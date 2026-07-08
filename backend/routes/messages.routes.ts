@@ -73,7 +73,7 @@ router.get("/channels", async (req: AuthedRequest, res: Response) => {
           ? [{ type: "COMMITTEE" as const }, { type: "DM" as const }]
           : [
               {
-                type: { in: ["COMMITTEE", "DM"] as const[] },
+                type: { in: ["COMMITTEE", "DM"] as Array<"COMMITTEE" | "DM"> },
                 members: { some: { userId: req.user!.id } },
               },
             ]),

@@ -17,11 +17,9 @@
 // The DB-lookup + req.user attachment section stays identical.
 
 import { Response, NextFunction } from "express";
-import { createClerkClient } from "@clerk/backend";
+import { verifyToken } from "@clerk/backend";
 import { prisma } from "../lib/prisma";
 import { AuthedRequest } from "./rbac";
-
-const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
 export async function authMiddleware(
   req: AuthedRequest,
@@ -36,7 +34,9 @@ export async function authMiddleware(
   const token = header.slice(7);
 
   try {
-    const payload = await clerk.verifyToken(token);
+    const payload = await verifyToken(token, {
+      secretKey: process.env.CLERK_SECRET_KEY!,
+    });
     const authProviderId = payload.sub; // Clerk user ID (e.g. "user_2abc...")
 
     const user = await prisma.user.findUnique({

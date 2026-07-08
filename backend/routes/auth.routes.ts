@@ -17,11 +17,10 @@
 // can't use the normal authMiddleware (user row may not exist yet).
 
 import { Router, Request, Response } from "express";
-import { createClerkClient } from "@clerk/backend";
+import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 
-const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 const router = Router();
 
 const syncSchema = z.object({
@@ -47,7 +46,9 @@ router.post("/auth/sync", async (req: Request, res: Response) => {
 
   let authProviderId: string;
   try {
-    const payload = await clerk.verifyToken(header.slice(7));
+    const payload = await verifyToken(header.slice(7), {
+      secretKey: process.env.CLERK_SECRET_KEY!,
+    });
     authProviderId = payload.sub;
   } catch {
     return res.status(401).json({ error: "Invalid token" });

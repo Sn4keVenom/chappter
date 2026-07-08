@@ -6,6 +6,6 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.d.ts", "expo-env.d.ts"],
+  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx", ".expo/types/**/*.d.ts", "expo-env.d.ts"],
   "exclude": ["node_modules", "backend"]
 }

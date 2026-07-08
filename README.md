@@ -27,19 +27,19 @@ See [BUILD.md](BUILD.md) for complete setup instructions.
 
 | Layer | Technology |
 |---|---|
-| Mobile | Expo SDK 51 · React Native 0.74 · TypeScript |
+| Mobile | Expo SDK 57 · React Native 0.86 · React 19.2 · TypeScript 6 |
 | Auth | Clerk (Google OAuth via SSO) |
-| State | Zustand |
-| Navigation | React Navigation v6 |
-| Backend | Node.js 20 · Express · TypeScript |
-| ORM | Prisma 5 |
+| State | Zustand 5 |
+| Navigation | React Navigation v7 |
+| Backend | Node.js 20+ · Express 4 · TypeScript 6 |
+| ORM | Prisma 6 |
 | Database | PostgreSQL 16 |
 | Payments | Stripe (optional) |
 
 ## Project Structure
 
 ```
-chapterhub/           ← repository root = Expo mobile app
+chapterhub/           ← repository root = Expo mobile app (phone only — no web/Electron)
 ├── App.tsx           ← entry point
 ├── src/              ← all mobile source
 │   ├── api/          ← HTTP client modules
@@ -49,11 +49,12 @@ chapterhub/           ← repository root = Expo mobile app
 │   ├── hooks/        ← custom hooks
 │   ├── theme/        ← colors palette
 │   └── types/        ← TypeScript types
-├── backend/          ← Express API server
+├── backend/          ← Express API server (separate npm package)
 │   ├── routes/       ← route handlers
 │   ├── middleware/   ← auth + RBAC
-│   └── lib/          ← shared utilities
-├── prisma/           ← database schema + seed
+│   ├── lib/          ← shared utilities
+│   ├── prisma/       ← database schema, seed, migrations
+│   └── scripts/      ← one-off admin scripts
 └── assets/           ← app icons + splash
 ```
 

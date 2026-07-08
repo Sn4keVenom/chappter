@@ -5,6 +5,100 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.0.1] — 2026-07-07 — Dependency Repair & Release Hardening
+
+Full audit of every config file, dependency version, and import path. The
+project now installs and runs cleanly on a fresh clone. See
+[FINAL-VALIDATION.md](FINAL-VALIDATION.md) for the full verification report.
+
+### Changed — Dependency baseline
+- Standardized on a single, consistent generation: **Expo SDK 57**, **React
+  19.2.3**, **React Native 0.86.0**, **React Navigation v7**, **TypeScript 6**.
+  Previous exports mixed SDK 51/56 packages with incompatible peer versions.
+- `@clerk/clerk-expo` moved off the nonexistent `^1.3.0` to `^2.19.41` (the
+  latest version *not* covered by [GHSA-w24r-5266-9c3c](https://github.com/advisories/GHSA-w24r-5266-9c3c),
+  a high-severity authorization-bypass advisory affecting `2.2.11–2.19.35`,
+  including npm's `latest`-tagged `2.19.31`).
+- `@clerk/backend` moved to `^3.11.1`; `@prisma/client`/`prisma` pinned to
+  `6.19.3` (Prisma 7 requires driver adapters and a `prisma.config.ts`
+  rewrite — a breaking schema change out of scope for a dependency repair).
+- `express` pinned to `^4.22.2` (stayed on 4.x rather than 5.x to avoid an
+  unreviewed behavioral migration of every route file).
+- `zod` pinned to `^3.25.76` (stayed on 3.x — v4 renames several APIs the
+  route validators depend on, e.g. `z.string().datetime()`).
+- `stripe` upgraded to `^22.3.0`; the webhook's pinned `apiVersion` literal
+  updated from the no-longer-valid `"2024-06-20"` to `"2026-06-24.dahlia"`.
+- Replaced unmaintained `ts-node-dev` (last published 2022) and `ts-node`
+  with `tsx` for the backend dev server, seed script, and admin script.
+- Removed `@types/react-native`, a deprecated stub package — React Native
+  ships its own types since 0.71.
+- Added `expo-auth-session`, `expo-web-browser` (required, non-optional
+  peers of `@clerk/clerk-expo`'s SSO flow), `expo-splash-screen` (SDK 57
+  moved splash config out of `app.json` and into this plugin), and
+  `react-dom` (required peer of `@clerk/clerk-expo`, even for phone-only
+  apps — flagged by `expo-doctor` as a potential standalone-build crash).
+- Removed the `web` key from `app.json` and the `web` npm script — this is a
+  phone-only app; no Expo web/Electron/desktop target.
+
+### Fixed — Real bugs found via typecheck/lint, not just version bumps
+- **Critical: authentication was completely broken.** `backend/middleware/auth.ts`
+  and `backend/routes/auth.routes.ts` called `clerk.verifyToken(token)` on a
+  `createClerkClient()` instance — that method doesn't exist on the client;
+  `verifyToken` is a standalone export of `@clerk/backend`. Every request,
+  even with a perfectly valid Clerk JWT, threw and was caught by the
+  surrounding `try/catch`, always returning 401. No user could ever log in.
+  Fixed to `import { verifyToken } from "@clerk/backend"` called directly.
+- **Structural bug: `prisma generate` corrupted the mobile app's `package.json`.**
+  `prisma/` lived at the repo root as a sibling of `backend/`. Prisma's
+  auto-install-missing-deps logic resolves relative to the schema file's own
+  directory, not the CWD — so it silently installed `@prisma/client`/`prisma`
+  into the **mobile app's** `package.json` on every `db:generate`. Same root
+  cause broke `scripts/promote-admin.ts` (`Cannot find module '@prisma/client'`
+  when run exactly as documented). Fixed by moving `prisma/` and `scripts/`
+  into `backend/`, matching Prisma's own conventional layout. No `--schema`
+  flag or `package.json#prisma` field needed anymore (that field was also
+  deprecated in Prisma 6, removed in 7).
+- `routes/messages.routes.ts`: `type: { in: ["COMMITTEE", "DM"] as const[] }`
+  was a syntax error (`const[]` isn't a type) that failed `tsc` outright.
+- `routes/webhook.routes.ts`: Stripe's `apiVersion` is a version-locked
+  literal type tied to the installed SDK; the old `"2024-06-20"` string no
+  longer type-checks against `stripe@22`.
+- `src/screens/ProfileScreen.tsx`: imported `useSignOut` from
+  `@clerk/clerk-expo`, which doesn't exist in the current API. Replaced with
+  `useAuth()`, which exposes `signOut`.
+- `src/screens/ChannelMessagesScreen.tsx`: referenced a `styles.bubbleOther`
+  key that was never defined in the `StyleSheet`.
+- `src/hooks/usePermissions.ts`: `ScopedEvent.committeeId` was typed as
+  `string | null`, but `EventSummary.committeeId` (the type actually passed
+  in from screens) is `string | null | undefined`, failing `tsc`.
+- Root `tsconfig.json` `include` was `**/*.ts`, unintentionally pulling
+  `prisma/seed.ts` and `scripts/promote-admin.ts` into the mobile app's
+  typecheck, where `@prisma/client` isn't installed. Scoped `include` to
+  `App.tsx` + `src/**/*`.
+
+### Added — Missing repo essentials
+- Root `.env.example` (`EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY`,
+  `EXPO_PUBLIC_API_URL`) — referenced by README/BUILD.md but never existed.
+- Root `.gitignore` — referenced by `docs/PROJECT_STRUCTURE.md` but never
+  existed (so `node_modules/`, `.env`, build output, etc. were all trackable).
+- `package-lock.json` at both repo root and `backend/`.
+- A validated initial migration (`backend/prisma/migrations/.../init/`),
+  generated and applied against a real local PostgreSQL 16 instance as part
+  of verification (see FINAL-VALIDATION.md) — a fresh clone can
+  `prisma migrate deploy` immediately instead of needing an interactive
+  `migrate dev` on first run.
+
+### Fixed — Documentation
+- `BUILD.md` described a `mobile/` subdirectory that never existed in this
+  repo (the mobile app has always been the repo root); rewritten to match
+  the actual layout and the new `backend/prisma/` location.
+- `README.md` tech-stack table updated (was still advertising SDK 51 / RN
+  0.74 / React Navigation v6 / Prisma 5).
+- `docs/PROJECT_STRUCTURE.md` updated for the `backend/prisma/` and
+  `backend/scripts/` moves and the `tsx` migration.
+
+---
+
 ## [1.0.0] — 2026-07 — Internal Beta
 
 ### Added — Mobile App

@@ -192,38 +192,17 @@ Replace these with final branded assets before App Store submission.
 
 ---
 
-## `prisma/` — Database
-
-```
-prisma/
-├── schema.prisma     Prisma schema for PostgreSQL 16.
-│                     Models: User, Semester, Committee, CommitteeMembership,
-│                       Event, Rsvp, Attendance, PointsLedger, DuesRecord,
-│                       Payment, Channel, ChannelMembership, Message, AuditLog.
-│                     All enums match TypeScript types in src/types/index.ts.
-│
-└── seed.ts           Idempotent seed script.
-                      Creates: current Semester row, GENERAL channel,
-                        OFFICERS channel. Run once per environment.
-                      Command: npm --prefix backend run db:seed
-```
-
-Prisma migrations directory (`prisma/migrations/`) is generated on first
-`npm run backend:migrate` and is excluded from version control.
-
----
-
 ## `backend/` — API Server
 
 Separate Node.js package. Run all commands from inside `backend/`.
 
 ```
 backend/
-├── package.json      Express, Prisma, Clerk, Stripe, Zod, ts-node-dev.
-│                     Scripts point to correct paths:
-│                       dev → ts-node-dev server.ts
-│                       db:seed → ts-node ../prisma/seed.ts
-│                       db:* → prisma ... --schema=../prisma/schema.prisma
+├── package.json      Express, Prisma, Clerk, Stripe, Zod, tsx.
+│                     Scripts:
+│                       dev → tsx watch server.ts
+│                       db:seed → tsx prisma/seed.ts
+│                       db:* → prisma ... (schema auto-discovered at prisma/schema.prisma)
 │
 ├── tsconfig.json     Target: ES2022, module: CommonJS, rootDir: ./
 │
@@ -249,7 +228,8 @@ backend/
 │                         Shared by dues.routes.ts and webhook.routes.ts.
 │
 ├── middleware/
-│   ├── auth.ts       Verifies Clerk JWT → looks up User by authProviderId →
+│   ├── auth.ts       Verifies Clerk JWT (standalone `verifyToken()` from
+│   │                 @clerk/backend) → looks up User by authProviderId →
 │   │                 populates req.user. Returns 401 if missing, 401 if
 │   │                 invalid, 401 with code NEEDS_SYNC if user not in DB.
 │   │
@@ -259,16 +239,35 @@ backend/
 │                     writeAuditLog({ actorId, action, ..., tx? }) — creates
 │                       AuditLog row; pass tx to make it atomic with mutation.
 │
-└── routes/
-    ├── auth.routes.ts        POST /auth/sync — upserts User from Clerk JWT
-    ├── events.routes.ts      Events CRUD + RSVP + QR token + check-in
-    ├── users.routes.ts       User profile + dashboard + roster + role
-    ├── attendance.routes.ts  Attendance history + manual override + leaderboard
-    ├── committees.routes.ts  Committee CRUD + membership management
-    ├── dues.routes.ts        Dues records + payments + waivers + reminders
-    ├── messages.routes.ts    Channels + messages + pin + soft delete
-    └── webhook.routes.ts     POST /webhooks/stripe — Stripe HMAC auth,
-                              lazy Stripe initialization, idempotent payments
+├── routes/
+│   ├── auth.routes.ts        POST /auth/sync — upserts User from Clerk JWT
+│   ├── events.routes.ts      Events CRUD + RSVP + QR token + check-in
+│   ├── users.routes.ts       User profile + dashboard + roster + role
+│   ├── attendance.routes.ts  Attendance history + manual override + leaderboard
+│   ├── committees.routes.ts  Committee CRUD + membership management
+│   ├── dues.routes.ts        Dues records + payments + waivers + reminders
+│   ├── messages.routes.ts    Channels + messages + pin + soft delete
+│   └── webhook.routes.ts     POST /webhooks/stripe — Stripe HMAC auth,
+│                             lazy Stripe initialization, idempotent payments
+│
+├── prisma/           ← database schema, seed, migrations (colocated with the
+│   │                    package that depends on @prisma/client — this matters,
+│   │                    see "Key Architectural Constraints" below)
+│   ├── schema.prisma  Prisma schema for PostgreSQL 16.
+│   │                  Models: User, Semester, Committee, CommitteeMembership,
+│   │                    Event, Rsvp, Attendance, PointsLedger, DuesRecord,
+│   │                    Payment, Channel, ChannelMembership, Message, AuditLog.
+│   │                  All enums match TypeScript types in src/types/index.ts.
+│   ├── seed.ts        Idempotent seed script. Creates: current Semester row,
+│   │                    GENERAL channel, OFFICERS channel.
+│   │                  Command: npm --prefix backend run db:seed
+│   └── migrations/    Committed to version control (standard Prisma practice).
+│                      A validated `init` migration ships out of the box.
+│
+└── scripts/
+    └── promote-admin.ts    One-time script to promote a user to SUPER_ADMIN by
+                            email address. Run with (from backend/):
+                              npx tsx scripts/promote-admin.ts admin@example.com
 ```
 
 ---
@@ -281,18 +280,7 @@ docs/
 ```
 
 Additional documentation lives at the repo root: `README.md`, `BUILD.md`,
-`TESTING.md`, `CHANGELOG.md`.
-
----
-
-## `scripts/` — Utility Scripts
-
-```
-scripts/
-└── promote-admin.ts    One-time script to promote a user to SUPER_ADMIN by
-                        email address. Run with:
-                          npx ts-node --project backend/tsconfig.json scripts/promote-admin.ts admin@example.com
-```
+`TESTING.md`, `CHANGELOG.md`, `FINAL-VALIDATION.md`.
 
 ---
 
@@ -302,8 +290,17 @@ scripts/
 or `tsconfig-paths` at runtime, so `@/` path aliases cannot be used in code (the tsconfig
 alias is declared for IDE tooling only). Use `"../theme/colors"` not `"@/theme/colors"`.
 
-**`prisma/` is at the repo root, not inside `backend/`.** All backend Prisma commands include
-`--schema=../prisma/schema.prisma`. This is already set in `backend/package.json` scripts.
+**`prisma/` and `scripts/` live inside `backend/`, not at the repo root.** They were
+originally siblings of `backend/` at the repo root. That layout is broken: Prisma's
+own dependency-resolution logic (and plain Node `require()` resolution for bare
+specifiers) walks up from a file's own directory, not from the process's CWD. A
+schema or script sitting outside `backend/`'s directory tree can never see
+`backend/node_modules/@prisma/client` — Prisma "fixes" this by auto-installing
+`@prisma/client`/`prisma` into whatever `package.json` it finds walking up from the
+schema's location instead, which silently corrupted the **mobile app's**
+`package.json` on every `db:generate`. Keeping both directories inside `backend/`
+(Prisma's own recommended convention) removes the whole failure class and is why
+no `--schema` flag is needed anywhere anymore.
 
 **One `PrismaClient`.** Always import from `backend/lib/prisma.ts`. Never call `new PrismaClient()` elsewhere.
 

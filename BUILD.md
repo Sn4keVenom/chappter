@@ -1,7 +1,7 @@
 # ChapterHub — Build & Deployment Guide
 
-**Stack:** Node.js 20 · Express · Prisma · PostgreSQL 16 · Expo SDK 51 · React Native 0.74  
-**Last validated:** June 2026
+**Stack:** Node.js 20+ · Express · Prisma 6 · PostgreSQL 16 · Expo SDK 57 · React Native 0.86
+**Last validated:** 2026-07-07
 
 ---
 
@@ -9,7 +9,7 @@
 
 | Tool | Version | Install |
 |---|---|---|
-| Node.js | 20 LTS | https://nodejs.org |
+| Node.js | 20.19+, 22.13+, or 24.3+ | https://nodejs.org |
 | npm | 10+ | bundled with Node |
 | PostgreSQL | 16 | see §1 below |
 | Expo Go app (phone) | latest | App Store / Play Store |
@@ -20,29 +20,28 @@
 ## Repository Structure
 
 ```
-chapterhub/               ← repo root
-├── backend/              ← Node.js API server (run npm commands from here)
-│   ├── package.json
-│   ├── server.ts
-│   ├── routes/
-│   ├── middleware/
-│   └── lib/
-├── prisma/               ← Prisma schema and seed (shared, at repo root)
-│   ├── schema.prisma
-│   └── seed.ts
-├── mobile/               ← Expo React Native app (run npm commands from here)
-│   ├── package.json
-│   ├── App.tsx           ← root entry point (ClerkProvider + providers)
+chapterhub/                ← repo root = the Expo mobile app (run npm commands here)
+├── package.json
+├── App.tsx                ← root entry point (ClerkProvider + providers)
+├── src/
 │   ├── navigation/
 │   ├── screens/
 │   ├── store/
 │   └── api/
-└── BUILD.md              ← this file
+└── backend/                ← Node.js API server — separate package, own node_modules
+    ├── package.json
+    ├── server.ts
+    ├── routes/
+    ├── middleware/
+    ├── lib/
+    ├── prisma/              ← schema.prisma, seed.ts, migrations/
+    └── scripts/             ← promote-admin.ts
 ```
 
-> **Important:** The `prisma/` directory is at the **repo root**, not inside `backend/`.
-> All backend package.json scripts already include `--schema=../prisma/schema.prisma`.
-> Run all backend commands from inside `backend/`.
+> **Important:** The mobile app and the backend are two independent npm packages.
+> Run mobile commands (`npm install`, `npm start`) from the **repo root**.
+> Run backend commands (`npm install`, `npm run dev`, `npm run db:*`) from **`backend/`**.
+> `prisma/` lives inside `backend/` — the schema is auto-discovered, no `--schema` flag needed.
 
 ---
 
@@ -109,12 +108,14 @@ will start fine without them. They are only needed when testing Stripe dues paym
 # 3. Install dependencies
 npm install
 
-# 4. Generate Prisma client (reads ../prisma/schema.prisma)
+# 4. Generate Prisma client (reads backend/prisma/schema.prisma automatically)
 npm run db:generate
 
 # 5. Create database tables
 npm run db:migrate:dev
 # When prompted for a migration name, type: init
+# (A validated `init` migration already ships in backend/prisma/migrations/ —
+#  this step just applies it. It only prompts for a name if you've changed the schema.)
 
 # 6. Seed baseline data (Semester row, GENERAL + OFFICERS channels)
 npm run db:seed
@@ -138,13 +139,10 @@ curl http://localhost:4000/health
 
 ## Step 4 — Mobile Setup
 
-All commands run from the `mobile/` directory.
+All commands run from the **repo root**.
 
 ```bash
-# 1. Enter mobile directory
-cd mobile
-
-# 2. Copy and fill environment variables
+# 1. From the repo root, copy and fill environment variables
 cp .env.example .env
 ```
 
@@ -158,11 +156,11 @@ EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 ```
 
 ```bash
-# 3. Install dependencies
+# 2. Install dependencies
 npm install
 
-# 4. Start Expo
-npx expo start
+# 3. Start Expo
+npm start
 ```
 
 - **Physical device:** Install [Expo Go](https://expo.dev/go) and scan the QR code.
@@ -171,11 +169,13 @@ npx expo start
 - **iOS Simulator:** Press `i` (requires Xcode)
 - **Android Emulator:** Press `a` (requires Android Studio)
 
+This is a phone-only app — there is no web or desktop target.
+
 ---
 
 ## Step 5 — First Login
 
-1. Open Expo Go → scan the QR from `npx expo start`
+1. Open Expo Go → scan the QR from `npm start`
 2. Tap **Continue with Google**
 3. Complete OAuth in the browser sheet
 4. You arrive at the **Home Dashboard**
@@ -184,8 +184,8 @@ npx expo start
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| App shows blank white screen | `App.tsx` not loading | Verify `mobile/App.tsx` exists |
-| "publishableKey" error | Clerk not configured | Check `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in mobile `.env` |
+| App shows blank white screen | `App.tsx` not loading | Verify `App.tsx` exists at the repo root |
+| "publishableKey" error | Clerk not configured | Check `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` in root `.env` |
 | Network timeout on sync | Wrong API URL | Use your LAN IP, not `localhost` |
 | 401 "Invalid token" | Key mismatch | Ensure `sk_test_` and `pk_test_` are from the same Clerk application |
 | 400 on `/auth/sync` | Validation error | Check backend logs for the specific field |
@@ -194,10 +194,15 @@ npx expo start
 
 ```bash
 # From backend/ directory
-npx prisma studio --schema=../prisma/schema.prisma
+npx prisma studio
 ```
 
 Find your User row → change `role` to `SUPER_ADMIN` → save → restart app.
+
+Alternatively, from `backend/`:
+```bash
+DATABASE_URL="..." npx tsx scripts/promote-admin.ts you@example.com
+```
 
 ---
 
@@ -236,10 +241,10 @@ curl -X POST http://localhost:4000/api/v1/dues/initialize \
 
 ```bash
 # Open browser UI to view/edit data
-npx prisma studio --schema=../prisma/schema.prisma
+npx prisma studio
 
 # Reset all data and re-run migrations (DESTRUCTIVE)
-npx prisma migrate reset --schema=../prisma/schema.prisma
+npx prisma migrate reset
 
 # Re-seed after reset
 npm run db:seed
@@ -249,7 +254,7 @@ npm run db:migrate:dev
 # (type a descriptive name when prompted)
 
 # Check migration status
-npx prisma migrate status --schema=../prisma/schema.prisma
+npx prisma migrate status
 ```
 
 ---

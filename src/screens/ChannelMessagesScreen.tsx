@@ -204,6 +204,7 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     borderColor: colors.primary,
   },
+  bubbleOther: {},
   senderName: { fontSize: 11, fontWeight: "700", color: colors.textMuted, marginBottom: 3 },
   bubbleText: { fontSize: 15, color: colors.textPrimary, lineHeight: 21 },
   bubbleTextMine: { color: colors.primaryText },

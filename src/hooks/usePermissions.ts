@@ -9,7 +9,7 @@
 import { useAuthStore } from "../store/useAuthStore";
 
 interface ScopedEvent {
-  committeeId: string | null;
+  committeeId?: string | null;
 }
 
 export function usePermissions() {

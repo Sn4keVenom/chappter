@@ -10,7 +10,7 @@
 //   - getLeaderboard  → api/users.ts (for current-semester rank)
 //   - useAuthStore: setUser(null) on sign-out
 //   - setAuthToken(null): api/client.ts
-//   - @clerk/clerk-expo: useSignOut
+//   - @clerk/clerk-expo: useAuth
 //   - types/index.ts: User, DuesRecord, DuesStatus, AttendanceRecord, formatCurrency, fullName
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -19,7 +19,7 @@ import {
   ActivityIndicator, Alert, RefreshControl
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useSignOut } from "@clerk/clerk-expo";
+import { useAuth } from "@clerk/clerk-expo";
 
 import { colors } from "../theme/colors";
 import { useAuthStore } from "../store/useAuthStore";
@@ -41,7 +41,7 @@ export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const userFromStore = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const { signOut } = useSignOut();
+  const { signOut } = useAuth();
 
   const [profile, setProfile] = useState<User | null>(null);
   const [dues, setDues] = useState<DuesRecord | null>(null);
