@@ -3,6 +3,11 @@
 **Stack:** Node.js 20+ · Express · Prisma 6 · PostgreSQL 16 · Expo SDK 57 · React Native 0.86
 **Last validated:** 2026-07-07
 
+> **Just want to see the app?** None of this is required. `npm install && npm start`
+> launches straight into Demo Mode — a fully interactive mock chapter, no
+> Clerk/Postgres/backend needed. See [docs/DEMO_MODE.md](docs/DEMO_MODE.md).
+> Everything below is for connecting the real backend.
+
 ---
 
 ## Prerequisites
@@ -148,6 +153,10 @@ cp .env.example .env
 
 Open `.env` and set:
 ```
+# Turns off Demo Mode so the app uses real Clerk auth and talks to the
+# backend below instead of local mock data.
+EXPO_PUBLIC_DEMO_MODE="false"
+
 # Your machine's LAN IP address — NOT localhost (won't work on physical devices)
 # Find it: macOS → System Preferences → Network | Windows → ipconfig
 EXPO_PUBLIC_API_URL="http://192.168.1.x:4000/api/v1"

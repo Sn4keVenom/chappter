@@ -5,6 +5,65 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.1.0] — 2026-07-08 — Demo Mode
+
+The app now launches directly into a fully interactive Demo Mode by
+default — `npm install && npm start`, no Clerk account, no PostgreSQL, no
+Express backend, no `.env` file at all. See
+[docs/DEMO_MODE.md](docs/DEMO_MODE.md).
+
+### Added
+- `src/config/demo.ts` — `DEMO_MODE` flag, on unless
+  `EXPO_PUBLIC_DEMO_MODE=false` is explicitly set.
+- `src/mocks/` — a complete mock backend: `seed.ts` (14 users across every
+  role/status, 4 committees, 12 events past/upcoming, a full points ledger,
+  dues records in every status, 7 channels with message history),
+  `api.ts` (business logic mirroring every real backend route),
+  `router.ts` (a custom axios `adapter` installed on the shared `apiClient`
+  instance so every existing `src/api/*.ts` function and the one direct
+  `apiClient.post` call in `CreateEventScreen` are intercepted with **zero
+  changes to any call site**), `identity.ts` / `bootstrap.ts` (demo user
+  session + role switcher).
+- `App.tsx` skips `ClerkProvider` and the required-env-var check entirely
+  in Demo Mode; `bootstrapDemoSession()` pre-populates `useAuthStore`
+  before the first render so `RootNavigator` routes straight past Login.
+- `src/hooks/useAppAuth.ts` — wraps Clerk's `useAuth()` so `ProfileScreen`
+  doesn't crash with "No Clerk context found" when `ClerkProvider` isn't
+  mounted (demo mode has no provider in the tree at all).
+- A "Demo Mode — viewing as ___" banner + role switcher in `ProfileScreen`,
+  cycling between four representative mock users (one per role) so
+  role-gated UI (Admin tab, dues management, committee scope) can be
+  evaluated without a real account per role.
+- `src/utils/achievements.ts` — client-side-only achievement badges
+  computed from data the app already fetches (points, attendance, dues,
+  committees). Not a backend concept; works in both demo and live mode.
+- Real implementations for four screens that were previously blank
+  `() => null` stubs *but reachable via existing buttons*
+  (Leaderboard/Committee/Admin rows navigated to them and showed nothing):
+  `MemberProfileScreen`, `PointsAdjustScreen`, `RosterDetailScreen`,
+  `DuesDetailScreen`. `AdminPanelScreen`'s "Send Reminders" button
+  previously showed a fake success alert without calling the API — now
+  calls `sendDuesReminders()` for real.
+- `NotImplementedScreen` and `MapViewScreen` replace the remaining blank
+  stubs (`AuditLog`, `Thread`, `MapView`) with an honest state instead of a
+  blank screen — none of the three has real backend/SDK support to mock
+  faithfully (no audit-log endpoint exists anywhere, nothing links to
+  Thread, no map SDK is installed).
+
+### Fixed
+- **Critical, pre-existing: the app could not launch on a real device or
+  simulator at all**, in demo mode or live mode. Root `package.json`'s
+  `"main"` field pointed directly at `App.tsx` instead of Expo's
+  `node_modules/expo/AppEntry.js` entry shim, so `registerRootComponent()`
+  was never called and the native "main" component never registered —
+  every launch failed with "App entry point named 'main' was not
+  registered." This was invisible to `tsc` and `expo export` (both static
+  analysis, neither actually boots the app) and was only caught by
+  launching the app in a real iOS Simulator. Fixed by pointing `"main"` at
+  the standard Expo entry shim.
+
+---
+
 ## [1.0.1] — 2026-07-07 — Dependency Repair & Release Hardening
 
 Full audit of every config file, dependency version, and import path. The

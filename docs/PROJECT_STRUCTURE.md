@@ -2,6 +2,10 @@
 
 This document explains every directory and file in the repository.
 
+> The app runs in Demo Mode by default (no backend/database/Clerk needed) —
+> see [DEMO_MODE.md](DEMO_MODE.md) for how `src/mocks/` and `src/config/demo.ts`
+> fit into everything described below.
+
 ---
 
 ## Repository Root
@@ -49,6 +53,18 @@ corresponds to a distinct architectural layer.
 
 ```
 src/
+├── config/
+│   └── demo.ts           DEMO_MODE flag (on by default, no env var required).
+│                         See docs/DEMO_MODE.md.
+│
+├── mocks/                Demo Mode's mock backend. See docs/DEMO_MODE.md for
+│   │                     the full picture — briefly:
+│   ├── seed.ts             In-memory mock "database" (users, events, dues, etc.)
+│   ├── api.ts              Business logic, one function per real backend route
+│   ├── router.ts           axios adapter — intercepts apiClient requests
+│   ├── identity.ts         "Who am I logged in as" for the demo session
+│   └── bootstrap.ts        Populates useAuthStore before first render
+│
 ├── types/
 │   └── index.ts          Single source of truth for all TypeScript types.
 │                         Mirrors Prisma schema models exactly — no transform
@@ -61,12 +77,22 @@ src/
 │                         (colors.primary, colors.accent) — swap values here
 │                         to rebrand. No raw hex strings in screen components.
 │
+├── utils/
+│   └── achievements.ts   computeAchievements() — pure function deriving badge
+│                         data from points/attendance/dues already fetched by
+│                         ProfileScreen. Not a backend concept; works identically
+│                         in Demo Mode and against the real API.
+│
 ├── api/                  One file per backend resource. Each file exports
 │   │                     async functions that call apiClient and return typed
 │   │                     data. No business logic here — just HTTP wrappers.
+│   │                     Unchanged between Demo Mode and the real backend —
+│   │                     see client.ts below.
 │   │
 │   ├── client.ts         Axios instance with:
 │   │                       · Base URL from EXPO_PUBLIC_API_URL env var
+│   │                       · Demo Mode: installs mocks/router.ts as a custom
+│   │                         axios adapter instead of hitting the network
 │   │                       · Bearer token injection (set by AuthNavigator)
 │   │                       · ApiError normalization for all responses
 │   │                     Exports: apiClient, setAuthToken, getAuthToken, ApiError
@@ -147,18 +173,34 @@ src/
 │   │                              long-press. Pull-up to load older messages.
 │   │
 │   ├── ProfileScreen.tsx         Own profile: role, dues status, attendance
-│   │                              history, points ledger, sign-out.
+│   │                              history, achievements, sign-out. In Demo
+│   │                              Mode: role-switcher banner (mocks/bootstrap.ts).
 │   │
 │   ├── CommitteeDetailScreen.tsx Committee info, member roster (with add/remove
 │   │                              for Chair), channel link, upcoming events.
+│   │
+│   ├── MemberProfileScreen.tsx   Another member's read-only profile. Exec+ sees
+│   │                              an "Adjust Points" shortcut into PointsAdjust.
+│   │
+│   ├── MapViewScreen.tsx         Event location + "Open in Maps" link. No map
+│   │                              SDK is installed — this isn't an embedded map.
+│   │
+│   ├── NotImplementedScreen.tsx  Honest placeholder for AuditLog and Thread —
+│   │                              neither has a backend route in the real app.
 │   │
 │   └── admin/
 │       ├── AdminPanelScreen.tsx          Tabs: Roster · Points · Dues · Committees.
 │       │                                  Role management, dues overview, points
 │       │                                  adjust navigation.
-│       └── AttendanceOverrideScreen.tsx  Event roster with per-member check-in
-│                                          status. Mark present / remove with
-│                                          required reason modal.
+│       ├── AttendanceOverrideScreen.tsx  Event roster with per-member check-in
+│       │                                  status. Mark present / remove with
+│       │                                  required reason modal.
+│       ├── RosterDetailScreen.tsx        Searchable/filterable full member
+│       │                                  directory. Row tap → MemberProfile.
+│       ├── PointsAdjustScreen.tsx        Bonus/penalty/correction form for one
+│       │                                  member. Reached from MemberProfile.
+│       └── DuesDetailScreen.tsx          Chapter-wide dues table with Record
+│                                          Payment / Waive actions (Exec+).
 │
 └── store/                Zustand stores. One per domain.
     ├── useAuthStore.ts   user: AppUser | null, isLoading: boolean, setUser().

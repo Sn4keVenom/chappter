@@ -13,6 +13,8 @@
 //   · ApiError.status is used in screens to distinguish 401/403/4xx/5xx
 
 import axios, { AxiosError, AxiosInstance } from "axios";
+import { DEMO_MODE } from "../config/demo";
+import { demoAdapter } from "../mocks/router";
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
@@ -44,6 +46,14 @@ export const apiClient: AxiosInstance = axios.create({
   timeout: 15_000,
   headers: { "Content-Type": "application/json" },
 });
+
+// Demo Mode (default): every request below is answered from local mock data
+// via a custom axios adapter instead of hitting the network. Nothing else in
+// this file — or any api/*.ts module, or any screen — changes between demo
+// and live mode. See src/config/demo.ts and src/mocks/router.ts.
+if (DEMO_MODE) {
+  apiClient.defaults.adapter = demoAdapter;
+}
 
 // Inject Bearer token on every request
 apiClient.interceptors.request.use((config) => {

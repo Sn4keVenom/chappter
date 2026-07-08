@@ -1,0 +1,932 @@
+// src/mocks/api.ts
+//
+// One function per real backend route, mirroring src/api/*.ts function names
+// and return shapes exactly (same field names the real Express routes
+// return). src/mocks/router.ts dispatches HTTP-shaped requests into these
+// functions; nothing here knows about axios or HTTP status codes — that
+// stays in router.ts, same separation the real backend has between
+// routes/*.ts and the Prisma calls inside them.
+//
+// All reads/writes operate on the module-level arrays in seed.ts, so
+// mutations (RSVPs, check-ins, sent messages, recorded payments, etc.)
+// persist for the session exactly like a real database would.
+
+import * as db from "./seed";
+import { getCurrentDemoUser, getCurrentDemoUserId, toAppUser } from "./identity";
+import type {
+  User,
+  UserSummary,
+  EventSummary,
+  EventDetail,
+  DashboardData,
+  RsvpStatus,
+  LeaderboardEntry,
+  LedgerEntry,
+  RosterEntry,
+  AttendanceRecord,
+  Committee,
+  CommitteeMemberSummary,
+  CommitteeMembershipSummary,
+  CommitteeRole,
+  Channel,
+  Message,
+  DuesRecord,
+  Payment,
+  DuesStatus,
+  PaymentMethod,
+  UserRole,
+} from "../types";
+
+// ── Shared helpers ─────────────────────────────────────────────────────────
+
+const ROLE_RANK: Record<UserRole, number> = { MEMBER: 0, OFFICER: 1, EXEC: 2, SUPER_ADMIN: 3 };
+
+function isExecOrAbove(userId: string): boolean {
+  const u = db.findUser(userId);
+  return !!u && ROLE_RANK[u.role] >= ROLE_RANK.EXEC;
+}
+
+function isOfficerOrAbove(userId: string): boolean {
+  const u = db.findUser(userId);
+  return !!u && ROLE_RANK[u.role] >= ROLE_RANK.OFFICER;
+}
+
+function committeeChairOf(userId: string): string[] {
+  return db.committeeMemberships
+    .filter((m) => m.userId === userId && m.role === "CHAIR")
+    .map((m) => m.committeeId);
+}
+
+export class DemoApiError extends Error {
+  constructor(public status: number, message: string, public code?: string) {
+    super(message);
+  }
+}
+
+// ── Events ───────────────────────────────────────────────────────────────
+
+function toEventSummary(event: db.MockEvent, forUserId: string): EventSummary {
+  const committee = event.committeeId ? db.committees.find((c) => c.id === event.committeeId) : null;
+  const rsvp = db.findRsvp(event.id, forUserId);
+  const attendance = db.findAttendance(event.id, forUserId);
+  return {
+    id: event.id,
+    title: event.title,
+    location: event.location ?? null,
+    category: event.category,
+    startTime: event.startTime,
+    endTime: event.endTime,
+    attendanceRequired: event.attendanceRequired,
+    pointValue: event.pointValue,
+    committeeId: event.committeeId ?? null,
+    committee: committee ? { id: committee.id, name: committee.name } : null,
+    myRsvpStatus: rsvp?.status ?? null,
+    myAttendance: attendance ? { pointsAwarded: attendance.pointsAwarded, late: attendance.late } : null,
+  };
+}
+
+function toEventDetail(event: db.MockEvent, forUserId: string): EventDetail {
+  const checkedInCount = db.attendances.filter((a) => a.eventId === event.id).length;
+  return {
+    ...toEventSummary(event, forUserId),
+    description: event.description ?? null,
+    status: event.status,
+    checkInWindowStart: event.checkInWindowStart ?? null,
+    checkInWindowEnd: event.checkInWindowEnd ?? null,
+    checkedInCount,
+  };
+}
+
+export function getEvent(eventId: string): EventDetail {
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+  return toEventDetail(event, getCurrentDemoUserId());
+}
+
+export function listEvents(params: { from?: string; to?: string; category?: string; committeeId?: string }): EventSummary[] {
+  const userId = getCurrentDemoUserId();
+  let list = db.events.filter((e) => e.status === "PUBLISHED");
+  if (params.from) list = list.filter((e) => e.endTime >= params.from!);
+  if (params.to) list = list.filter((e) => e.endTime <= params.to!);
+  if (params.category) list = list.filter((e) => e.category === params.category);
+  if (params.committeeId) list = list.filter((e) => e.committeeId === params.committeeId);
+  return list
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+    .map((e) => toEventSummary(e, userId));
+}
+
+export function createEvent(payload: {
+  title: string;
+  description?: string;
+  location?: string;
+  category: string;
+  startTime: string;
+  endTime: string;
+  attendanceRequired: boolean;
+  pointValue: number;
+  committeeId?: string | null;
+}): EventDetail {
+  const userId = getCurrentDemoUserId();
+  const event: db.MockEvent = {
+    id: db.nextId("e"),
+    title: payload.title,
+    description: payload.description ?? null,
+    location: payload.location ?? null,
+    category: payload.category as db.MockEvent["category"],
+    status: "PUBLISHED",
+    startTime: payload.startTime,
+    endTime: payload.endTime,
+    attendanceRequired: payload.attendanceRequired,
+    pointValue: payload.pointValue,
+    committeeId: payload.committeeId ?? null,
+    createdById: userId,
+  };
+  db.events.push(event);
+  return toEventDetail(event, userId);
+}
+
+export function setRsvp(eventId: string, status: RsvpStatus): void {
+  const userId = getCurrentDemoUserId();
+  if (!db.findEvent(eventId)) throw new DemoApiError(404, "Event not found");
+  const existing = db.findRsvp(eventId, userId);
+  if (existing) {
+    existing.status = status;
+    existing.respondedAt = new Date().toISOString();
+  } else {
+    db.rsvps.push({ eventId, userId, status, respondedAt: new Date().toISOString() });
+  }
+}
+
+// ── Users / Dashboard / Points ──────────────────────────────────────────
+
+function toUserSummary(u: db.MockUser): UserSummary {
+  return {
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.email,
+    avatarUrl: u.avatarUrl ?? null,
+    role: u.role,
+    status: u.status,
+    pledgeClassLabel: u.pledgeClassLabel ?? null,
+  };
+}
+
+function toFullUser(u: db.MockUser): User {
+  const memberships: CommitteeMembershipSummary[] = db.committeeMemberships
+    .filter((m) => m.userId === u.id)
+    .map((m) => ({
+      committeeId: m.committeeId,
+      committeeName: db.committees.find((c) => c.id === m.committeeId)?.name ?? "",
+      role: m.role,
+    }));
+  return {
+    id: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    email: u.email,
+    phone: u.phone ?? null,
+    avatarUrl: u.avatarUrl ?? null,
+    role: u.role,
+    status: u.status,
+    pledgeClassLabel: u.pledgeClassLabel ?? null,
+    committeeChairOf: committeeChairOf(u.id),
+    committeeMemberships: memberships,
+  };
+}
+
+export function getMe(): User {
+  return toFullUser(getCurrentDemoUser());
+}
+
+function userTotalPoints(userId: string): number {
+  return db.ledgerEntries
+    .filter((l) => l.userId === userId && l.semesterId === db.semester.id)
+    .reduce((sum, l) => sum + l.amount, 0);
+}
+
+function leaderboardRows(): LeaderboardEntry[] {
+  const userId = getCurrentDemoUserId();
+  const scored = db.users
+    .filter((u) => u.status === "ACTIVE" || u.status === "PLEDGE")
+    .map((u) => ({ u, total: userTotalPoints(u.id) }))
+    .sort((a, b) => b.total - a.total);
+  return scored.map(({ u, total }, i) => ({
+    rank: i + 1,
+    userId: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    avatarUrl: u.avatarUrl ?? null,
+    total,
+    isMe: u.id === userId,
+  }));
+}
+
+export function getDashboard(): DashboardData {
+  const userId = getCurrentDemoUserId();
+  const now = new Date().toISOString();
+  const weekOut = new Date(Date.now() + 7 * 86_400_000).toISOString();
+  const upcomingEvents = db.events
+    .filter((e) => e.status === "PUBLISHED" && e.startTime >= now && e.startTime <= weekOut)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+    .map((e) => toEventSummary(e, userId));
+
+  const dues = db.findDuesRecord(userId, db.semester.id);
+  const board = leaderboardRows();
+  const me = board.find((b) => b.userId === userId);
+
+  const pinned = db.messages
+    .filter((m) => m.channelId === "ch1" && m.pinned && !m.deletedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const pinnedSender = pinned ? db.findUser(pinned.senderId) : undefined;
+
+  return {
+    upcomingEvents,
+    duesRecord: dues ? toDuesRecord(dues) : null,
+    points: { total: me?.total ?? 0, rank: me?.rank ?? null, semesterLabel: db.semester.label },
+    pinnedAnnouncement: pinned
+      ? {
+          id: pinned.id,
+          content: pinned.content,
+          createdAt: pinned.createdAt,
+          senderName: pinnedSender ? `${pinnedSender.firstName} ${pinnedSender.lastName}` : "Chapter",
+        }
+      : null,
+  };
+}
+
+export function getRoster(params: { q?: string; role?: string; status?: string; page?: number; limit?: number }): {
+  users: UserSummary[];
+  total: number;
+} {
+  let list = db.users.slice();
+  if (params.q) {
+    const q = params.q.toLowerCase();
+    list = list.filter(
+      (u) =>
+        u.firstName.toLowerCase().includes(q) ||
+        u.lastName.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q)
+    );
+  }
+  if (params.role) list = list.filter((u) => u.role === params.role);
+  if (params.status) list = list.filter((u) => u.status === params.status);
+  const total = list.length;
+  const limit = params.limit ?? 50;
+  const page = params.page ?? 1;
+  const start = (page - 1) * limit;
+  list = list.slice(start, start + limit);
+  return { users: list.map(toUserSummary), total };
+}
+
+export function getMemberProfile(userId: string): User {
+  const u = db.findUser(userId);
+  if (!u) throw new DemoApiError(404, "User not found");
+  return toFullUser(u);
+}
+
+export function updateUserRole(userId: string, role: UserRole): User {
+  const u = db.findUser(userId);
+  if (!u) throw new DemoApiError(404, "User not found");
+  if (!isExecOrAbove(getCurrentDemoUserId())) {
+    throw new DemoApiError(403, "Only Exec+ can change member roles");
+  }
+  u.role = role;
+  return toFullUser(u);
+}
+
+export function getLeaderboard(): { leaderboard: LeaderboardEntry[]; semesterLabel: string | null } {
+  return { leaderboard: leaderboardRows(), semesterLabel: db.semester.label };
+}
+
+export function getPointsLedger(
+  userId: string,
+  params: { semesterId?: string; limit?: number; cursor?: string }
+): { entries: LedgerEntry[]; total: number; nextCursor: string | null } {
+  const semesterId = params.semesterId ?? db.semester.id;
+  const all = db.ledgerEntries
+    .filter((l) => l.userId === userId && l.semesterId === semesterId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const limit = params.limit ?? 30;
+  const startIdx = params.cursor ? all.findIndex((e) => e.id === params.cursor) + 1 : 0;
+  const page = all.slice(startIdx, startIdx + limit);
+  const nextCursor = startIdx + limit < all.length ? page[page.length - 1]?.id ?? null : null;
+
+  const entries: LedgerEntry[] = page.map((l) => {
+    const event = l.eventId ? db.findEvent(l.eventId) : null;
+    const awardedBy = l.awardedById ? db.findUser(l.awardedById) : null;
+    return {
+      id: l.id,
+      amount: l.amount,
+      type: l.type,
+      reason: l.reason ?? null,
+      createdAt: l.createdAt,
+      event: event ? { id: event.id, title: event.title, category: event.category } : null,
+      awardedBy: awardedBy ? { firstName: awardedBy.firstName, lastName: awardedBy.lastName } : null,
+    };
+  });
+
+  return { entries, total: all.length, nextCursor };
+}
+
+export function adjustPoints(payload: {
+  userId: string;
+  semesterId: string;
+  amount: number;
+  type: "BONUS" | "PENALTY" | "MANUAL_ADJUSTMENT";
+  reason: string;
+}): LedgerEntry {
+  if (!isOfficerOrAbove(getCurrentDemoUserId())) {
+    throw new DemoApiError(403, "Officer+ required to adjust points");
+  }
+  if (!db.findUser(payload.userId)) throw new DemoApiError(404, "User not found");
+  const entry: db.MockLedgerEntry = {
+    id: db.nextId("ldg"),
+    userId: payload.userId,
+    eventId: null,
+    semesterId: payload.semesterId,
+    amount: payload.amount,
+    type: payload.type,
+    reason: payload.reason,
+    awardedById: getCurrentDemoUserId(),
+    createdAt: new Date().toISOString(),
+  };
+  db.ledgerEntries.push(entry);
+  const awardedBy = db.findUser(entry.awardedById!);
+  return {
+    id: entry.id,
+    amount: entry.amount,
+    type: entry.type,
+    reason: entry.reason,
+    createdAt: entry.createdAt,
+    event: null,
+    awardedBy: awardedBy ? { firstName: awardedBy.firstName, lastName: awardedBy.lastName } : null,
+  };
+}
+
+// ── Attendance ───────────────────────────────────────────────────────────
+
+export function getEventRoster(eventId: string): {
+  roster: RosterEntry[];
+  checkedInCount: number;
+  event: { id: string; title: string; pointValue: number };
+} {
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+
+  const userIds = new Set<string>();
+  db.rsvps.filter((r) => r.eventId === eventId).forEach((r) => userIds.add(r.userId));
+  db.attendances.filter((a) => a.eventId === eventId).forEach((a) => userIds.add(a.userId));
+
+  const roster: RosterEntry[] = Array.from(userIds)
+    .map((userId) => db.findUser(userId))
+    .filter((u): u is db.MockUser => !!u)
+    .map((u) => {
+      const rsvp = db.findRsvp(eventId, u.id);
+      const attendance = db.findAttendance(eventId, u.id);
+      return {
+        userId: u.id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        pledgeClassLabel: u.pledgeClassLabel ?? null,
+        rsvpStatus: rsvp?.status ?? null,
+        attendance: attendance
+          ? {
+              id: attendance.id,
+              checkInTime: attendance.checkInTime,
+              method: attendance.method,
+              late: attendance.late,
+              pointsAwarded: attendance.pointsAwarded,
+            }
+          : null,
+      };
+    })
+    .sort((a, b) => `${a.firstName}${a.lastName}`.localeCompare(`${b.firstName}${b.lastName}`));
+
+  return {
+    roster,
+    checkedInCount: db.attendances.filter((a) => a.eventId === eventId).length,
+    event: { id: event.id, title: event.title, pointValue: event.pointValue },
+  };
+}
+
+export function manualMarkAttendance(
+  eventId: string,
+  userId: string,
+  payload: { action: "mark_present" | "remove"; overrideReason: string; late?: boolean }
+): { attendance?: AttendanceRecord; removed?: boolean } {
+  if (!isOfficerOrAbove(getCurrentDemoUserId())) {
+    throw new DemoApiError(403, "Officer+ required");
+  }
+  const event = db.findEvent(eventId);
+  const user = db.findUser(userId);
+  if (!event || !user) throw new DemoApiError(404, "Event or user not found");
+
+  if (payload.action === "remove") {
+    const idx = db.attendances.findIndex((a) => a.eventId === eventId && a.userId === userId);
+    if (idx >= 0) db.attendances.splice(idx, 1);
+    const ledgerIdx = db.ledgerEntries.findIndex(
+      (l) => l.eventId === eventId && l.userId === userId && l.type === "ATTENDANCE"
+    );
+    if (ledgerIdx >= 0) db.ledgerEntries.splice(ledgerIdx, 1);
+    return { removed: true };
+  }
+
+  const existing = db.findAttendance(eventId, userId);
+  if (existing) {
+    return {
+      attendance: {
+        id: existing.id,
+        checkInTime: existing.checkInTime,
+        method: existing.method,
+        late: existing.late,
+        pointsAwarded: existing.pointsAwarded,
+        overrideReason: existing.overrideReason ?? null,
+        event: { id: event.id, title: event.title, category: event.category, startTime: event.startTime },
+      },
+    };
+  }
+
+  const attendance: db.MockAttendance = {
+    id: db.nextId("att"),
+    eventId,
+    userId,
+    checkInTime: new Date().toISOString(),
+    method: "MANUAL",
+    late: payload.late ?? false,
+    pointsAwarded: event.pointValue,
+    overrideReason: payload.overrideReason,
+    recordedById: getCurrentDemoUserId(),
+  };
+  db.attendances.push(attendance);
+  db.ledgerEntries.push({
+    id: db.nextId("ldg"),
+    userId,
+    eventId,
+    semesterId: db.semester.id,
+    amount: event.pointValue,
+    type: "ATTENDANCE",
+    reason: `Manual override: ${payload.overrideReason}`,
+    awardedById: getCurrentDemoUserId(),
+    createdAt: attendance.checkInTime,
+  });
+
+  return {
+    attendance: {
+      id: attendance.id,
+      checkInTime: attendance.checkInTime,
+      method: attendance.method,
+      late: attendance.late,
+      pointsAwarded: attendance.pointsAwarded,
+      overrideReason: attendance.overrideReason,
+      event: { id: event.id, title: event.title, category: event.category, startTime: event.startTime },
+    },
+  };
+}
+
+function toAttendanceRecord(a: db.MockAttendance): AttendanceRecord {
+  const event = db.findEvent(a.eventId)!;
+  return {
+    id: a.id,
+    checkInTime: a.checkInTime,
+    method: a.method,
+    late: a.late,
+    pointsAwarded: a.pointsAwarded,
+    overrideReason: a.overrideReason ?? null,
+    event: { id: event.id, title: event.title, category: event.category, startTime: event.startTime },
+  };
+}
+
+export function getMyAttendanceHistory(params: { limit?: number; cursor?: string }): {
+  records: AttendanceRecord[];
+  nextCursor: string | null;
+} {
+  return getMemberAttendanceHistoryPaged(getCurrentDemoUserId(), params);
+}
+
+function getMemberAttendanceHistoryPaged(
+  userId: string,
+  params: { limit?: number; cursor?: string }
+): { records: AttendanceRecord[]; nextCursor: string | null } {
+  const all = db.attendances
+    .filter((a) => a.userId === userId)
+    .sort((a, b) => b.checkInTime.localeCompare(a.checkInTime));
+  const limit = params.limit ?? 20;
+  const startIdx = params.cursor ? all.findIndex((a) => a.id === params.cursor) + 1 : 0;
+  const page = all.slice(startIdx, startIdx + limit);
+  const nextCursor = startIdx + limit < all.length ? page[page.length - 1]?.id ?? null : null;
+  return { records: page.map(toAttendanceRecord), nextCursor };
+}
+
+export function getMemberAttendanceHistory(userId: string): { records: AttendanceRecord[] } {
+  const { records } = getMemberAttendanceHistoryPaged(userId, { limit: 100 });
+  return { records };
+}
+
+const activeCheckInTokens = new Map<string, { eventId: string; expiresAt: number }>();
+
+export function getCheckInToken(eventId: string): { token: string; expiresAt: number } {
+  if (!db.findEvent(eventId)) throw new DemoApiError(404, "Event not found");
+  const token = `demo-checkin:${eventId}:${db.nextId("tok")}`;
+  const expiresAt = Date.now() + 60_000;
+  activeCheckInTokens.set(token, { eventId, expiresAt });
+  return { token, expiresAt };
+}
+
+export function selfCheckIn(eventId: string, token: string): { attendance: AttendanceRecord; alreadyCheckedIn?: boolean } {
+  const userId = getCurrentDemoUserId();
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+
+  const existing = db.findAttendance(eventId, userId);
+  if (existing) {
+    return { attendance: toAttendanceRecord(existing), alreadyCheckedIn: true };
+  }
+
+  // Demo mode is lenient about the scanned payload — any non-empty code
+  // checks you in, since testing a real two-device QR handoff isn't
+  // possible for someone evaluating the app solo. A token minted by
+  // getCheckInToken() above for THIS event is still preferred/validated
+  // when present.
+  if (!token || !token.trim()) {
+    throw new DemoApiError(400, "Invalid or expired check-in code");
+  }
+
+  const attendance: db.MockAttendance = {
+    id: db.nextId("att"),
+    eventId,
+    userId,
+    checkInTime: new Date().toISOString(),
+    method: "QR",
+    late: false,
+    pointsAwarded: event.pointValue,
+    recordedById: null,
+  };
+  db.attendances.push(attendance);
+  db.ledgerEntries.push({
+    id: db.nextId("ldg"),
+    userId,
+    eventId,
+    semesterId: db.semester.id,
+    amount: event.pointValue,
+    type: "ATTENDANCE",
+    reason: null,
+    awardedById: null,
+    createdAt: attendance.checkInTime,
+  });
+
+  return { attendance: toAttendanceRecord(attendance) };
+}
+
+// ── Committees ───────────────────────────────────────────────────────────
+
+function toCommittee(c: db.MockCommittee): Committee {
+  const members: CommitteeMemberSummary[] = db.committeeMemberships
+    .filter((m) => m.committeeId === c.id)
+    .map((m) => {
+      const u = db.findUser(m.userId)!;
+      return { userId: u.id, firstName: u.firstName, lastName: u.lastName, avatarUrl: u.avatarUrl ?? null, role: m.role };
+    })
+    .sort((a, b) => (a.role === b.role ? a.firstName.localeCompare(b.firstName) : a.role === "CHAIR" ? -1 : 1));
+  return {
+    id: c.id,
+    name: c.name,
+    description: c.description ?? null,
+    channelId: c.channelId ?? null,
+    memberCount: members.length,
+    members,
+  };
+}
+
+export function listCommittees(): Committee[] {
+  return db.committees.map(toCommittee);
+}
+
+export function getCommittee(id: string): Committee {
+  const c = db.committees.find((x) => x.id === id);
+  if (!c) throw new DemoApiError(404, "Committee not found");
+  return toCommittee(c);
+}
+
+export function createCommittee(payload: { name: string; description?: string }): Committee {
+  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  const committee: db.MockCommittee = {
+    id: db.nextId("c"),
+    name: payload.name,
+    description: payload.description ?? null,
+    channelId: null,
+  };
+  db.committees.push(committee);
+  return toCommittee(committee);
+}
+
+export function updateCommittee(id: string, payload: { name?: string; description?: string }): Committee {
+  const c = db.committees.find((x) => x.id === id);
+  if (!c) throw new DemoApiError(404, "Committee not found");
+  if (payload.name !== undefined) c.name = payload.name;
+  if (payload.description !== undefined) c.description = payload.description;
+  return toCommittee(c);
+}
+
+export function addCommitteeMember(
+  committeeId: string,
+  payload: { userId: string; role?: CommitteeRole }
+): CommitteeMembershipSummary {
+  const c = db.committees.find((x) => x.id === committeeId);
+  const u = db.findUser(payload.userId);
+  if (!c || !u) throw new DemoApiError(404, "Committee or user not found");
+  const existing = db.committeeMemberships.find((m) => m.committeeId === committeeId && m.userId === payload.userId);
+  if (!existing) {
+    db.committeeMemberships.push({ committeeId, userId: payload.userId, role: payload.role ?? "MEMBER" });
+  }
+  return { committeeId, committeeName: c.name, role: payload.role ?? "MEMBER" };
+}
+
+export function removeCommitteeMember(committeeId: string, userId: string): void {
+  const idx = db.committeeMemberships.findIndex((m) => m.committeeId === committeeId && m.userId === userId);
+  if (idx >= 0) db.committeeMemberships.splice(idx, 1);
+}
+
+// ── Messaging ────────────────────────────────────────────────────────────
+
+function channelCanPost(channel: db.MockChannel, userId: string): boolean {
+  const u = db.findUser(userId);
+  if (!u) return false;
+  switch (channel.type) {
+    case "GENERAL":
+      return ROLE_RANK[u.role] >= ROLE_RANK.EXEC;
+    case "OFFICERS":
+      return ROLE_RANK[u.role] >= ROLE_RANK.OFFICER;
+    case "COMMITTEE":
+      return (
+        ROLE_RANK[u.role] >= ROLE_RANK.EXEC ||
+        db.channelMemberships.some((m) => m.channelId === channel.id && m.userId === userId)
+      );
+    case "DM":
+      return db.channelMemberships.some((m) => m.channelId === channel.id && m.userId === userId);
+  }
+}
+
+function channelVisible(channel: db.MockChannel, userId: string): boolean {
+  const u = db.findUser(userId);
+  if (!u) return false;
+  if (channel.type === "GENERAL") return true;
+  if (channel.type === "OFFICERS") return ROLE_RANK[u.role] >= ROLE_RANK.OFFICER;
+  // COMMITTEE / DM — membership required, Exec+ can see all committee channels
+  if (channel.type === "COMMITTEE" && ROLE_RANK[u.role] >= ROLE_RANK.EXEC) return true;
+  return db.channelMemberships.some((m) => m.channelId === channel.id && m.userId === userId);
+}
+
+function toChannel(c: db.MockChannel, userId: string): Channel {
+  const committee = c.committeeId ? db.committees.find((x) => x.id === c.committeeId) : null;
+  const last = db.messages
+    .filter((m) => m.channelId === c.id && !m.deletedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const lastSender = last ? db.findUser(last.senderId) : undefined;
+  return {
+    id: c.id,
+    name: c.name,
+    type: c.type,
+    committeeId: c.committeeId ?? null,
+    committee: committee ? { id: committee.id, name: committee.name } : null,
+    canPost: channelCanPost(c, userId),
+    pinnedCount: db.messages.filter((m) => m.channelId === c.id && m.pinned && !m.deletedAt).length,
+    lastMessage: last
+      ? {
+          content: last.content,
+          senderName: lastSender ? `${lastSender.firstName} ${lastSender.lastName}` : "Unknown",
+          createdAt: last.createdAt,
+        }
+      : null,
+  };
+}
+
+export function listChannels(): Channel[] {
+  const userId = getCurrentDemoUserId();
+  return db.channels.filter((c) => channelVisible(c, userId)).map((c) => toChannel(c, userId));
+}
+
+function toMessage(m: db.MockMessage): Message {
+  const sender = db.findUser(m.senderId)!;
+  const replyCount = db.messages.filter((r) => r.parentMessageId === m.id && !r.deletedAt).length;
+  return {
+    id: m.id,
+    channelId: m.channelId,
+    content: m.content,
+    pinned: m.pinned,
+    parentMessageId: m.parentMessageId ?? null,
+    createdAt: m.createdAt,
+    editedAt: m.editedAt ?? null,
+    deletedAt: m.deletedAt ?? null,
+    sender: { id: sender.id, firstName: sender.firstName, lastName: sender.lastName, avatarUrl: sender.avatarUrl ?? null },
+    _count: { replies: replyCount },
+  };
+}
+
+export function getChannelMessages(
+  channelId: string,
+  params: { before?: string; limit?: number }
+): { messages: Message[]; pinned: Message[]; hasMore: boolean; oldestTimestamp: string | null } {
+  let all = db.messages
+    .filter((m) => m.channelId === channelId && !m.deletedAt && !m.parentMessageId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (params.before) all = all.filter((m) => m.createdAt < params.before!);
+  const limit = params.limit ?? 30;
+  const page = all.slice(0, limit);
+  const hasMore = all.length > limit;
+  const pinned = db.messages
+    .filter((m) => m.channelId === channelId && m.pinned && !m.deletedAt)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return {
+    messages: page.map(toMessage),
+    pinned: pinned.map(toMessage),
+    hasMore,
+    oldestTimestamp: page.length ? page[page.length - 1].createdAt : null,
+  };
+}
+
+export function getThread(channelId: string, messageId: string): { parent: Message; replies: Message[] } {
+  const parent = db.findMessage(messageId);
+  if (!parent || parent.channelId !== channelId) throw new DemoApiError(404, "Message not found");
+  const replies = db.messages
+    .filter((m) => m.parentMessageId === messageId && !m.deletedAt)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return { parent: toMessage(parent), replies: replies.map(toMessage) };
+}
+
+export function sendMessage(channelId: string, payload: { content: string; parentMessageId?: string }): Message {
+  const userId = getCurrentDemoUserId();
+  const channel = db.channels.find((c) => c.id === channelId);
+  if (!channel) throw new DemoApiError(404, "Channel not found");
+  if (!channelCanPost(channel, userId)) throw new DemoApiError(403, "You can't post in this channel");
+  const message: db.MockMessage = {
+    id: db.nextId("msg"),
+    channelId,
+    senderId: userId,
+    content: payload.content,
+    parentMessageId: payload.parentMessageId ?? null,
+    pinned: false,
+    createdAt: new Date().toISOString(),
+  };
+  db.messages.push(message);
+  return toMessage(message);
+}
+
+export function pinMessage(messageId: string, pinned: boolean): Message {
+  if (!isOfficerOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Officer+ required");
+  const m = db.findMessage(messageId);
+  if (!m) throw new DemoApiError(404, "Message not found");
+  m.pinned = pinned;
+  return toMessage(m);
+}
+
+export function deleteMessage(messageId: string): void {
+  const m = db.findMessage(messageId);
+  if (!m) throw new DemoApiError(404, "Message not found");
+  const userId = getCurrentDemoUserId();
+  if (m.senderId !== userId && !isOfficerOrAbove(userId)) {
+    throw new DemoApiError(403, "You can only delete your own messages");
+  }
+  m.deletedAt = new Date().toISOString();
+}
+
+// ── Dues ─────────────────────────────────────────────────────────────────
+
+function toDuesRecord(d: db.MockDuesRecord): DuesRecord {
+  const recordPayments = db.payments.filter((p) => p.duesRecordId === d.id);
+  return {
+    id: d.id,
+    userId: d.userId,
+    semesterId: d.semesterId,
+    amountOwed: d.amountOwed,
+    amountPaid: d.amountPaid,
+    status: d.status,
+    dueDate: d.dueDate ?? null,
+    semester: { id: db.semester.id, label: db.semester.label },
+    payments: recordPayments.map(toPayment),
+  };
+}
+
+function toPayment(p: db.MockPayment): Payment {
+  return { id: p.id, amount: p.amount, method: p.method, externalRef: p.externalRef ?? null, paidAt: p.paidAt };
+}
+
+export function getMyDues(): DuesRecord[] {
+  const userId = getCurrentDemoUserId();
+  return db.duesRecords
+    .filter((d) => d.userId === userId)
+    .sort((a, b) => b.semesterId.localeCompare(a.semesterId))
+    .map(toDuesRecord);
+}
+
+export function getAllDues(params: { semesterId?: string; status?: string }): {
+  records: (DuesRecord & { user: { id: string; firstName: string; lastName: string; email: string } })[];
+  summary: { status: string; _count: { _all: number }; _sum: { amountOwed: number; amountPaid: number } }[];
+} {
+  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  let list = db.duesRecords.filter((d) => d.semesterId === (params.semesterId ?? db.semester.id));
+  if (params.status) list = list.filter((d) => d.status === params.status);
+
+  const records = list.map((d) => {
+    const u = db.findUser(d.userId)!;
+    return { ...toDuesRecord(d), user: { id: u.id, firstName: u.firstName, lastName: u.lastName, email: u.email } };
+  });
+
+  const statuses: DuesStatus[] = ["PAID", "PARTIAL", "UNPAID", "WAIVED"];
+  const summary = statuses.map((status) => {
+    const rows = list.filter((d) => d.status === status);
+    return {
+      status,
+      _count: { _all: rows.length },
+      _sum: {
+        amountOwed: rows.reduce((s, r) => s + r.amountOwed, 0),
+        amountPaid: rows.reduce((s, r) => s + r.amountPaid, 0),
+      },
+    };
+  }).filter((s) => s._count._all > 0);
+
+  return { records, summary };
+}
+
+function recalcDuesStatus(record: db.MockDuesRecord): void {
+  if (record.status === "WAIVED") return;
+  if (record.amountPaid <= 0) record.status = "UNPAID";
+  else if (record.amountPaid >= record.amountOwed) record.status = "PAID";
+  else record.status = "PARTIAL";
+}
+
+export function recordPayment(
+  userId: string,
+  payload: { semesterId: string; amount: number; method: PaymentMethod; note?: string }
+): { payment: Payment; duesRecord: DuesRecord } {
+  if (!isOfficerOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Officer+ required");
+  const record = db.findDuesRecord(userId, payload.semesterId);
+  if (!record) throw new DemoApiError(404, "Dues record not found");
+
+  const payment: db.MockPayment = {
+    id: db.nextId("pay"),
+    duesRecordId: record.id,
+    amount: payload.amount,
+    method: payload.method,
+    externalRef: payload.note ?? null,
+    paidAt: new Date().toISOString(),
+    recordedById: getCurrentDemoUserId(),
+  };
+  db.payments.push(payment);
+  record.amountPaid += payload.amount;
+  recalcDuesStatus(record);
+
+  return { payment: toPayment(payment), duesRecord: toDuesRecord(record) };
+}
+
+export function waiveDues(userId: string, semesterId: string, reason: string): DuesRecord {
+  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  const record = db.findDuesRecord(userId, semesterId);
+  if (!record) throw new DemoApiError(404, "Dues record not found");
+  record.status = "WAIVED";
+  return toDuesRecord(record);
+}
+
+export function initializeSemesterDues(payload: {
+  semesterId: string;
+  amountOwed: number;
+  dueDate?: string;
+  userIds?: string[];
+}): { created: number; total: number } {
+  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  const targets = payload.userIds?.length
+    ? payload.userIds
+    : db.users.filter((u) => u.status === "ACTIVE" || u.status === "PLEDGE").map((u) => u.id);
+
+  let created = 0;
+  for (const userId of targets) {
+    if (db.findDuesRecord(userId, payload.semesterId)) continue;
+    db.duesRecords.push({
+      id: db.nextId("dues"),
+      userId,
+      semesterId: payload.semesterId,
+      amountOwed: payload.amountOwed,
+      amountPaid: 0,
+      status: "UNPAID",
+      dueDate: payload.dueDate ?? null,
+    });
+    created += 1;
+  }
+  return { created, total: targets.length };
+}
+
+export function sendDuesReminders(semesterId: string): {
+  sent: number;
+  members: { userId: string; firstName: string; email: string; status: string }[];
+} {
+  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  const outstanding = db.duesRecords.filter(
+    (d) => d.semesterId === semesterId && (d.status === "UNPAID" || d.status === "PARTIAL")
+  );
+  const members = outstanding.map((d) => {
+    const u = db.findUser(d.userId)!;
+    return { userId: u.id, firstName: u.firstName, email: u.email, status: d.status };
+  });
+  return { sent: members.length, members };
+}

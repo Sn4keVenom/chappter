@@ -1,16 +1,19 @@
 // mobile/screens/ProfileScreen.tsx
 //
 // Profile tab. Shows the current user's personal data: points this semester,
-// attendance history (last 5), dues status, and committee memberships.
+// attendance history (last 5), dues status, achievements, and committee
+// memberships.
 //
 // Integration:
 //   - getMe           → api/users.ts
 //   - getMyDues       → api/dues.ts (returns DuesRecord[])
 //   - getMyAttendanceHistory → api/attendance.ts (returns { records, nextCursor })
 //   - getLeaderboard  → api/users.ts (for current-semester rank)
+//   - getPointsLedger → api/users.ts (feeds achievements — bonus/attendance counts)
 //   - useAuthStore: setUser(null) on sign-out
 //   - setAuthToken(null): api/client.ts
-//   - @clerk/clerk-expo: useAuth
+//   - hooks/useAppAuth: Clerk signOut, demo-safe (see hook for why)
+//   - utils/achievements: computeAchievements — pure, works in demo or live mode
 //   - types/index.ts: User, DuesRecord, DuesStatus, AttendanceRecord, formatCurrency, fullName
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -19,14 +22,18 @@ import {
   ActivityIndicator, Alert, RefreshControl
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useAuth } from "@clerk/clerk-expo";
+import { useAppAuth } from "../hooks/useAppAuth";
 
 import { colors } from "../theme/colors";
 import { useAuthStore } from "../store/useAuthStore";
-import { getMe, getLeaderboard } from "../api/users";
+import { getMe, getLeaderboard, getPointsLedger } from "../api/users";
 import { getMyDues } from "../api/dues";
 import { getMyAttendanceHistory } from "../api/attendance";
 import { setAuthToken } from "../api/client";
+import { DEMO_MODE } from "../config/demo";
+import { DEMO_SWITCHABLE_USERS, DEMO_DEFAULT_USER_ID } from "../mocks/identity";
+import { switchDemoUser } from "../mocks/bootstrap";
+import { computeAchievements, type Achievement } from "../utils/achievements";
 import type { User, DuesRecord, DuesStatus, AttendanceRecord } from "../types";
 import { formatCurrency, fullName } from "../types";
 
@@ -41,7 +48,7 @@ export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const userFromStore = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
-  const { signOut } = useAuth();
+  const { signOut } = useAppAuth();
 
   const [profile, setProfile] = useState<User | null>(null);
   const [dues, setDues] = useState<DuesRecord | null>(null);
@@ -49,6 +56,7 @@ export default function ProfileScreen() {
   const [rank, setRank] = useState<number | null>(null);
   const [totalPoints, setTotalPoints] = useState<number>(0);
   const [semesterLabel, setSemesterLabel] = useState<string | null>(null);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -64,7 +72,8 @@ export default function ProfileScreen() {
 
       setProfile(me);
       // Show most recent semester's dues record (first in the array, sorted by createdAt desc)
-      setDues(duesRecords[0] ?? null);
+      const currentDues = duesRecords[0] ?? null;
+      setDues(currentDues);
       setHistory(histResult.records);
 
       // Find self on leaderboard
@@ -72,6 +81,21 @@ export default function ProfileScreen() {
       setRank(self?.rank ?? null);
       setTotalPoints(self?.total ?? 0);
       setSemesterLabel(board.semesterLabel);
+
+      // Achievements are derived from the full ledger, not just the 5 most
+      // recent attendance rows shown above.
+      const ledger = await getPointsLedger(me.id, { limit: 200 });
+      setAchievements(
+        computeAchievements({
+          totalPoints: self?.total ?? 0,
+          rank: self?.rank ?? null,
+          attendanceCount: ledger.entries.filter((e) => e.type === "ATTENDANCE").length,
+          lateCount: histResult.records.filter((r) => r.late).length,
+          bonusCount: ledger.entries.filter((e) => e.type === "BONUS").length,
+          duesStatus: currentDues?.status ?? null,
+          committeeCount: me.committeeMemberships?.length ?? 0,
+        })
+      );
     } catch {
       // Non-fatal — show what we have from the store
     } finally {
@@ -83,6 +107,23 @@ export default function ProfileScreen() {
   useEffect(() => { load(); }, [load]);
 
   const handleSignOut = () => {
+    if (DEMO_MODE) {
+      Alert.alert(
+        "Demo Mode",
+        "There's no real account to sign out of — this is a local demo. Reset to the default demo user instead?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Reset",
+            onPress: () => {
+              switchDemoUser(DEMO_DEFAULT_USER_ID);
+              load();
+            },
+          },
+        ]
+      );
+      return;
+    }
     Alert.alert("Sign out", "You'll need to sign back in to access ChapterHub.", [
       { text: "Cancel", style: "cancel" },
       {
@@ -95,6 +136,23 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleSwitchRole = () => {
+    Alert.alert(
+      "Switch demo role",
+      "View the app as a different mock user to see role-gated features (Admin tab, dues management, committee scope, etc).",
+      [
+        ...DEMO_SWITCHABLE_USERS.map(({ user, blurb }) => ({
+          text: `${user.firstName} ${user.lastName} — ${user.role}${user.id === userFromStore?.id ? " (current)" : ""}`,
+          onPress: () => {
+            switchDemoUser(user.id);
+            load();
+          },
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ]
+    );
   };
 
   if (loading) {
@@ -121,6 +179,13 @@ export default function ProfileScreen() {
         />
       }
     >
+      {DEMO_MODE && (
+        <Pressable style={styles.demoBanner} onPress={handleSwitchRole}>
+          <Text style={styles.demoBannerText}>🎭 Demo Mode — viewing as {profile?.role ?? userFromStore?.role}</Text>
+          <Text style={styles.demoBannerLink}>Switch role →</Text>
+        </Pressable>
+      )}
+
       {/* Avatar + identity */}
       <View style={styles.hero}>
         <View style={styles.avatar}>
@@ -176,6 +241,21 @@ export default function ProfileScreen() {
         </View>
       )}
 
+      {/* Achievements */}
+      {achievements.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Achievements</Text>
+          <View style={styles.badgeRow}>
+            {achievements.map((a) => (
+              <View key={a.id} style={[styles.badge, !a.earned && styles.badgeUnearned]}>
+                <Text style={[styles.badgeIcon, !a.earned && styles.badgeIconUnearned]}>{a.icon}</Text>
+                <Text style={[styles.badgeLabel, !a.earned && styles.badgeLabelUnearned]}>{a.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* Committee memberships */}
       {(profile?.committeeMemberships?.length ?? 0) > 0 && (
         <View style={styles.section}>
@@ -227,7 +307,7 @@ export default function ProfileScreen() {
 
       {/* Sign out */}
       <Pressable style={styles.signOutBtn} onPress={handleSignOut}>
-        <Text style={styles.signOutText}>Sign out</Text>
+        <Text style={styles.signOutText}>{DEMO_MODE ? "Reset demo session" : "Sign out"}</Text>
       </Pressable>
     </ScrollView>
   );
@@ -237,6 +317,15 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
+
+  // Demo banner
+  demoBanner: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.accent + "1A", borderRadius: 10, borderWidth: 1, borderColor: colors.accent + "55",
+    paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20,
+  },
+  demoBannerText: { fontSize: 12, fontWeight: "600", color: colors.textPrimary, flex: 1, marginRight: 8 },
+  demoBannerLink: { fontSize: 12, fontWeight: "700", color: colors.accent },
 
   // Hero
   hero: { alignItems: "center", marginBottom: 24 },
@@ -284,6 +373,19 @@ const styles = StyleSheet.create({
     fontSize: 12, fontWeight: "700", color: colors.textMuted,
     textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8,
   },
+
+  // Achievement badges
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  badge: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: colors.surface, borderRadius: 20, borderWidth: 1, borderColor: colors.accent,
+    paddingHorizontal: 12, paddingVertical: 7,
+  },
+  badgeUnearned: { borderColor: colors.border, opacity: 0.55 },
+  badgeIcon: { fontSize: 14 },
+  badgeIconUnearned: { opacity: 0.6 },
+  badgeLabel: { fontSize: 12, fontWeight: "700", color: colors.textPrimary },
+  badgeLabelUnearned: { color: colors.textMuted },
 
   // Committee rows
   committeeRow: {

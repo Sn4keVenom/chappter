@@ -1,0 +1,194 @@
+// src/mocks/router.ts
+//
+// A custom axios `adapter` that answers every request from local mock data
+// instead of the network. Installed onto the shared `apiClient` instance in
+// api/client.ts only when DEMO_MODE is true (see src/config/demo.ts) — every
+// other file (all of src/api/*.ts, every screen, every store) is completely
+// unaware this exists. They call apiClient.get/post/patch/delete exactly as
+// they would against the real backend; axios's own request/response
+// interceptors still run unchanged (see api/client.ts), so ApiError handling
+// in screens works identically in demo and live mode.
+//
+// Route table mirrors backend/routes/*.ts one-for-one — same paths, same
+// response envelopes — so this file is also a reasonably complete map of
+// the full backend API surface.
+
+import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
+import * as api from "./api";
+import { DemoApiError } from "./api";
+
+type Handler = (params: Record<string, string>, query: Record<string, any>, body: any) => unknown;
+
+interface Route {
+  method: string;
+  segments: string[]; // e.g. ["events", ":id", "rsvp"]
+  handler: Handler;
+}
+
+const routes: Route[] = [];
+
+function seg(pattern: string): string[] {
+  return pattern.split("/").filter(Boolean);
+}
+
+function route(method: string, pattern: string, handler: Handler): void {
+  routes.push({ method, segments: seg(pattern), handler });
+}
+
+function matchRoute(method: string, url: string): { route: Route; params: Record<string, string> } | null {
+  const path = url.split("?")[0];
+  const urlSegments = seg(path);
+  for (const r of routes) {
+    if (r.method !== method) continue;
+    if (r.segments.length !== urlSegments.length) continue;
+    const params: Record<string, string> = {};
+    let ok = true;
+    for (let i = 0; i < r.segments.length; i++) {
+      const p = r.segments[i];
+      const u = decodeURIComponent(urlSegments[i]);
+      if (p.startsWith(":")) params[p.slice(1)] = u;
+      else if (p !== u) { ok = false; break; }
+    }
+    if (ok) return { route: r, params };
+  }
+  return null;
+}
+
+// ── Route table ──────────────────────────────────────────────────────────
+// Literal paths are listed ahead of their wildcard siblings of the same
+// segment length (e.g. "/users/me" before "/users/:id") so they win the match.
+
+// Auth (not called in Demo Mode — login is bypassed — kept for completeness)
+route("post", "/auth/sync", () => ({ user: api.getMe() }));
+
+// Events
+route("get", "/events", (_p, q) => ({ events: api.listEvents(q) }));
+route("post", "/events", (_p, _q, body) => ({ event: api.createEvent(body) }));
+route("get", "/events/:id/checkin-token", (p) => api.getCheckInToken(p.id));
+route("get", "/events/:id/attendance", (p) => api.getEventRoster(p.id));
+route("get", "/events/:id", (p) => ({ event: api.getEvent(p.id) }));
+route("post", "/events/:id/rsvp", (p, _q, body) => {
+  api.setRsvp(p.id, body.status);
+  return {};
+});
+route("post", "/events/:id/checkin", (p, _q, body) => api.selfCheckIn(p.id, body.token));
+route("post", "/events/:id/attendance/:userId", (p, _q, body) => api.manualMarkAttendance(p.id, p.userId, body));
+
+// Users / points
+route("get", "/users/me/dashboard", () => api.getDashboard());
+route("get", "/users/me", () => ({ user: api.getMe() }));
+route("get", "/users/:id", (p) => ({ user: api.getMemberProfile(p.id) }));
+route("get", "/users", (_p, q) => api.getRoster(q));
+route("patch", "/users/:id/role", (p, _q, body) => ({ user: api.updateUserRole(p.id, body.role) }));
+route("get", "/points/leaderboard", (_p, q) => api.getLeaderboard());
+route("get", "/points/ledger/:userId", (p, q) => api.getPointsLedger(p.userId, q));
+route("post", "/points/adjust", (_p, _q, body) => ({ entry: api.adjustPoints(body) }));
+
+// Attendance
+route("get", "/attendance/history/:userId", (p) => api.getMemberAttendanceHistory(p.userId));
+route("get", "/attendance/history", (_p, q) => api.getMyAttendanceHistory(q));
+
+// Committees
+route("get", "/committees", () => ({ committees: api.listCommittees() }));
+route("post", "/committees", (_p, _q, body) => ({ committee: api.createCommittee(body) }));
+route("get", "/committees/:id", (p) => ({ committee: api.getCommittee(p.id) }));
+route("patch", "/committees/:id", (p, _q, body) => ({ committee: api.updateCommittee(p.id, body) }));
+route("post", "/committees/:id/members", (p, _q, body) => ({ membership: api.addCommitteeMember(p.id, body) }));
+route("delete", "/committees/:id/members/:userId", (p) => {
+  api.removeCommitteeMember(p.id, p.userId);
+  return {};
+});
+
+// Messaging
+route("get", "/channels", () => ({ channels: api.listChannels() }));
+route("get", "/channels/:id/messages/:messageId/thread", (p) => api.getThread(p.id, p.messageId));
+route("get", "/channels/:id/messages", (p, q) => api.getChannelMessages(p.id, q));
+route("post", "/channels/:id/messages", (p, _q, body) => ({ message: api.sendMessage(p.id, body) }));
+route("patch", "/messages/:id/pin", (p, _q, body) => ({ message: api.pinMessage(p.id, body.pinned) }));
+route("delete", "/messages/:id", (p) => {
+  api.deleteMessage(p.id);
+  return {};
+});
+
+// Dues
+route("get", "/dues/me", () => ({ records: api.getMyDues() }));
+route("get", "/dues", (_p, q) => api.getAllDues(q));
+route("post", "/dues/initialize", (_p, _q, body) => api.initializeSemesterDues(body));
+route("post", "/dues/reminders/send", (_p, _q, body) => api.sendDuesReminders(body.semesterId));
+route("post", "/dues/:userId/payment", (p, _q, body) => api.recordPayment(p.userId, body));
+route("post", "/dues/:userId/waive", (p, _q, body) => api.waiveDues(p.userId, body.semesterId, body.reason));
+
+// ── Adapter plumbing ─────────────────────────────────────────────────────
+
+function delay(): Promise<void> {
+  // A little artificial latency so loading spinners, pull-to-refresh, and
+  // optimistic-update code paths behave the same as they would against a
+  // real network call, instead of resolving instantly.
+  const ms = 180 + Math.floor(Math.random() * 220);
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseBody(data: unknown): any {
+  if (data == null) return {};
+  if (typeof data === "string") {
+    try {
+      return JSON.parse(data);
+    } catch {
+      return {};
+    }
+  }
+  return data;
+}
+
+function ok(config: InternalAxiosRequestConfig, data: unknown): AxiosResponse {
+  return {
+    data,
+    status: 200,
+    statusText: "OK",
+    headers: {},
+    config,
+    request: {},
+  };
+}
+
+function fail(config: InternalAxiosRequestConfig, status: number, message: string, code?: string): never {
+  const err: any = new Error(message);
+  err.isAxiosError = true;
+  err.config = config;
+  err.response = {
+    data: { error: message, ...(code ? { code } : {}) },
+    status,
+    statusText: "",
+    headers: {},
+    config,
+  };
+  throw err;
+}
+
+export async function demoAdapter(config: InternalAxiosRequestConfig): Promise<AxiosResponse> {
+  await delay();
+
+  const method = (config.method ?? "get").toLowerCase();
+  const url = config.url ?? "";
+  const matched = matchRoute(method, url);
+
+  if (!matched) {
+    fail(config, 404, `No demo-mode mock for ${method.toUpperCase()} ${url}`);
+  }
+
+  try {
+    const result = matched.route.handler(
+      matched.params,
+      (config.params as Record<string, any>) ?? {},
+      parseBody(config.data)
+    );
+    return ok(config, result);
+  } catch (e) {
+    if (e instanceof DemoApiError) {
+      fail(config, e.status, e.message, e.code);
+    }
+    // Any unexpected error in a mock handler is a bug in the mock, not a
+    // "real" 4xx — surface it as a 500 so it's obvious during development.
+    fail(config, 500, e instanceof Error ? e.message : "Demo mock error");
+  }
+}

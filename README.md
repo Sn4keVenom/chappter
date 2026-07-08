@@ -4,17 +4,26 @@
 
 A mobile-first fraternity management app built with Expo (React Native) and a Node.js/Express backend. Handles event management, QR check-in, points tracking, committee messaging, and dues collection.
 
-## Quick Start
+## Quick Start — Demo Mode (default, no setup required)
 
 ```bash
-# Clone the repository
 git clone https://github.com/your-org/chapterhub.git
 cd chapterhub
-
-# Mobile app
-cp .env.example .env          # fill in Clerk publishable key + API URL
 npm install
 npm start                     # starts Expo; scan QR with Expo Go
+```
+
+That's it — no `.env` file, no Clerk account, no database, no backend. The
+app launches straight into a fully interactive mock chapter with realistic
+members, events, dues, and messages. See [docs/DEMO_MODE.md](docs/DEMO_MODE.md).
+
+## Running against the real backend
+
+```bash
+# Mobile app
+cp .env.example .env          # set EXPO_PUBLIC_DEMO_MODE=false, fill in Clerk key + API URL
+npm install
+npm start
 
 # Backend (separate terminal)
 cp backend/.env.example backend/.env   # fill in DATABASE_URL + CLERK_SECRET_KEY
@@ -42,12 +51,15 @@ See [BUILD.md](BUILD.md) for complete setup instructions.
 chapterhub/           ← repository root = Expo mobile app (phone only — no web/Electron)
 ├── App.tsx           ← entry point
 ├── src/              ← all mobile source
+│   ├── config/       ← DEMO_MODE flag
+│   ├── mocks/        ← Demo Mode mock data + API layer (see docs/DEMO_MODE.md)
 │   ├── api/          ← HTTP client modules
 │   ├── navigation/   ← React Navigation setup
 │   ├── screens/      ← screen components
 │   ├── store/        ← Zustand state
 │   ├── hooks/        ← custom hooks
 │   ├── theme/        ← colors palette
+│   ├── utils/        ← achievements + other pure client-side helpers
 │   └── types/        ← TypeScript types
 ├── backend/          ← Express API server (separate npm package)
 │   ├── routes/       ← route handlers
@@ -62,7 +74,8 @@ chapterhub/           ← repository root = Expo mobile app (phone only — no w
 
 | File | Purpose |
 |---|---|
-| [BUILD.md](BUILD.md) | Setup instructions for macOS and Windows |
+| [docs/DEMO_MODE.md](docs/DEMO_MODE.md) | How Demo Mode works, what's mocked, how to reconnect the real backend |
+| [BUILD.md](BUILD.md) | Setup instructions for the real backend (macOS and Windows) |
 | [TESTING.md](TESTING.md) | Test plan and manual test cases |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | Directory and file reference |

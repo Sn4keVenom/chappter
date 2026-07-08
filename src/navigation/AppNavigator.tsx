@@ -8,8 +8,8 @@
 //   · usePermissions.ts — canViewAdminPanel gates the AdminPanel tab
 //   · colors.ts         — primary/accent for header/tab styling
 //   · AppStackParamList + MainTabParamList from navigation/types.ts
-//   · All screen imports — see imports below; stub screens use () => null
-//     until their files are generated
+//   · All screen imports — see imports below. AuditLog and Thread still use
+//     NotImplementedScreen — no backend endpoint exists for either yet.
 
 import React from "react";
 import { Text } from "react-native";
@@ -32,9 +32,12 @@ import LeaderboardScreen from "../screens/LeaderboardScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import CommitteeDetailScreen from "../screens/CommitteeDetailScreen";
 import AdminPanelScreen from "../screens/admin/AdminPanelScreen";
-
-// Lightweight stubs for screens not yet built
-const PlaceholderScreen = () => null;
+import MemberProfileScreen from "../screens/MemberProfileScreen";
+import PointsAdjustScreen from "../screens/admin/PointsAdjustScreen";
+import RosterDetailScreen from "../screens/admin/RosterDetailScreen";
+import DuesDetailScreen from "../screens/admin/DuesDetailScreen";
+import MapViewScreen from "../screens/MapViewScreen";
+import NotImplementedScreen from "../screens/NotImplementedScreen";
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -141,7 +144,7 @@ export default function AppNavigator() {
       <Stack.Screen name="EditEvent" component={CreateEventScreen} options={{ title: "Edit Event" }} />
       <Stack.Screen name="CheckIn" component={CheckInScreen} options={{ title: "Check-In" }} />
       <Stack.Screen name="AttendanceOverride" component={AttendanceOverrideScreen} options={{ title: "Attendance" }} />
-      <Stack.Screen name="MapView" component={PlaceholderScreen} options={{ title: "Location" }} />
+      <Stack.Screen name="MapView" component={MapViewScreen} options={{ title: "Location" }} />
 
       {/* Messaging */}
       <Stack.Screen
@@ -149,7 +152,7 @@ export default function AppNavigator() {
         component={ChannelMessagesScreen}
         options={({ route }: any) => ({ title: route.params?.channelName ?? "Channel" })}
       />
-      <Stack.Screen name="Thread" component={PlaceholderScreen} options={{ title: "Thread" }} />
+      <Stack.Screen name="Thread" component={NotImplementedScreen} options={{ title: "Thread" }} />
 
       {/* Committees */}
       <Stack.Screen
@@ -159,11 +162,11 @@ export default function AppNavigator() {
       />
 
       {/* Member/Admin */}
-      <Stack.Screen name="MemberProfile" component={PlaceholderScreen} options={{ title: "Member" }} />
-      <Stack.Screen name="AuditLog" component={PlaceholderScreen} options={{ title: "Audit Log" }} />
-      <Stack.Screen name="PointsAdjust" component={PlaceholderScreen} options={{ title: "Adjust Points" }} />
-      <Stack.Screen name="RosterDetail" component={PlaceholderScreen} options={{ title: "Roster" }} />
-      <Stack.Screen name="DuesDetail" component={PlaceholderScreen} options={{ title: "Dues" }} />
+      <Stack.Screen name="MemberProfile" component={MemberProfileScreen} options={{ title: "Member" }} />
+      <Stack.Screen name="AuditLog" component={NotImplementedScreen} options={{ title: "Audit Log" }} />
+      <Stack.Screen name="PointsAdjust" component={PointsAdjustScreen} options={{ title: "Adjust Points" }} />
+      <Stack.Screen name="RosterDetail" component={RosterDetailScreen} options={{ title: "Roster" }} />
+      <Stack.Screen name="DuesDetail" component={DuesDetailScreen} options={{ title: "Dues" }} />
     </Stack.Navigator>
   );
 }

@@ -115,6 +115,7 @@ interface AdminStats {
   duesAmountOwed: number;
   duesAmountPaid: number;
   currentSemesterLabel: string | null;
+  currentSemesterId: string | null;
   topPoints: number;
   committees: Committee[];
 }
@@ -144,11 +145,13 @@ export default function AdminPanelScreen() {
       let duesTotal = 0;
       let duesAmountOwed = 0;
       let duesAmountPaid = 0;
+      let currentSemesterId: string | null = null;
 
       // Dues summary only accessible to Exec+
       if (isExecOrAbove) {
         try {
-          const { summary } = await getAllDues();
+          const { records, summary } = await getAllDues();
+          currentSemesterId = records[0]?.semesterId ?? null;
           for (const s of summary) {
             duesTotal += s._count._all;
             if (s.status === "PAID" || s.status === "WAIVED") duesPaid += s._count._all;
@@ -168,6 +171,7 @@ export default function AdminPanelScreen() {
         duesAmountOwed,
         duesAmountPaid,
         currentSemesterLabel: boardResult.semesterLabel,
+        currentSemesterId,
         topPoints: top?.total ?? 0,
         committees: committeeList,
       });
@@ -182,10 +186,11 @@ export default function AdminPanelScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function handleSendReminders() {
-    if (!stats?.currentSemesterLabel) {
+    if (!stats?.currentSemesterId) {
       Alert.alert("No active semester", "Could not determine the current semester.");
       return;
     }
+    const semesterId = stats.currentSemesterId;
     Alert.alert(
       "Send Dues Reminders",
       `Send email reminders to all UNPAID and PARTIAL members this semester?`,
@@ -196,9 +201,13 @@ export default function AdminPanelScreen() {
           onPress: async () => {
             setSendingReminders(true);
             try {
-              // We need the semester ID — fetch it or store it from the dues response
-              // For now alert a placeholder until we plumb semesterId through
-              Alert.alert("Reminders sent", "Notified all members with outstanding dues.");
+              const result = await sendDuesReminders(semesterId);
+              Alert.alert(
+                "Reminders sent",
+                result.sent > 0
+                  ? `Notified ${result.sent} member${result.sent === 1 ? "" : "s"} with outstanding dues.`
+                  : "No members currently have outstanding dues."
+              );
             } catch (e: any) {
               Alert.alert("Error", e?.message ?? "Could not send reminders");
             } finally {
@@ -291,13 +300,8 @@ export default function AdminPanelScreen() {
           <ActionRow
             icon="⭐"
             label="Adjust Points"
-            sub="Bonus, penalty, or manual adjustment"
-            onPress={() =>
-              Alert.alert(
-                "Select a member",
-                "Navigate to a member's profile to adjust their points."
-              )
-            }
+            sub="Find a member on the roster, then adjust from their profile"
+            onPress={() => navigation.navigate("RosterDetail")}
           />
         )}
         {isExecOrAbove && (
