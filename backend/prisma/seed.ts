@@ -20,6 +20,7 @@
 //     first local login.
 
 import { PrismaClient } from "@prisma/client";
+import { seedDefaultPermissions } from "../lib/permissionDefaults";
 
 const prisma = new PrismaClient();
 
@@ -56,6 +57,16 @@ async function main() {
     },
   });
   console.log(`✅  ChapterSettings ready for chapter ${chapter.id}`);
+
+  // ── Default role/office permissions ─────────────────────────────────────
+  // Previously only seeded lazily on the first GET /permissions call —
+  // meaning a freshly deployed chapter had zero exec permissions granted
+  // (every requirePermission() check 403ing) until someone happened to open
+  // the Permissions screen. Seeding here means every role/office grant is
+  // live from the moment this script finishes, not from whenever a Super
+  // Admin first opens that screen.
+  await seedDefaultPermissions(prisma);
+  console.log("✅  Default role/office permissions seeded");
 
   // ── Current Semester ────────────────────────────────────────────────────
   const semester = await prisma.semester.upsert({

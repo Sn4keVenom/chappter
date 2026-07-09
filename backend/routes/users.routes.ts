@@ -215,17 +215,22 @@ router.get(
       chapterId: req.user!.chapterId!,
       ...(role ? { role: String(role) as any } : {}),
       ...(status ? { status: String(status) as any } : {}),
-      ...(q
-        ? {
-            user: {
+      // deletedAt: null — don't show accounts whose Clerk login was deleted
+      // (see webhook.routes.ts) in the roster; their historical records
+      // (attendance, messages, audit log) are untouched, just not surfaced
+      // as an active member here.
+      user: {
+        deletedAt: null,
+        ...(q
+          ? {
               OR: [
                 { firstName: { contains: String(q), mode: "insensitive" as const } },
                 { lastName: { contains: String(q), mode: "insensitive" as const } },
                 { email: { contains: String(q), mode: "insensitive" as const } },
               ],
-            },
-          }
-        : {}),
+            }
+          : {}),
+      },
     };
 
     const [memberships, total] = await Promise.all([

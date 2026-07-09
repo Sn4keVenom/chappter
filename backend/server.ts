@@ -67,13 +67,17 @@ import feedbackRouter from "./routes/feedback.routes";
 import permissionsRouter from "./routes/permissions.routes";
 import chaptersRouter from "./routes/chapters.routes";
 import membershipRouter from "./routes/membership.routes";
+import auditLogRouter from "./routes/auditlog.routes";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
 
-// ── 1. Raw body for Stripe webhook (must precede express.json) ────────────
+// ── 1. Raw body for Stripe/Clerk webhooks (must precede express.json) ─────
+// Both verify a signature computed over the exact raw bytes — express.json()
+// would parse and re-serialize the body, which can produce different bytes
+// (key order, whitespace) and break signature verification.
 app.use(
-  "/api/v1/webhooks/stripe",
+  ["/api/v1/webhooks/stripe", "/api/v1/webhooks/clerk"],
   express.raw({ type: "application/json" })
 );
 
@@ -169,6 +173,7 @@ app.use("/api/v1", feedbackRouter);
 app.use("/api/v1", permissionsRouter);
 app.use("/api/v1", chaptersRouter);
 app.use("/api/v1", membershipRouter);
+app.use("/api/v1", auditLogRouter);
 
 // ── 11. 404 for anything unmatched ──────────────────────────────────────────
 app.use((req, res) => {
@@ -188,26 +193,32 @@ app.use(
   }
 );
 
-const PORT = Number(process.env.PORT ?? 4000);
-const server = app.listen(PORT, () => {
-  console.log(`ChapterHub API → http://localhost:${PORT}`);
-});
-
-// ── Graceful shutdown ────────────────────────────────────────────────────
-// Stop accepting new connections, let in-flight requests finish, then
-// close the Prisma connection pool. Matters for zero-downtime deploys on
-// platforms that send SIGTERM before killing the container (Render,
-// Railway, Fly.io, k8s all do this).
-function shutdown(signal: string): void {
-  console.log(`[ChapterHub] ${signal} received, shutting down gracefully…`);
-  server.close(async () => {
-    await prisma.$disconnect();
-    process.exit(0);
+// Tests import `app` (via supertest) to exercise routes in-process without
+// a real socket — binding a real port on import would conflict across
+// parallel test files and leave zombie listeners behind. NODE_ENV=test is
+// set by tests/setup.ts before this module loads (see vitest.config.ts).
+if (process.env.NODE_ENV !== "test") {
+  const PORT = Number(process.env.PORT ?? 4000);
+  const server = app.listen(PORT, () => {
+    console.log(`ChapterHub API → http://localhost:${PORT}`);
   });
-  // Belt-and-suspenders: force-exit if connections don't drain in time.
-  setTimeout(() => process.exit(1), 10_000).unref();
+
+  // ── Graceful shutdown ────────────────────────────────────────────────────
+  // Stop accepting new connections, let in-flight requests finish, then
+  // close the Prisma connection pool. Matters for zero-downtime deploys on
+  // platforms that send SIGTERM before killing the container (Render,
+  // Railway, Fly.io, k8s all do this).
+  const shutdown = (signal: string): void => {
+    console.log(`[ChapterHub] ${signal} received, shutting down gracefully…`);
+    server.close(async () => {
+      await prisma.$disconnect();
+      process.exit(0);
+    });
+    // Belt-and-suspenders: force-exit if connections don't drain in time.
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
 
 export default app;

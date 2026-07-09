@@ -8,8 +8,9 @@
 //   · usePermissions.ts — canViewAdminPanel gates the AdminPanel tab
 //   · colors.ts         — primary/accent for header/tab styling
 //   · AppStackParamList + MainTabParamList from navigation/types.ts
-//   · All screen imports — see imports below. AuditLog and Thread still use
-//     NotImplementedScreen — no backend endpoint exists for either yet.
+//   · All screen imports — see imports below. Thread still uses
+//     NotImplementedScreen — no backend endpoint exists for it yet
+//     (AuditLog got a real screen — see screens/admin/AuditLogScreen.tsx).
 
 import React from "react";
 import { Text } from "react-native";
@@ -54,6 +55,7 @@ import EditProfileScreen from "../screens/EditProfileScreen";
 import MyFamilyScreen from "../screens/MyFamilyScreen";
 import ChapterInviteManagerScreen from "../screens/admin/ChapterInviteManagerScreen";
 import JoinRequestsScreen from "../screens/admin/JoinRequestsScreen";
+import AuditLogScreen from "../screens/admin/AuditLogScreen";
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -194,7 +196,7 @@ export default function AppNavigator() {
       <Stack.Screen name="MemberProfile" component={MemberProfileScreen} options={{ title: "Member" }} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: "Edit Profile" }} />
       <Stack.Screen name="MyFamily" component={MyFamilyScreen} options={{ title: "Family" }} />
-      <Stack.Screen name="AuditLog" component={NotImplementedScreen} options={{ title: "Audit Log" }} />
+      <Stack.Screen name="AuditLog" component={AuditLogScreen} options={{ title: "Audit Log" }} />
       <Stack.Screen name="PointsAdjust" component={PointsAdjustScreen} options={{ title: "Adjust Points" }} />
       <Stack.Screen name="RosterDetail" component={RosterDetailScreen} options={{ title: "Roster" }} />
       <Stack.Screen name="DuesDetail" component={DuesDetailScreen} options={{ title: "Dues" }} />

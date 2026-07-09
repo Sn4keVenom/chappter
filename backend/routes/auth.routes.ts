@@ -97,6 +97,16 @@ router.post(
 
     const existing = await prisma.user.findUnique({ where: { authProviderId } });
 
+    // A soft-deleted row (Clerk `user.deleted` webhook already fired for
+    // this authProviderId — see webhook.routes.ts) must never be silently
+    // resurrected by the upsert below overwriting its placeholder email/
+    // username back to real values. In practice Clerk itself stops issuing
+    // valid sessions for a deleted account, so this should be unreachable —
+    // this is the defensive backstop, not the primary guard.
+    if (existing?.deletedAt) {
+      return res.status(401).json({ error: "This account has been deleted" });
+    }
+
     // suggestUsername() checks availability before proposing a candidate,
     // but that check-then-insert isn't atomic — two OAuth sign-ups deriving
     // the same base username (e.g. "j.smith@gmail.com" and
@@ -110,7 +120,15 @@ router.post(
     let user;
     let attempt = 0;
     for (;;) {
-      const username = existing ? undefined : body.username ?? (await suggestUsername(body.email));
+      // Prisma validates the `create` branch's required fields even when
+      // `existing` means `update` is the one that'll actually run — found
+      // by the test suite added in this same hardening pass: every repeat
+      // sign-in (not just the first) calls /auth/sync, and `username`
+      // being `undefined` here for an existing user 500'd on literally
+      // every one of them. `create` only needs a *valid* value, never an
+      // actually-new one, when the row already exists — the existing
+      // user's own username is a safe, never-used-in-practice filler.
+      const username = existing ? existing.username : body.username ?? (await suggestUsername(body.email));
       try {
         user = await prisma.user.upsert({
           where: { authProviderId },
@@ -126,7 +144,7 @@ router.post(
             firstName: body.firstName,
             lastName: body.lastName,
             email: body.email,
-            username: username!,
+            username,
             phone: body.phone,
             avatarUrl: body.avatarUrl,
           },

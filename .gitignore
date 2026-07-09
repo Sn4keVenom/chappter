@@ -19,6 +19,7 @@ backend/dist/
 .env
 .env.local
 backend/.env
+backend/.env.test
 
 # Prisma (migrations/ IS committed — only local dev artifacts are ignored)
 backend/prisma/dev.db

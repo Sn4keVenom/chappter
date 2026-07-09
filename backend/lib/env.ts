@@ -31,3 +31,11 @@ if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
       "Stripe dues payments are disabled until both are configured."
   );
 }
+
+if (!process.env.CLERK_WEBHOOK_SIGNING_SECRET) {
+  console.warn(
+    "[ChapterHub] CLERK_WEBHOOK_SIGNING_SECRET not set — the /webhooks/clerk " +
+      "endpoint will reject every delivery with 503 until it's configured " +
+      "(Clerk Dashboard → Webhooks → your endpoint → Signing Secret)."
+  );
+}

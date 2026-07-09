@@ -23,57 +23,23 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requireRole, writeAuditLog } from "../middleware/rbac";
+import { EDITABLE_ROLES, EDITABLE_OFFICES, DEFAULT_OFFICE_PRESETS, seedDefaultPermissions } from "../lib/permissionDefaults";
 
 const router = Router();
-
-const EDITABLE_ROLES = ["EXEC", "MEMBER", "PNM", "ALUMNI"] as const;
-const EDITABLE_OFFICES = [
-  "REGENT", "VICE_REGENT", "TREASURER", "SCRIBE", "MARSHAL",
-  "CORRESPONDING_SECRETARY", "NEW_MEMBER_EDUCATOR",
-] as const;
-
-// Mirrors src/permissions/permissions.ts DEFAULT_ROLE_PRESETS — kept in
-// sync by hand since there's no shared package between mobile and backend.
-const DEFAULT_PRESETS: Record<(typeof EDITABLE_ROLES)[number], string[]> = {
-  EXEC: [
-    "events.view", "events.create", "events.edit", "events.delete",
-    "attendance.view", "attendance.take", "attendance.edit",
-    "documents.view", "documents.upload", "documents.delete",
-    "points.award", "points.deduct",
-    "messaging.post", "messaging.moderate",
-    "committees.manage",
-    "dues.manage", "finance.manage",
-    "teams.manage",
-    "feedback.view", "feedback.manage",
-    "users.manage",
-    "chapters.manageInvites", "membership.manageRelationships",
-  ],
-  MEMBER: ["events.view", "attendance.view", "documents.view", "messaging.post"],
-  PNM: ["events.view", "documents.view", "messaging.post"],
-  ALUMNI: ["events.view", "documents.view", "messaging.post"],
-};
-
-// Mirrors src/permissions/permissions.ts DEFAULT_OFFICE_PRESETS. Grants
-// scoped to a named office rather than a role tier — e.g. spec §6's "default:
-// Super Admin and Scribe" for role-number assignment is expressed here, not
-// as an `office === "SCRIBE"` check in membership.routes.ts.
-const DEFAULT_OFFICE_PRESETS: Partial<Record<(typeof EDITABLE_OFFICES)[number], string[]>> = {
-  SCRIBE: ["membership.assignRoleNumber"],
-};
 
 // ── GET /permissions ─────────────────────────────────────────────────────────
 // Open to any authenticated user — this is metadata every client needs to
 // gate its own UI correctly, not sensitive data (matches mocks/api.ts
-// getRolePermissions reasoning). Auto-seeds defaults on first read.
+// getRolePermissions reasoning). Still auto-seeds defaults here too (in
+// addition to prisma/seed.ts now doing it eagerly at deploy time — see
+// lib/permissionDefaults.ts) as a defensive backstop for a database that
+// was seeded before this existed.
 router.get(
   "/permissions",
   asyncHandler(async (_req: AuthedRequest, res: Response) => {
     const existing = await prisma.rolePermission.findMany();
     if (existing.length === 0) {
-      const seedRows = EDITABLE_ROLES.flatMap((role) =>
-        DEFAULT_PRESETS[role].map((permission) => ({ role, permission }))
-      );
-      await prisma.rolePermission.createMany({ data: seedRows, skipDuplicates: true });
+      await seedDefaultPermissions(prisma);
     }
 
     const rows = await prisma.rolePermission.findMany();

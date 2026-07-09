@@ -1726,3 +1726,67 @@ export function updateFeedbackStatus(id: string, status: FeedbackStatus): Feedba
   report.status = status;
   return report;
 }
+
+// ── Audit log (hardening item §3) ─────────────────────────────────────────
+// Demo Mode's mock mutations don't write to a shared log the way the real
+// backend's writeAuditLog() does (no natural data source) — this is a
+// small static, realistic-looking sample so AuditLogScreen has something
+// to show rather than an always-empty list. Not meant to reflect this
+// session's actual demo actions.
+interface DemoAuditEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  before: unknown;
+  after: unknown;
+  createdAt: string;
+  actorId: string;
+}
+
+const demoAuditLog: DemoAuditEntry[] = [
+  { id: "al1", action: "ROLE_CHANGE", entityType: "User", entityId: "u9", before: { role: "PNM" }, after: { role: "MEMBER" }, createdAt: db.chapterSettings.semesterStartDate, actorId: "u1" },
+  { id: "al2", action: "ROLE_NUMBER_ASSIGNED", entityType: "User", entityId: "u13", before: { roleNumber: null }, after: { roleNumber: 244 }, createdAt: db.chapterSettings.semesterStartDate, actorId: "u15" },
+  { id: "al3", action: "BIG_LITTLE_ASSIGNED", entityType: "User", entityId: "u10", before: { bigId: null }, after: { bigId: "u6" }, createdAt: db.chapterSettings.semesterStartDate, actorId: "u1" },
+  { id: "al4", action: "DUES_WAIVE", entityType: "DuesRecord", entityId: "dues_8", before: { status: "UNPAID" }, after: { status: "WAIVED" }, createdAt: db.chapterSettings.semesterStartDate, actorId: "u3" },
+  { id: "al5", action: "ROLE_PERMISSIONS_UPDATE", entityType: "RolePermission", entityId: "MEMBER", before: null, after: { permissions: db.rolePermissions.MEMBER }, createdAt: db.chapterSettings.semesterStartDate, actorId: "u1" },
+];
+
+export function getAuditLog(params: {
+  entityType?: string;
+  actorId?: string;
+  page?: number;
+  limit?: number;
+}): { entries: unknown[]; total: number; page: number; limit: number } {
+  if (!isSuperAdmin(getCurrentDemoUserId())) {
+    throw new DemoApiError(403, "Not authorized to view the audit log");
+  }
+  let list = demoAuditLog.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (params.entityType) list = list.filter((e) => e.entityType === params.entityType);
+  if (params.actorId) list = list.filter((e) => e.actorId === params.actorId);
+
+  const total = list.length;
+  const limit = params.limit ?? 50;
+  const page = params.page ?? 1;
+  const start = (page - 1) * limit;
+  list = list.slice(start, start + limit);
+
+  return {
+    entries: list.map((e) => {
+      const actor = db.findUser(e.actorId);
+      return {
+        id: e.id,
+        action: e.action,
+        entityType: e.entityType,
+        entityId: e.entityId,
+        before: e.before,
+        after: e.after,
+        createdAt: e.createdAt,
+        actor: actor ? { id: actor.id, firstName: actor.firstName, lastName: actor.lastName } : null,
+      };
+    }),
+    total,
+    page,
+    limit,
+  };
+}

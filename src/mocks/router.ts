@@ -180,6 +180,9 @@ route("delete", "/links/:id", (p) => {
   return {};
 });
 
+// Audit log (hardening item §3)
+route("get", "/audit-log", (_p, q) => api.getAuditLog(q));
+
 // Feedback & bug reports (spec §9)
 route("get", "/feedback", (_p, q) => ({ reports: api.listFeedback(q) }));
 route("post", "/feedback", (_p, _q, body) => ({ report: api.submitFeedback(body) }));

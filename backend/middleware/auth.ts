@@ -47,8 +47,11 @@ export async function authMiddleware(
     });
     const authProviderId = payload.sub; // Clerk user ID (e.g. "user_2abc...")
 
+    // deletedAt: null — a soft-deleted account (Clerk `user.deleted`
+    // webhook, see webhook.routes.ts) is treated exactly like a row that
+    // doesn't exist at all, not surfaced as a distinct state to the client.
     const user = await prisma.user.findUnique({
-      where: { authProviderId },
+      where: { authProviderId, deletedAt: null },
       select: { id: true, activeChapterId: true },
     });
 

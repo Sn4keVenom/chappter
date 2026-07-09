@@ -4,13 +4,24 @@
 // hero matching the app's "professional, not social" direction — one screen,
 // one primary action, secondary options below the fold.
 //
+// Apple Sign-In uses the NATIVE flow on iOS (Apple's own
+// AppleAuthenticationButton + AuthenticationServices under the hood, via
+// expo-apple-authentication + Clerk's useSignInWithApple) — required for a
+// properly App-Store-guideline-4.8-compliant, HIG-styled experience, not
+// just "some way to sign in with Apple." Falls back to Clerk's web-OAuth
+// flow (same mechanism as Google) on Android/web, where there's no native
+// Sign in with Apple UI to speak of.
+//
 // Integration:
 //   · @clerk/clerk-expo useSignIn() — password sign-in
-//   · @clerk/clerk-expo useSSO() — Google/Apple
+//   · @clerk/clerk-expo useSSO() — Google, and Apple's non-iOS fallback
+//   · @clerk/clerk-expo useSignInWithApple() + expo-apple-authentication —
+//     native Apple on iOS (see app.json: usesAppleSignIn + the
+//     expo-apple-authentication config plugin)
 //   · hooks/useCompleteAuth.ts — shared activate-session → sync → setUser tail
 //   · navigation/types.ts AuthStackParamList
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -25,7 +36,8 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { useSignIn, useSSO } from "@clerk/clerk-expo";
+import { useSignIn, useSSO, useSignInWithApple } from "@clerk/clerk-expo";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { useCompleteAuth } from "../../hooks/useCompleteAuth";
 import { setAuthToken } from "../../api/client";
 import { colors } from "../../theme/colors";
@@ -37,12 +49,19 @@ export default function LoginScreen() {
   const navigation = useNavigation<NavProp>();
   const { isLoaded, signIn } = useSignIn();
   const { startSSOFlow } = useSSO();
+  const { startAppleAuthenticationFlow } = useSignInWithApple();
   const completeAuth = useCompleteAuth();
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState<"password" | "google" | "apple" | null>(null);
+  const [nativeAppleAvailable, setNativeAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    AppleAuthentication.isAvailableAsync().then(setNativeAppleAvailable);
+  }, []);
 
   async function handlePasswordSignIn() {
     if (!isLoaded || !identifier.trim() || !password) return;
@@ -60,15 +79,40 @@ export default function LoginScreen() {
     }
   }
 
-  async function handleSSO(strategy: "oauth_google" | "oauth_apple") {
-    setLoading(strategy === "oauth_google" ? "google" : "apple");
+  async function handleGoogleSignIn() {
+    setLoading("google");
     try {
-      const result = await startSSOFlow({ strategy });
+      const result = await startSSOFlow({ strategy: "oauth_google" });
       if (!result.createdSessionId) {
         return; // user cancelled — no error, just stop
       }
       await completeAuth(result.createdSessionId, undefined, { rememberMe });
     } catch (err: any) {
+      setAuthToken(null);
+      Alert.alert("Sign in failed", err?.message ?? "Couldn't connect — check your network and try again.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleAppleSignIn() {
+    setLoading("apple");
+    try {
+      if (Platform.OS === "ios" && nativeAppleAvailable) {
+        const { createdSessionId } = await startAppleAuthenticationFlow();
+        if (!createdSessionId) return; // user cancelled
+        await completeAuth(createdSessionId, undefined, { rememberMe });
+        return;
+      }
+      // Android/web, or an iOS device somehow reporting native Apple auth
+      // unavailable — same web-OAuth mechanism as Google.
+      const result = await startSSOFlow({ strategy: "oauth_apple" });
+      if (!result.createdSessionId) return;
+      await completeAuth(result.createdSessionId, undefined, { rememberMe });
+    } catch (err: any) {
+      // expo-apple-authentication throws this specific code when the user
+      // dismisses the native sheet — not a real error, just a cancellation.
+      if (err?.code === "ERR_REQUEST_CANCELED") return;
       setAuthToken(null);
       Alert.alert("Sign in failed", err?.message ?? "Couldn't connect — check your network and try again.");
     } finally {
@@ -139,7 +183,7 @@ export default function LoginScreen() {
         <View style={styles.ssoRow}>
           <Pressable
             style={[styles.ssoButton, loading && styles.buttonDisabled]}
-            onPress={() => handleSSO("oauth_google")}
+            onPress={handleGoogleSignIn}
             disabled={!!loading}
           >
             {loading === "google" ? (
@@ -148,17 +192,31 @@ export default function LoginScreen() {
               <Text style={styles.ssoButtonText}>Google</Text>
             )}
           </Pressable>
-          <Pressable
-            style={[styles.ssoButton, loading && styles.buttonDisabled]}
-            onPress={() => handleSSO("oauth_apple")}
-            disabled={!!loading}
-          >
-            {loading === "apple" ? (
-              <ActivityIndicator color={colors.textPrimary} />
-            ) : (
-              <Text style={styles.ssoButtonText}>Apple</Text>
-            )}
-          </Pressable>
+
+          {Platform.OS === "ios" && nativeAppleAvailable ? (
+            // Apple's own pre-styled button (AuthenticationServices under
+            // the hood) — required for App Store guideline 4.8 / Apple HIG
+            // compliance, not just "some Apple sign-in option."
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+              cornerRadius={12}
+              style={[styles.ssoButton, styles.appleNativeButton, loading && styles.buttonDisabled]}
+              onPress={handleAppleSignIn}
+            />
+          ) : (
+            <Pressable
+              style={[styles.ssoButton, loading && styles.buttonDisabled]}
+              onPress={handleAppleSignIn}
+              disabled={!!loading}
+            >
+              {loading === "apple" ? (
+                <ActivityIndicator color={colors.textPrimary} />
+              ) : (
+                <Text style={styles.ssoButtonText}>Apple</Text>
+              )}
+            </Pressable>
+          )}
         </View>
 
         <Pressable style={styles.createAccountRow} onPress={() => navigation.navigate("SignUp")} disabled={!!loading}>
@@ -213,11 +271,15 @@ const styles = StyleSheet.create({
   dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.15)" },
   dividerText: { color: "rgba(255,255,255,0.5)", fontSize: 12, marginHorizontal: 12 },
 
-  ssoRow: { flexDirection: "row", gap: 12 },
+  ssoRow: { flexDirection: "row", gap: 12, alignItems: "center" },
   ssoButton: {
     flex: 1, backgroundColor: colors.surface, paddingVertical: 14, borderRadius: 12, alignItems: "center",
   },
   ssoButtonText: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+  // AppleAuthenticationButton is a native view that sizes its own content —
+  // it needs an explicit height instead of the paddingVertical the plain
+  // Pressable siblings use, but keeps flex:1 from ssoButton for equal width.
+  appleNativeButton: { height: 48, paddingVertical: 0 },
 
   createAccountRow: { marginTop: 28, alignItems: "center" },
   createAccountText: { color: "rgba(255,255,255,0.75)", fontSize: 14 },

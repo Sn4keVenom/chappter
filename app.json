@@ -11,6 +11,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.thetatau.chapterhub",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "ChapterHub uses the camera to scan event check-in QR codes.",
         "NSPhotoLibraryUsageDescription": "ChapterHub does not access your photo library.",
@@ -26,6 +27,7 @@
       "permissions": ["android.permission.CAMERA"]
     },
     "plugins": [
+      "expo-apple-authentication",
       [
         "expo-camera",
         {

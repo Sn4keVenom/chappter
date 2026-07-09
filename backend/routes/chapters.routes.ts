@@ -309,9 +309,25 @@ router.post(
     const parsed = joinRequestSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const joinRequest = await prisma.chapterJoinRequest.create({
-      data: { chapterId: chapter.id, userId: req.user!.id, message: parsed.data.message },
-    });
+    // The findFirst check above is a fast-path UX nicety, not the real
+    // guarantee — it has the same read-then-act race as the invite
+    // redemption fix elsewhere in this file (two concurrent submits could
+    // both pass it). The actual guarantee is the partial unique index from
+    // migrations/20260710091000_join_request_partial_unique (undeclarable
+    // in schema.prisma — see the doc comment on ChapterJoinRequest there),
+    // which still reports as a normal Prisma P2002 even though Prisma's
+    // schema doesn't know the constraint exists.
+    let joinRequest;
+    try {
+      joinRequest = await prisma.chapterJoinRequest.create({
+        data: { chapterId: chapter.id, userId: req.user!.id, message: parsed.data.message },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return res.status(409).json({ error: "You already have a pending request for this chapter" });
+      }
+      throw err;
+    }
 
     res.status(201).json({ joinRequest });
   })

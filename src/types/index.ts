@@ -611,6 +611,21 @@ export interface DashboardData {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Audit log (Super Admin only — GET /audit-log)
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  before: unknown;
+  after: unknown;
+  createdAt: string;
+  actor: { id: string; firstName: string; lastName: string };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Utilities
 // ─────────────────────────────────────────────────────────────────────────
 
