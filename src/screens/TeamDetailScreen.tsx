@@ -12,7 +12,7 @@
 //   - usePermissions: isExecOrAbove gates add/remove
 //   - Navigation: AppStackParamList → TeamDetail { teamId: string }
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator,
   Alert, Modal, TextInput, FlatList, RefreshControl,
@@ -44,20 +44,27 @@ function AddMemberModal({
   const [selectedUser, setSelectedUser] = useState<UserSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Tracks the most recently typed query so a slower, earlier request that
+  // resolves after a newer one can detect it's stale and skip overwriting
+  // fresher results — the debounce timer only cancels un-fired timers, not
+  // requests already in flight.
+  const latestQueryRef = useRef("");
 
   useEffect(() => {
     if (!visible) { setQuery(""); setResults([]); setSelectedUser(null); }
   }, [visible]);
 
   useEffect(() => {
+    latestQueryRef.current = query;
     if (query.length < 2) { setResults([]); return; }
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
         const { users } = await getRoster({ q: query, status: "ACTIVE", limit: 10 });
+        if (latestQueryRef.current !== query) return; // superseded by a newer query
         setResults(users.filter((u) => !existingIds.has(u.id)));
       } catch { /**/ }
-      finally { setLoading(false); }
+      finally { if (latestQueryRef.current === query) setLoading(false); }
     }, 300);
     return () => clearTimeout(timer);
   }, [query, existingIds]);

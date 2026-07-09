@@ -27,6 +27,7 @@ interface MessagesState {
   loadMoreMessages: (channelId: string) => Promise<void>;
   sendMessage: (channelId: string, content: string, parentMessageId?: string) => Promise<void>;
   togglePin: (channelId: string, messageId: string, pinned: boolean) => Promise<void>;
+  reset: () => void;
 }
 
 function emptyCache(): ChannelCache {
@@ -150,8 +151,11 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
           },
         };
       });
-    } catch {
-      // Revert optimistic message
+    } catch (err) {
+      // Revert optimistic message, then rethrow so the caller (the compose
+      // bar's send handler) knows the send failed and can tell the user —
+      // previously this swallowed the error entirely, so a failed send just
+      // made the just-typed message silently vanish with no explanation.
       set((state) => {
         const cache = state.channelData[channelId] ?? emptyCache();
         return {
@@ -164,6 +168,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
           },
         };
       });
+      throw err;
     }
   },
 
@@ -191,4 +196,10 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       // Silently ignore — pin state stays as-is; user can retry
     }
   },
+
+  // Called on sign-out — without this, a second account signing in on the
+  // same device (no app kill in between) would briefly render the previous
+  // user's cached channels/messages, including private DM content, until
+  // each screen's own fetch overwrites it.
+  reset: () => set({ channels: [], channelData: {}, loading: false, error: null }),
 }));

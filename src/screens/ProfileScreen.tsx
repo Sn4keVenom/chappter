@@ -21,7 +21,7 @@ import {
   View, Text, ScrollView, Pressable, StyleSheet,
   ActivityIndicator, Alert, RefreshControl, Modal
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { useAppAuth } from "../hooks/useAppAuth";
 
 import { colors } from "../theme/colors";
@@ -201,7 +201,10 @@ export default function ProfileScreen() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // useFocusEffect, not a mount-only useEffect — returning here after editing
+  // your profile (EditProfileScreen) should show the new name/major/etc.
+  // immediately instead of the stale snapshot from tab mount.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const handleSignOut = () => {
     if (DEMO_MODE) {

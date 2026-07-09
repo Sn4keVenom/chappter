@@ -12,7 +12,7 @@
 //   - Navigation: AppStackParamList → CommitteeDetail { committeeId: string }
 //   - Navigates to: ChannelMessages (if channelId available), MemberProfile
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -111,6 +111,11 @@ function AddMemberModal({
   const [role, setRole] = useState<CommitteeRole>("MEMBER");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Tracks the most recently typed query so a slower, earlier request that
+  // resolves after a newer one can detect it's stale and skip overwriting
+  // fresher results — the debounce timer only cancels un-fired timers, not
+  // requests already in flight.
+  const latestQueryRef = useRef("");
 
   useEffect(() => {
     if (!visible) {
@@ -122,14 +127,16 @@ function AddMemberModal({
   }, [visible]);
 
   useEffect(() => {
+    latestQueryRef.current = query;
     if (query.length < 2) { setResults([]); return; }
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
         const { users } = await getRoster({ q: query, status: "ACTIVE", limit: 10 });
+        if (latestQueryRef.current !== query) return; // superseded by a newer query
         setResults(users.filter((u) => !existingIds.has(u.id)));
       } catch { /**/ }
-      finally { setLoading(false); }
+      finally { if (latestQueryRef.current === query) setLoading(false); }
     }, 300);
     return () => clearTimeout(timer);
   }, [query, existingIds]);
@@ -331,11 +338,16 @@ export default function CommitteeDetailScreen() {
   // Budget visibility (Feature 5) mirrors the mock's own authorization —
   // Treasurer/Exec+ always, the committee's own chair too. Fetched
   // separately since a regular member's 403 here shouldn't block the rest
-  // of the screen from loading.
-  useEffect(() => {
-    if (!canManage) { setBudget(null); return; }
-    getCommitteeBudget(committeeId).then(setBudget).catch(() => setBudget(null));
-  }, [committeeId, canManage]);
+  // of the screen from loading. useFocusEffect (not a mount-only useEffect)
+  // so returning here after submitting an expense (SubmitExpenseScreen)
+  // refreshes the remaining/allocated totals — the pull-to-refresh above
+  // only reloads `committee`, not this.
+  useFocusEffect(
+    useCallback(() => {
+      if (!canManage) { setBudget(null); return; }
+      getCommitteeBudget(committeeId).then(setBudget).catch(() => setBudget(null));
+    }, [committeeId, canManage])
+  );
 
   async function handleSaveEdit(name: string, description: string) {
     const updated = await updateCommittee(committeeId, { name, description });

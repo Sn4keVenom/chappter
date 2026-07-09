@@ -82,15 +82,26 @@ router.post(
         });
 
         if (!existing) {
-          await prisma.payment.create({
-            data: {
-              duesRecordId,
-              amount: new Decimal(intent.amount / 100), // Stripe amounts are cents
-              method: "STRIPE",
-              externalRef: intent.id,
-              recordedById: null,
-            },
-          });
+          try {
+            await prisma.payment.create({
+              data: {
+                duesRecordId,
+                amount: new Decimal(intent.amount / 100), // Stripe amounts are cents
+                method: "STRIPE",
+                externalRef: intent.id,
+                recordedById: null,
+              },
+            });
+          } catch (err: any) {
+            // P2002 on the partial unique index (see schema.prisma's doc
+            // comment on Payment.externalRef) — two genuinely concurrent
+            // deliveries of this same event both passed the `existing`
+            // check above before either committed. The loser here lost the
+            // race fairly; the winner already ran recalcDuesStatus, so this
+            // delivery is done, not an error.
+            if (err?.code === "P2002") break;
+            throw err;
+          }
           await recalcDuesStatus(duesRecordId);
         }
         break;

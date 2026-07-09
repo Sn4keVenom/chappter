@@ -12,11 +12,26 @@
 
 import { useAuth as useClerkAuth } from "@clerk/clerk-expo";
 import { DEMO_MODE } from "../config/demo";
+import { usePointsStore } from "../store/usePointsStore";
+import { useMessagesStore } from "../store/useMessagesStore";
 
 export function useAppAuth(): { signOut: () => Promise<void> } {
   if (DEMO_MODE) {
     return { signOut: async () => {} };
   }
   // eslint-disable-next-line react-hooks/rules-of-hooks
-  return useClerkAuth();
+  const clerkAuth = useClerkAuth();
+  return {
+    ...clerkAuth,
+    signOut: async (...args: Parameters<typeof clerkAuth.signOut>) => {
+      await clerkAuth.signOut(...args);
+      // useAuthStore itself is cleared reactively by SessionRestore/callers
+      // once isSignedIn flips false, but these per-content caches aren't —
+      // without this, a second account signing in on the same device (no
+      // app kill in between) could briefly render the previous user's
+      // cached points ledger or messages (including private DMs).
+      usePointsStore.getState().resetLedger();
+      useMessagesStore.getState().reset();
+    },
+  };
 }

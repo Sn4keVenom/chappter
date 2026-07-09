@@ -25,13 +25,12 @@ import { AuthedRequest, requireRole } from "../middleware/rbac";
 const router = Router();
 
 // ── GET /audit-log ─────────────────────────────────────────────────────────
-// Paginated, newest first. Optional filters: entityType, actorId. There's
-// no chapterId column on AuditLog (it predates the chapter/membership
-// system and logs actions across whatever the actor could reach) — in a
-// single-chapter deployment this is moot; a genuinely multi-chapter
-// deployment scoping this list is a follow-on, not implemented here (see
-// the account-system implementation plan's scope line on this same
-// single-chapter-per-deployment assumption for other tables).
+// Paginated, newest first. Optional filters: entityType, actorId. There's no
+// chapterId column on AuditLog (it predates the chapter/membership system),
+// but it's always reachable through the actor's User.activeChapterId, so we
+// scope through that relation — without it, a Super Admin in one chapter
+// could read every other chapter's full privileged-action history (role
+// changes, dues payments, permission edits) via this one endpoint.
 router.get(
   "/audit-log",
   requireRole("SUPER_ADMIN"),
@@ -42,6 +41,7 @@ router.get(
     const skip = (pageNum - 1) * limitNum;
 
     const where = {
+      actor: { activeChapterId: req.user!.chapterId! },
       ...(entityType ? { entityType: String(entityType) } : {}),
       ...(actorId ? { actorId: String(actorId) } : {}),
     };

@@ -20,12 +20,12 @@
 //     can("membership.manageRelationships") gate their own rows
 //   - Navigation: AppStackParamList → MemberProfile { userId: string }
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert,
   Modal, TextInput, FlatList,
 } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
@@ -129,6 +129,11 @@ function BigPickerModal({
   const [results, setResults] = useState<UserSummary[]>([]);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Tracks the most recently typed query so a slower, earlier request that
+  // resolves after a newer one can detect it's stale and skip overwriting
+  // fresher results — the debounce timer only cancels un-fired timers, not
+  // requests already in flight.
+  const latestQueryRef = useRef("");
 
   useEffect(() => {
     if (!visible) return;
@@ -138,15 +143,17 @@ function BigPickerModal({
 
   useEffect(() => {
     if (!visible) return;
+    latestQueryRef.current = query;
     const handle = setTimeout(async () => {
       setSearching(true);
       try {
         const { users } = await getRoster({ q: query, limit: 15 });
+        if (latestQueryRef.current !== query) return; // superseded by a newer query
         setResults(users);
       } catch {
-        setResults([]);
+        if (latestQueryRef.current === query) setResults([]);
       } finally {
-        setSearching(false);
+        if (latestQueryRef.current === query) setSearching(false);
       }
     }, 300);
     return () => clearTimeout(handle);
@@ -243,7 +250,10 @@ export default function MemberProfileScreen() {
     }
   }, [userId, navigation]);
 
-  useEffect(() => { load(); }, [load]);
+  // useFocusEffect, not a mount-only useEffect — returning here after an Exec
+  // adjusts this member's points (PointsAdjustScreen) or edits Big/Little
+  // should refresh the total instead of showing the pre-navigation snapshot.
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   async function handleSaveRoleNumber(value: number | null) {
     await apiSetRoleNumber(userId, value);

@@ -151,11 +151,25 @@ router.post(
         });
         break;
       } catch (err) {
-        const isUsernameConflict =
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === "P2002" &&
-          (err.meta?.target as string[] | undefined)?.includes("username");
+        const conflictTarget =
+          err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002"
+            ? (err.meta?.target as string[] | undefined)
+            : undefined;
 
+        // A different existing account already owns this email (e.g. the
+        // user previously signed up with a password using this address, and
+        // is now completing a Google/Apple sign-in that Clerk treats as a
+        // distinct identity with the same email) — this hits the `create`
+        // branch and violates User.email's unique constraint. Without this
+        // check the error fell through to the generic 500 handler below,
+        // leaving the Clerk session active but the app stuck with no user.
+        if (conflictTarget?.includes("email")) {
+          return res.status(409).json({
+            error: "An account with this email already exists. Please sign in using your original method.",
+          });
+        }
+
+        const isUsernameConflict = conflictTarget?.includes("username");
         if (!isUsernameConflict) throw err;
         if (body.username) {
           return res.status(409).json({ error: "That username is already taken." });

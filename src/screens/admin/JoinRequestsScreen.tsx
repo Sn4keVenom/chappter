@@ -23,7 +23,10 @@ export default function JoinRequestsScreen() {
   const [reviewingId, setReviewingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!chapterId) return;
+    if (!chapterId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       setRequests(await getJoinRequests(chapterId, "PENDING"));

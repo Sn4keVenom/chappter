@@ -27,6 +27,7 @@ export default function ChannelMessagesScreen() {
   const {
     channelData,
     channels,
+    fetchChannels,
     fetchMessages,
     loadMoreMessages,
     sendMessage,
@@ -46,12 +47,21 @@ export default function ChannelMessagesScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchMessages(channelId);
-    }, [channelId, fetchMessages])
+      // This screen is reachable directly (e.g. from CommitteeDetailScreen)
+      // without ever visiting the Messaging tab, which is what normally
+      // populates `channels` — without this, `channel` below stays
+      // undefined and canPost would incorrectly reflect that.
+      if (channels.length === 0) fetchChannels();
+    }, [channelId, fetchMessages, channels.length, fetchChannels])
   );
 
-  // Find current channel's canPost from the channels list
+  // Find current channel's canPost from the channels list. Defaults to
+  // false (fail-closed) rather than true when the channel isn't found —
+  // showing a compose bar for a channel we don't actually know the
+  // permissions for would let a member try to post into e.g. a read-only
+  // channel, only to have it silently fail server-side.
   const channel = channels.find((c) => c.id === channelId);
-  const canPost = channel?.canPost ?? true;
+  const canPost = channel?.canPost ?? false;
 
   const handleSend = async () => {
     const text = composing.trim();
@@ -60,6 +70,9 @@ export default function ChannelMessagesScreen() {
     setSending(true);
     try {
       await sendMessage(channelId, text);
+    } catch (err: any) {
+      setComposing(text); // don't lose what they typed
+      Alert.alert("Message not sent", err?.message ?? "Couldn't send your message. Try again.");
     } finally {
       setSending(false);
     }

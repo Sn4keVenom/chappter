@@ -23,7 +23,7 @@
 import React, { useEffect, useState } from "react";
 import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useAuth, useClerk } from "@clerk/clerk-expo";
-import { setAuthToken } from "../api/client";
+import { setAuthToken, ApiError } from "../api/client";
 import { getMe } from "../api/users";
 import { useAuthStore } from "../store/useAuthStore";
 import { shouldRestoreSession } from "../auth/rememberMe";
@@ -83,13 +83,24 @@ export default function SessionRestore({ children }: { children: React.ReactNode
           committeeChairOf: me.committeeChairOf,
           teamId: me.teamId,
         });
-      } catch {
-        // Clerk thinks we're signed in but our side couldn't restore
-        // (backend unreachable, user row deleted, expired token) — fall
+      } catch (err) {
+        // Clerk thinks we're signed in but our side couldn't restore — fall
         // back to the login screen instead of getting stuck on a spinner.
         if (!cancelled) {
           setAuthToken(null);
           setUser(null);
+        }
+        // Only tear down the Clerk session itself when the backend gave a
+        // definitive rejection (401 — expired token, or the user row is
+        // gone/soft-deleted). A pure network failure (ApiError status 0, or
+        // anything not from our API at all) means the session is probably
+        // still fine — signing out here would force a full re-login next
+        // launch even after connectivity comes back, which is worse than
+        // just retrying the restore then. Mirrors the deliberate signOut on
+        // the "Remember Me" opt-out path above, but scoped to cases where we
+        // actually know the session is invalid.
+        if (err instanceof ApiError && err.status === 401) {
+          await clerk.signOut().catch(() => {});
         }
       } finally {
         if (!cancelled) setRestoring(false);

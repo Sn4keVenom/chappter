@@ -102,6 +102,14 @@ router.post(
     const targetUser = await prisma.user.findUnique({ where: { id: userId } });
     if (!targetUser) return res.status(404).json({ error: "User not found" });
 
+    // targetUser is looked up by raw ID with no chapter filter above — verify
+    // they're actually a member of the caller's own chapter before letting an
+    // Exec+ from a different chapter award/remove attendance for them.
+    const targetMembership = await prisma.chapterMembership.findUnique({
+      where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId } },
+    });
+    if (!targetMembership) return res.status(404).json({ error: "User not found" });
+
     const existing = await prisma.attendance.findUnique({
       where: { eventId_userId: { eventId, userId } },
     });
@@ -118,47 +126,64 @@ router.post(
 
       const pointsAwarded = late ? Math.floor(event.pointValue / 2) : event.pointValue;
 
-      const attendance = await prisma.$transaction(async (tx) => {
-        const created = await tx.attendance.create({
-          data: {
-            eventId,
-            userId,
-            method: "MANUAL",
-            late,
-            pointsAwarded,
-            recordedById: req.user!.id,
-            overrideReason,
-          },
-        });
-
-        if (currentSemester && pointsAwarded > 0) {
-          await tx.pointsLedger.create({
+      try {
+        const attendance = await prisma.$transaction(async (tx) => {
+          const created = await tx.attendance.create({
             data: {
-              userId,
               eventId,
-              semesterId: currentSemester.id,
-              amount: pointsAwarded,
-              type: "ATTENDANCE",
-              reason: `Manual: attended ${event.title}${late ? " (late)" : ""}`,
-              awardedById: req.user!.id,
+              userId,
+              method: "MANUAL",
+              late,
+              pointsAwarded,
+              recordedById: req.user!.id,
+              overrideReason,
             },
           });
-        }
 
-        // Audit log inside the transaction so it's atomic with the attendance row.
-        await writeAuditLog({
-          actorId: req.user!.id,
-          action: "ATTENDANCE_OVERRIDE_ADD",
-          entityType: "Attendance",
-          entityId: created.id,
-          after: { userId, eventId, overrideReason, pointsAwarded },
-          tx,
+          if (currentSemester && pointsAwarded > 0) {
+            await tx.pointsLedger.create({
+              data: {
+                userId,
+                eventId,
+                semesterId: currentSemester.id,
+                amount: pointsAwarded,
+                type: "ATTENDANCE",
+                reason: `Manual: attended ${event.title}${late ? " (late)" : ""}`,
+                awardedById: req.user!.id,
+              },
+            });
+          }
+
+          // Audit log inside the transaction so it's atomic with the attendance row.
+          await writeAuditLog({
+            actorId: req.user!.id,
+            action: "ATTENDANCE_OVERRIDE_ADD",
+            entityType: "Attendance",
+            entityId: created.id,
+            after: { userId, eventId, overrideReason, pointsAwarded },
+            tx,
+          });
+
+          return created;
         });
 
-        return created;
-      });
-
-      return res.status(201).json({ attendance });
+        return res.status(201).json({ attendance });
+      } catch (err: any) {
+        // P2002 = unique constraint violation on [eventId, userId] — the
+        // `existing` check above raced with a concurrent self-check-in (QR)
+        // or another officer's override for the same event/user. Same
+        // pattern as events.routes.ts's check-in race: report the row that
+        // actually won instead of a generic 500.
+        if (err?.code === "P2002") {
+          const raceWinner = await prisma.attendance.findUnique({
+            where: { eventId_userId: { eventId, userId } },
+          });
+          if (raceWinner) {
+            return res.status(409).json({ error: "Attendance already recorded", attendance: raceWinner });
+          }
+        }
+        throw err;
+      }
     }
 
     // action === "remove"
@@ -205,22 +230,31 @@ router.get(
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { semesterId, limit = "20", cursor } = req.query;
 
-    const records = await prisma.attendance.findMany({
-      where: {
-        userId: req.user!.id,
-        ...(semesterId
-          ? { event: { ledgerEntries: { some: { semesterId: String(semesterId) } } } }
-          : {}),
-      },
-      orderBy: { checkInTime: "desc" },
-      take: Number(limit) + 1,
-      ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
-      include: {
-        event: {
-          select: { id: true, title: true, category: true, startTime: true, pointValue: true },
+    let records;
+    try {
+      records = await prisma.attendance.findMany({
+        where: {
+          userId: req.user!.id,
+          ...(semesterId
+            ? { event: { ledgerEntries: { some: { semesterId: String(semesterId) } } } }
+            : {}),
         },
-      },
-    });
+        orderBy: { checkInTime: "desc" },
+        take: Number(limit) + 1,
+        ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
+        include: {
+          event: {
+            select: { id: true, title: true, category: true, startTime: true, pointValue: true },
+          },
+        },
+      });
+    } catch (err: any) {
+      // P2025 = the cursor row no longer exists (deleted since the client
+      // cached it, or a tampered/stale value) — a client input problem, not
+      // a server fault.
+      if (err?.code === "P2025") return res.status(400).json({ error: "Invalid cursor" });
+      throw err;
+    }
 
     const hasMore = records.length > Number(limit);
     const items = hasMore ? records.slice(0, -1) : records;
@@ -242,6 +276,14 @@ router.get(
   "/attendance/history/:userId",
   requireRole("EXEC"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
+    // requireRole only checks the caller's own tier, not that the target user
+    // shares their chapter — without this, any Exec+ could read any other
+    // chapter's member's full attendance history by ID.
+    const targetMembership = await prisma.chapterMembership.findUnique({
+      where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId: req.params.userId } },
+    });
+    if (!targetMembership) return res.status(404).json({ error: "User not found" });
+
     const { semesterId, limit = "50" } = req.query;
 
     const records = await prisma.attendance.findMany({
@@ -326,25 +368,40 @@ router.get(
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const isSelf = req.params.userId === req.user!.id;
 
-    if (!isSelf && !isAtLeast(req.user!.role, "EXEC")) {
-      return res.status(403).json({ error: "Not permitted" });
+    if (!isSelf) {
+      if (!isAtLeast(req.user!.role, "EXEC")) {
+        return res.status(403).json({ error: "Not permitted" });
+      }
+      // Same chapter-membership check as attendance history — role tier alone
+      // doesn't imply the target user is even in this Exec's chapter.
+      const targetMembership = await prisma.chapterMembership.findUnique({
+        where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId: req.params.userId } },
+      });
+      if (!targetMembership) return res.status(404).json({ error: "User not found" });
     }
 
     const { semesterId, limit = "50", cursor } = req.query;
 
-    const entries = await prisma.pointsLedger.findMany({
-      where: {
-        userId: req.params.userId,
-        ...(semesterId ? { semesterId: String(semesterId) } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      take: Number(limit) + 1,
-      ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
-      include: {
-        event: { select: { id: true, title: true, category: true } },
-        awardedBy: { select: { firstName: true, lastName: true } },
-      },
-    });
+    let entries;
+    try {
+      entries = await prisma.pointsLedger.findMany({
+        where: {
+          userId: req.params.userId,
+          ...(semesterId ? { semesterId: String(semesterId) } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: Number(limit) + 1,
+        ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
+        include: {
+          event: { select: { id: true, title: true, category: true } },
+          awardedBy: { select: { firstName: true, lastName: true } },
+        },
+      });
+    } catch (err: any) {
+      // P2025 = the cursor row no longer exists — a client input problem.
+      if (err?.code === "P2025") return res.status(400).json({ error: "Invalid cursor" });
+      throw err;
+    }
 
     const hasMore = entries.length > Number(limit);
     const items = hasMore ? entries.slice(0, -1) : entries;
@@ -383,11 +440,15 @@ router.post(
 
     const { userId, semesterId, amount, type, reason } = parsed.data;
 
-    const [targetUser, semester] = await Promise.all([
-      prisma.user.findUnique({ where: { id: userId } }),
+    const [targetMembership, semester] = await Promise.all([
+      prisma.chapterMembership.findUnique({
+        where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId } },
+      }),
       prisma.semester.findUnique({ where: { id: semesterId } }),
     ]);
-    if (!targetUser) return res.status(404).json({ error: "User not found" });
+    // Chapter-scoped lookup (not a raw user.findUnique) — otherwise any Exec+
+    // could award/deduct points for a user in a different chapter entirely.
+    if (!targetMembership) return res.status(404).json({ error: "User not found" });
     if (!semester) return res.status(404).json({ error: "Semester not found" });
 
     const entry = await prisma.pointsLedger.create({

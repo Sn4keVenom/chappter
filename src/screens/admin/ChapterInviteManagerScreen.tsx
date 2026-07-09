@@ -80,7 +80,10 @@ export default function ChapterInviteManagerScreen() {
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
-    if (!chapterId) return;
+    if (!chapterId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       setInvites(await getInvites(chapterId));

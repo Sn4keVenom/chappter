@@ -35,7 +35,7 @@ async function canReadChannel(channelId: string, req: AuthedRequest): Promise<bo
 
   if (channel.type === "GENERAL") return true;
   if (channel.type === "OFFICERS") return isExecOrAbove;
-  if (isExecOrAbove) return true; // Exec bypasses COMMITTEE + DM scoping
+  if (isExecOrAbove && channel.type === "COMMITTEE") return true; // Exec bypasses COMMITTEE scoping only — DM stays membership-only
 
   const membership = await prisma.channelMembership.findUnique({
     where: { channelId_userId: { channelId, userId: req.user!.id } },
@@ -51,7 +51,7 @@ async function canPostToChannel(channelId: string, req: AuthedRequest): Promise<
 
   if (channel.type === "GENERAL") return isExecOrAbove;
   if (channel.type === "OFFICERS") return isExecOrAbove;
-  if (isExecOrAbove) return true;
+  if (isExecOrAbove && channel.type === "COMMITTEE") return true;
 
   const membership = await prisma.channelMembership.findUnique({
     where: { channelId_userId: { channelId, userId: req.user!.id } },
@@ -81,14 +81,12 @@ router.get(
         OR: [
           { type: "GENERAL" },
           ...(rank >= ROLE_RANK.EXEC ? [{ type: "OFFICERS" as const }] : []),
-          ...(rank >= ROLE_RANK.EXEC
-            ? [{ type: "COMMITTEE" as const }, { type: "DM" as const }]
-            : [
-                {
-                  type: { in: ["COMMITTEE", "DM"] as Array<"COMMITTEE" | "DM"> },
-                  members: { some: { userId: req.user!.id } },
-                },
-              ]),
+          ...(rank >= ROLE_RANK.EXEC ? [{ type: "COMMITTEE" as const }] : []),
+          // DM always requires membership, regardless of rank — Exec does not bypass DM privacy.
+          {
+            type: { in: ["COMMITTEE", "DM"] as Array<"COMMITTEE" | "DM"> },
+            members: { some: { userId: req.user!.id } },
+          },
         ],
       },
       include: {
@@ -258,6 +256,12 @@ router.patch(
       return res.status(404).json({ error: "Message not found" });
     }
 
+    // requireRole("EXEC") above only checks role tier, not channel access — an
+    // Exec is not automatically a member of every DM, so re-verify against the
+    // same channel-scoping rules reads/posts use before allowing a pin.
+    const canAccessChannel = await canReadChannel(message.channelId, req);
+    if (!canAccessChannel) return res.status(403).json({ error: "Not permitted" });
+
     const updated = await prisma.message.update({
       where: { id: req.params.id },
       data: { pinned },
@@ -286,8 +290,12 @@ router.delete(
 
     const isSender = message.senderId === req.user!.id;
 
-    if (!isSender && !isAtLeast(req.user!.role, "EXEC")) {
-      return res.status(403).json({ error: "Not permitted" });
+    if (!isSender) {
+      // Same reasoning as the pin route above: role tier alone doesn't imply
+      // access to this specific channel (e.g. a DM the Exec isn't part of).
+      const isExecWithAccess =
+        isAtLeast(req.user!.role, "EXEC") && (await canReadChannel(message.channelId, req));
+      if (!isExecWithAccess) return res.status(403).json({ error: "Not permitted" });
     }
 
     await prisma.message.update({

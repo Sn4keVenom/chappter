@@ -4,7 +4,6 @@
 // Imported by both dues.routes.ts (manual payments) and webhook.routes.ts
 // (Stripe webhook) so the computation lives in exactly one place.
 
-import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "./prisma";
 
 /**
@@ -16,28 +15,33 @@ import { prisma } from "./prisma";
  *   sum > 0            → PARTIAL
  *   sum == 0           → UNPAID
  *   status == WAIVED   → no-op (waiver is authoritative)
+ *
+ * This is called from both dues.routes.ts (manual payment) and
+ * webhook.routes.ts (Stripe), non-atomically, right after each
+ * Payment.create(). A plain read-then-write (fetch payments, sum in JS,
+ * then update) has a lost-update race: two payments landing near-
+ * simultaneously can interleave so the recalc that read state first
+ * finishes *writing* after the one that already correctly summed both,
+ * clobbering the correct result with a stale one. Doing the sum and the
+ * write in a single atomic SQL statement (computed by Postgres itself,
+ * not read-modify-write in application code) closes that window entirely.
  */
 export async function recalcDuesStatus(duesRecordId: string): Promise<void> {
-  const record = await prisma.duesRecord.findUnique({
-    where: { id: duesRecordId },
-    include: { payments: { select: { amount: true } } },
-  });
-  if (!record || record.status === "WAIVED") return;
-
-  const totalPaid = record.payments.reduce(
-    (sum, p) => sum.add(p.amount),
-    new Decimal(0)
-  );
-
-  const newStatus =
-    totalPaid.gte(record.amountOwed)
-      ? "PAID"
-      : totalPaid.gt(0)
-      ? "PARTIAL"
-      : "UNPAID";
-
-  await prisma.duesRecord.update({
-    where: { id: duesRecordId },
-    data: { amountPaid: totalPaid, status: newStatus },
-  });
+  await prisma.$executeRaw`
+    UPDATE "DuesRecord" AS dr
+    SET "amountPaid" = paid.total,
+        "status" = CASE
+          WHEN dr.status = 'WAIVED'::"DuesStatus" THEN dr.status
+          WHEN paid.total >= dr."amountOwed" THEN 'PAID'::"DuesStatus"
+          WHEN paid.total > 0 THEN 'PARTIAL'::"DuesStatus"
+          ELSE 'UNPAID'::"DuesStatus"
+        END,
+        "updatedAt" = now()
+    FROM (
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM "Payment"
+      WHERE "duesRecordId" = ${duesRecordId}
+    ) AS paid
+    WHERE dr.id = ${duesRecordId}
+  `;
 }

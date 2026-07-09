@@ -51,8 +51,15 @@ router.get(
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { semesterId, status } = req.query;
 
+    // DuesRecord has no chapterId column of its own (see schema.prisma's
+    // multi-tenancy note), but it's always reachable through User.activeChapterId
+    // — without this filter, any chapter's Exec+ could see every other
+    // chapter's dues records via this one endpoint.
+    const chapterFilter = { user: { activeChapterId: req.user!.chapterId! } };
+
     const records = await prisma.duesRecord.findMany({
       where: {
+        ...chapterFilter,
         ...(semesterId ? { semesterId: String(semesterId) } : {}),
         ...(status ? { status: String(status) as any } : {}),
       },
@@ -66,7 +73,7 @@ router.get(
 
     const summary = await prisma.duesRecord.groupBy({
       by: ["status"],
-      where: semesterId ? { semesterId: String(semesterId) } : {},
+      where: { ...chapterFilter, ...(semesterId ? { semesterId: String(semesterId) } : {}) },
       _count: { _all: true },
       _sum: { amountOwed: true, amountPaid: true },
     });
@@ -98,14 +105,30 @@ router.post(
     // status lives on ChapterMembership now, not User (see schema.prisma
     // doc comment) — default target set is ACTIVE/PNM members of the
     // caller's own chapter.
-    const targetIds = userIds
-      ? userIds
-      : (
-          await prisma.chapterMembership.findMany({
-            where: { chapterId: req.user!.chapterId!, status: { in: ["ACTIVE", "PNM"] } },
-            select: { userId: true },
-          })
-        ).map((m) => m.userId);
+    let targetIds: string[];
+    if (userIds) {
+      // Explicit userIds bypass the default chapter-scoped query above, so
+      // verify each one is actually a member of the caller's own chapter —
+      // otherwise an Exec+ could bulk-create DuesRecords for arbitrary users
+      // in other chapters (or nonexistent users entirely).
+      const memberships = await prisma.chapterMembership.findMany({
+        where: { chapterId: req.user!.chapterId!, userId: { in: userIds } },
+        select: { userId: true },
+      });
+      const validIds = new Set(memberships.map((m) => m.userId));
+      const invalid = userIds.filter((id) => !validIds.has(id));
+      if (invalid.length > 0) {
+        return res.status(400).json({ error: "Some users are not members of this chapter", invalid });
+      }
+      targetIds = userIds;
+    } else {
+      targetIds = (
+        await prisma.chapterMembership.findMany({
+          where: { chapterId: req.user!.chapterId!, status: { in: ["ACTIVE", "PNM"] } },
+          select: { userId: true },
+        })
+      ).map((m) => m.userId);
+    }
 
     const result = await prisma.duesRecord.createMany({
       data: targetIds.map((userId) => ({
@@ -148,6 +171,11 @@ router.post(
     const { semesterId, amount, method, note } = parsed.data;
     const { userId } = req.params;
 
+    const targetMembership = await prisma.chapterMembership.findUnique({
+      where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId } },
+    });
+    if (!targetMembership) return res.status(404).json({ error: "User not found" });
+
     const duesRecord = await prisma.duesRecord.findUnique({
       where: { userId_semesterId: { userId, semesterId } },
     });
@@ -187,12 +215,23 @@ router.post(
 );
 
 // ── POST /dues/:userId/waive ──────────────────────────────────────────────
+const waiveSchema = z.object({
+  semesterId: z.string(),
+  reason: z.string().max(500).optional(),
+});
+
 router.post(
   "/dues/:userId/waive",
   requireRole("EXEC"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
-    const { semesterId, reason } = req.body as { semesterId?: string; reason?: string };
-    if (!semesterId) return res.status(400).json({ error: "semesterId required" });
+    const parsed = waiveSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { semesterId, reason } = parsed.data;
+
+    const targetMembership = await prisma.chapterMembership.findUnique({
+      where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId: req.params.userId } },
+    });
+    if (!targetMembership) return res.status(404).json({ error: "User not found" });
 
     const duesRecord = await prisma.duesRecord.findUnique({
       where: { userId_semesterId: { userId: req.params.userId, semesterId } },
@@ -218,15 +257,22 @@ router.post(
 );
 
 // ── POST /dues/reminders/send — Exec+ ────────────────────────────────────
+const remindersSchema = z.object({ semesterId: z.string() });
+
 router.post(
   "/dues/reminders/send",
   requireRole("EXEC"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
-    const { semesterId } = req.body as { semesterId?: string };
-    if (!semesterId) return res.status(400).json({ error: "semesterId required" });
+    const parsed = remindersSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { semesterId } = parsed.data;
 
     const unpaid = await prisma.duesRecord.findMany({
-      where: { semesterId, status: { in: ["UNPAID", "PARTIAL"] } },
+      where: {
+        semesterId,
+        status: { in: ["UNPAID", "PARTIAL"] },
+        user: { activeChapterId: req.user!.chapterId! },
+      },
       include: { user: { select: { id: true, email: true, firstName: true } } },
     });
 

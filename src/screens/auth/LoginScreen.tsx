@@ -79,12 +79,29 @@ export default function LoginScreen() {
     }
   }
 
+  // A missing createdSessionId can mean the user genuinely cancelled the
+  // browser flow, OR that Clerk needs more info to finish creating the
+  // account (e.g. this provider's account has no email) — those aren't the
+  // same thing, and silently doing nothing for the second case leaves the
+  // user thinking their tap didn't register. There's no "collect the missing
+  // field" UI here (that's a bigger flow than this app currently has), so
+  // the honest, minimal fix is telling them what happened instead of nothing.
+  function explainIncompleteSSO(result: { signUp?: { status?: string | null } | null; signIn?: { status?: string | null } | null }) {
+    if (result.signUp?.status === "missing_requirements" || result.signIn?.status === "missing_requirements") {
+      Alert.alert(
+        "Almost there",
+        "This account needs additional information to finish signing in. Try creating an account with your email instead."
+      );
+    }
+  }
+
   async function handleGoogleSignIn() {
     setLoading("google");
     try {
       const result = await startSSOFlow({ strategy: "oauth_google" });
       if (!result.createdSessionId) {
-        return; // user cancelled — no error, just stop
+        explainIncompleteSSO(result); // no-op if this was a genuine cancellation
+        return;
       }
       await completeAuth(result.createdSessionId, undefined, { rememberMe });
     } catch (err: any) {
@@ -100,14 +117,17 @@ export default function LoginScreen() {
     try {
       if (Platform.OS === "ios" && nativeAppleAvailable) {
         const { createdSessionId } = await startAppleAuthenticationFlow();
-        if (!createdSessionId) return; // user cancelled
+        if (!createdSessionId) return; // user cancelled — native flow has no comparable "missing requirements" result to inspect
         await completeAuth(createdSessionId, undefined, { rememberMe });
         return;
       }
       // Android/web, or an iOS device somehow reporting native Apple auth
       // unavailable — same web-OAuth mechanism as Google.
       const result = await startSSOFlow({ strategy: "oauth_apple" });
-      if (!result.createdSessionId) return;
+      if (!result.createdSessionId) {
+        explainIncompleteSSO(result);
+        return;
+      }
       await completeAuth(result.createdSessionId, undefined, { rememberMe });
     } catch (err: any) {
       // expo-apple-authentication throws this specific code when the user

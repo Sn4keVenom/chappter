@@ -547,6 +547,17 @@ model DuesRecord {
   @@index([semesterId])
 }
 
+// externalRef (Stripe payment intent id) must be unique among non-null
+// values, so two concurrent deliveries of the same webhook event can't both
+// create a Payment row — but manual/cash payments (externalRef = NULL) must
+// NOT be deduplicated against each other. Prisma's schema DSL has no way to
+// declare a filtered/partial unique index, so this constraint exists ONLY
+// in the migration SQL (see migrations/20260710092000_payment_external_ref_
+// partial_unique) as a `CREATE UNIQUE INDEX ... WHERE "externalRef" IS NOT
+// NULL` — it is real in the database even though it can't be written here.
+// Do not let a future `prisma migrate dev` diff drop it by surprise; the
+// app-level pre-check in webhook.routes.ts is a fast-path nicety, this
+// index is the actual guarantee (see the P2002 handling there).
 model Payment {
   id            String        @id @default(cuid())
   duesRecordId  String

@@ -12,7 +12,7 @@
 // for THIS event only, without general attendance-management access. A
 // delegate who isn't otherwise an organizer sees just the check-in button.
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -26,7 +26,7 @@ import {
   FlatList,
   Linking,
 } from "react-native";
-import { useRoute, useNavigation } from "@react-navigation/native";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { usePermissions } from "../hooks/usePermissions";
 import { useAuthStore } from "../store/useAuthStore";
@@ -67,20 +67,27 @@ function DelegateModal({
   const [results, setResults] = useState<UserSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
+  // Tracks the most recently *typed* query so a slower, earlier request that
+  // resolves after a newer one can detect it's stale and skip overwriting
+  // fresher results — the debounce timer only cancels un-fired timers, not
+  // requests already in flight.
+  const latestQueryRef = useRef("");
 
   useEffect(() => {
     if (!visible) { setQuery(""); setResults([]); }
   }, [visible]);
 
   useEffect(() => {
+    latestQueryRef.current = query;
     if (query.length < 2) { setResults([]); return; }
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
         const { users } = await getRoster({ q: query, status: "ACTIVE", limit: 10 });
+        if (latestQueryRef.current !== query) return; // superseded by a newer query
         setResults(users.filter((u) => !existingIds.has(u.id)));
       } catch { /**/ }
-      finally { setLoading(false); }
+      finally { if (latestQueryRef.current === query) setLoading(false); }
     }, 300);
     return () => clearTimeout(timer);
   }, [query, existingIds]);
@@ -180,9 +187,15 @@ export default function EventDetailScreen() {
     }
   }, [eventId]);
 
-  useEffect(() => {
-    loadEvent();
-  }, [loadEvent]);
+  // useFocusEffect (not a plain mount-only useEffect) so returning here after
+  // checking someone in from CheckInScreen/AttendanceOverrideScreen, or after
+  // RSVPing, refreshes checkedInCount/myAttendance instead of showing the
+  // stale snapshot from when this screen instance first mounted.
+  useFocusEffect(
+    useCallback(() => {
+      loadEvent();
+    }, [loadEvent])
+  );
 
   const handleRsvp = async (status: RsvpStatus) => {
     if (!event) return;

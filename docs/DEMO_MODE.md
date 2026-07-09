@@ -99,8 +99,9 @@ changes:
   code checks you into the event you opened the scanner from, since testing
   a real two-device QR handoff isn't practical when evaluating the app
   solo. The officer-side rotating token generation is otherwise real.
-- `AuditLog` and `Thread` screens show an honest "not implemented" message
-  rather than fake data — neither has a backend route in the real app
-  either (no `audit-log` endpoint exists, and nothing links to `Thread` in
-  the current UI). `MapView` shows the event's location text and an "Open
-  in Maps" link rather than an embedded map — no map SDK is installed.
+- `Thread` shows an honest "not implemented" message rather than fake data
+  — it has no backend route in the real app, and nothing links to it in the
+  current UI. (`AuditLog` is fully implemented, in both Demo Mode and the
+  real backend — see `GET /audit-log` and `admin/AuditLogScreen.tsx`.)
+  `MapView` shows the event's location text and an "Open in Maps" link
+  rather than an embedded map — no map SDK is installed.

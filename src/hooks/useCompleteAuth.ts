@@ -31,18 +31,31 @@ export function useCompleteAuth() {
     setAuthToken(jwt);
 
     const clerkUser = clerk.user;
-    const user = await syncUser({
-      firstName: overrides?.firstName ?? clerkUser?.firstName ?? "Member",
-      lastName: overrides?.lastName ?? clerkUser?.lastName ?? "",
-      email:
-        overrides?.email ??
-        clerkUser?.primaryEmailAddress?.emailAddress ??
-        clerkUser?.emailAddresses?.[0]?.emailAddress ??
-        "",
-      username: overrides?.username ?? clerkUser?.username ?? undefined,
-      avatarUrl: overrides?.avatarUrl ?? clerkUser?.imageUrl ?? undefined,
-      phone: overrides?.phone,
-    });
+    let user: User;
+    try {
+      user = await syncUser({
+        firstName: overrides?.firstName ?? clerkUser?.firstName ?? "Member",
+        lastName: overrides?.lastName ?? clerkUser?.lastName ?? "",
+        email:
+          overrides?.email ??
+          clerkUser?.primaryEmailAddress?.emailAddress ??
+          clerkUser?.emailAddresses?.[0]?.emailAddress ??
+          "",
+        username: overrides?.username ?? clerkUser?.username ?? undefined,
+        avatarUrl: overrides?.avatarUrl ?? clerkUser?.imageUrl ?? undefined,
+        phone: overrides?.phone,
+      });
+    } catch (err) {
+      // setActive above already made this the live Clerk session — if the DB
+      // sync fails (network blip, backend down, email collision), leaving it
+      // active would strand the user signed-in-to-Clerk-but-unprovisioned:
+      // every future cold start would restore this same broken session (see
+      // SessionRestore.tsx) with no way back to the login screen. Undo the
+      // activation so the caller's catch block lands them back at login.
+      setAuthToken(null);
+      await clerk.signOut().catch(() => {});
+      throw err;
+    }
 
     await rememberSession(options?.rememberMe ?? true);
 
