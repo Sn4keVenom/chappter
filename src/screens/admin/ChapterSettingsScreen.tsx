@@ -12,6 +12,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { View, Text, ScrollView, TextInput, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { colors } from "../../theme/colors";
+import { usePermissions } from "../../hooks/usePermissions";
+import RequireAccess from "../../components/RequireAccess";
 import { getChapterSettings, updateChapterSettings } from "../../api/settings";
 import type { ChapterSettings, DuesPlan } from "../../types";
 
@@ -33,6 +35,7 @@ function Field({ label, value, onChangeText, keyboardType }: {
 }
 
 export default function ChapterSettingsScreen() {
+  const { isSuperAdmin } = usePermissions();
   const [settings, setSettings] = useState<ChapterSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,6 +69,10 @@ export default function ChapterSettingsScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  if (!isSuperAdmin) {
+    return <RequireAccess message="Only the Super Admin can view or edit chapter settings." />;
   }
 
   if (loading || !settings) {

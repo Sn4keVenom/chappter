@@ -1,4 +1,4 @@
-// mobile/screens/admin/AttendanceOverrideScreen.tsx
+// src/screens/admin/AttendanceOverrideScreen.tsx
 //
 // Manual attendance management for a specific event. Officer+ can view the
 // full roster (RSVP status + attendance status), mark absent members as
@@ -22,6 +22,8 @@ import {
   Modal,
   TextInput,
   SectionList,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
@@ -93,7 +95,10 @@ function ReasonModal({
       animationType="fade"
       onRequestClose={onCancel}
     >
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <View style={styles.reasonCard}>
           <Text style={styles.reasonTitle}>{title}</Text>
           <Text style={styles.reasonMember}>{memberName}</Text>
@@ -122,7 +127,7 @@ function ReasonModal({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

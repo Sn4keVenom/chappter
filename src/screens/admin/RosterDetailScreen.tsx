@@ -15,6 +15,8 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../../theme/colors";
+import { usePermissions } from "../../hooks/usePermissions";
+import RequireAccess from "../../components/RequireAccess";
 import { getRoster } from "../../api/users";
 import type { UserSummary, UserRole, MemberStatus } from "../../types";
 import type { AppStackParamList } from "../../navigation/types";
@@ -34,6 +36,7 @@ const ROLE_COLOR: Record<UserRole, string> = {
 
 export default function RosterDetailScreen() {
   const navigation = useNavigation<NavProp>();
+  const { isOfficerOrAbove } = usePermissions();
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<UserRole | null>(null);
   const [statusFilter, setStatusFilter] = useState<MemberStatus | null>(null);
@@ -63,6 +66,10 @@ export default function RosterDetailScreen() {
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
   }, [load]);
+
+  if (!isOfficerOrAbove) {
+    return <RequireAccess message="Only Exec+ or a committee chair can view the full roster." />;
+  }
 
   return (
     <View style={styles.screen}>

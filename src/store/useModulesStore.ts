@@ -13,6 +13,7 @@ import type { ModuleConfig, ModuleKey } from "../types";
 interface ModulesState {
   modules: ModuleConfig[];
   loaded: boolean;
+  error: string | null;
   fetchModules: () => Promise<void>;
   setModuleEnabled: (key: ModuleKey, enabled: boolean) => Promise<void>;
   isEnabled: (key: ModuleKey) => boolean;
@@ -21,13 +22,18 @@ interface ModulesState {
 export const useModulesStore = create<ModulesState>((set, get) => ({
   modules: [],
   loaded: false,
+  error: null,
   fetchModules: async () => {
     try {
       const modules = await getModules();
-      set({ modules, loaded: true });
-    } catch {
-      // Non-fatal — isEnabled() defaults to true (below) until loaded so
-      // nothing wrongly disappears before the first fetch resolves.
+      set({ modules, loaded: true, error: null });
+    } catch (err: any) {
+      // Non-fatal for the rest of the app — isEnabled() defaults to true
+      // (below) until loaded so nothing wrongly disappears before the first
+      // fetch resolves. `error` is surfaced so ModulesScreen isn't stuck on
+      // an infinite spinner (it gates on `loaded`, which never flips true
+      // on persistent failure) — it can show a retry affordance instead.
+      set({ error: err?.message ?? "Failed to load modules" });
     }
   },
   setModuleEnabled: async (key, enabled) => {

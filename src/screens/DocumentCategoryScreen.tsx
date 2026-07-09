@@ -16,6 +16,7 @@ import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Alert, 
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme/colors";
 import { usePermissions } from "../hooks/usePermissions";
 import { listDocuments, uploadDocument, deleteDocument } from "../api/documents";
@@ -72,6 +73,7 @@ export default function DocumentCategoryScreen() {
   const route = useRoute<RoutePropType>();
   const { category, label } = route.params;
   const { can } = usePermissions();
+  const insets = useSafeAreaInsets();
 
   const [documents, setDocuments] = useState<ChapterDocument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +82,7 @@ export default function DocumentCategoryScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setDocuments(await listDocuments({ category: category as any }));
+      setDocuments(await listDocuments({ category }));
       navigation.setOptions({ title: label });
     } catch {
       Alert.alert("Error", "Could not load documents");
@@ -130,7 +132,7 @@ export default function DocumentCategoryScreen() {
       )}
 
       {can("documents.upload") && (
-        <Pressable style={styles.fab} onPress={() => setUploadVisible(true)}>
+        <Pressable style={[styles.fab, { bottom: 24 + insets.bottom }]} onPress={() => setUploadVisible(true)}>
           <Text style={styles.fabText}>＋</Text>
         </Pressable>
       )}
@@ -138,7 +140,7 @@ export default function DocumentCategoryScreen() {
       <UploadModal
         visible={uploadVisible}
         onClose={() => setUploadVisible(false)}
-        onUpload={async (name, fileLabel) => { await uploadDocument({ category: category as any, name, fileLabel }); await load(); }}
+        onUpload={async (name, fileLabel) => { await uploadDocument({ category, name, fileLabel }); await load(); }}
       />
     </>
   );

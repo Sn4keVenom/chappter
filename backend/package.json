@@ -1,6 +1,6 @@
 {
   "name": "chapterhub-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "ChapterHub API server — Theta Tau chapter operations platform",
   "main": "dist/server.js",
@@ -23,12 +23,16 @@
     "@prisma/client": "6.19.3",
     "cors": "^2.8.6",
     "express": "^4.22.2",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "morgan": "^1.11.0",
     "stripe": "^22.3.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.25",
+    "@types/morgan": "^1.9.10",
     "@types/node": "^22.19.21",
     "prisma": "6.19.3",
     "tsx": "^4.23.0",

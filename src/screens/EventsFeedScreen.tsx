@@ -1,4 +1,4 @@
-// mobile/screens/EventsFeedScreen.tsx
+// src/screens/EventsFeedScreen.tsx
 //
 // Integration points:
 //   · useEventsStore — fetchEvents on focus, events state
@@ -29,7 +29,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 
 export default function EventsFeedScreen() {
   const navigation = useNavigation<any>();
-  const { events, loading, fetchEvents } = useEventsStore();
+  const { events, loading, error, fetchEvents } = useEventsStore();
   const { isOfficerOrAbove } = usePermissions();
 
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
@@ -107,6 +107,8 @@ export default function EventsFeedScreen() {
           thumbColor={colors.surface}
         />
       </View>
+
+      {error && !loading && <Text style={styles.errorBanner}>{error}</Text>}
 
       {loading && !refreshing ? (
         <View style={styles.centered}>
@@ -199,6 +201,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: "600", color: colors.textSecondary },
   filterRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   filterLabel: { fontSize: 14, color: colors.textSecondary },
+  errorBanner: { color: colors.danger, fontSize: 13, textAlign: "center", paddingHorizontal: 16, paddingTop: 10 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   list: { padding: 16, gap: 10, paddingBottom: 48 },
   emptyState: { alignItems: "center", paddingTop: 60 },

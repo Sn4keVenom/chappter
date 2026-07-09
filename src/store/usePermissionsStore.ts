@@ -14,6 +14,7 @@ import type { Permission, UserRole } from "../types";
 interface PermissionsState {
   presets: Record<UserRole, Permission[]>;
   loaded: boolean;
+  error: string | null;
   fetchPermissions: () => Promise<void>;
   updateRolePermissions: (role: UserRole, permissions: Permission[]) => Promise<void>;
 }
@@ -23,14 +24,20 @@ export const usePermissionsStore = create<PermissionsState>((set, get) => ({
   // resolves (e.g. very first paint) — refreshed for real on app boot.
   presets: defaultRolePermissions(),
   loaded: false,
+  error: null,
   fetchPermissions: async () => {
     try {
       const list = await getRolePermissions();
       const presets = { ...get().presets };
       for (const rp of list) presets[rp.role] = rp.permissions;
-      set({ presets, loaded: true });
-    } catch {
-      // Keep defaults on failure — non-fatal, same pattern as other stores.
+      set({ presets, loaded: true, error: null });
+    } catch (err: any) {
+      // Keep defaults on failure — non-fatal for the rest of the app, since
+      // hasPermission() still works against them. `error` is surfaced so
+      // PermissionsScreen isn't stuck on an infinite spinner (it currently
+      // gates its content on `loaded`, which never flips true here) — it
+      // can show a retry affordance instead.
+      set({ error: err?.message ?? "Failed to load permissions" });
     }
   },
   updateRolePermissions: async (role, permissions) => {

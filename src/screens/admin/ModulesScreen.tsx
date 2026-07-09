@@ -12,14 +12,32 @@
 //   - Navigation: AppStackParamList → Modules (no params)
 
 import React, { useEffect } from "react";
-import { View, Text, ScrollView, Switch, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Switch, Pressable, StyleSheet, ActivityIndicator } from "react-native";
 import { colors } from "../../theme/colors";
+import { usePermissions } from "../../hooks/usePermissions";
+import RequireAccess from "../../components/RequireAccess";
 import { useModulesStore } from "../../store/useModulesStore";
 
 export default function ModulesScreen() {
-  const { modules, loaded, fetchModules, setModuleEnabled } = useModulesStore();
+  const { isSuperAdmin } = usePermissions();
+  const { modules, loaded, error, fetchModules, setModuleEnabled } = useModulesStore();
 
   useEffect(() => { fetchModules(); }, [fetchModules]);
+
+  if (!isSuperAdmin) {
+    return <RequireAccess message="Only the Super Admin can enable or disable modules." />;
+  }
+
+  if (!loaded && error) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{error}</Text>
+        <Pressable style={styles.retryBtn} onPress={fetchModules}>
+          <Text style={styles.retryBtnText}>Try Again</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (!loaded) {
     return (
@@ -56,7 +74,10 @@ export default function ModulesScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 48 },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 },
+  errorText: { color: colors.danger, fontSize: 14, textAlign: "center", marginBottom: 16 },
+  retryBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 24 },
+  retryBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 14 },
   hint: { fontSize: 13, color: colors.textMuted, marginBottom: 16, lineHeight: 18 },
   row: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",

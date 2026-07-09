@@ -16,20 +16,20 @@ export interface AppUser {
 
 interface AuthState {
   user: AppUser | null;
-  // isLoading reflects an in-progress session restoration. Since we have no
-  // persisted token storage yet (SecureStore integration is Phase 3), there
-  // is nothing to restore on cold start. Initialize to false so RootNavigator
-  // routes to the Auth stack immediately instead of showing an infinite spinner.
-  //
-  // When SecureStore is added, set isLoading: true here, restore the token in
-  // an app-boot useEffect, then call setUser(restoredUser) or setUser(null)
-  // to flip it back.
+  // Historically reflected an in-progress session restoration, but cold-start
+  // restoration is now handled entirely by navigation/SessionRestore.tsx
+  // (real mode) / mocks/bootstrap.ts (Demo Mode) BEFORE RootNavigator ever
+  // mounts — both call setUser() synchronously-or-after-await, so by the
+  // time RootNavigator reads this store, isLoading is always false. Kept
+  // for backward compatibility with RootNavigator's guard rather than
+  // removed outright; a genuinely mid-navigation loading state (rare) would
+  // still use it correctly if ever needed again.
   isLoading: boolean;
   setUser: (user: AppUser | null) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  isLoading: false,   // was true — caused infinite spinner on cold start
+  isLoading: false,
   setUser: (user) => set({ user, isLoading: false }),
 }));

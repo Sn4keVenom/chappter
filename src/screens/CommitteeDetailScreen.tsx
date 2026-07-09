@@ -1,4 +1,4 @@
-// mobile/screens/CommitteeDetailScreen.tsx
+// src/screens/CommitteeDetailScreen.tsx
 //
 // Committee detail view. Accessible by any member via navigation.
 // Chair and Exec+ see management affordances (edit description, add/remove members).

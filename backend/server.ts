@@ -8,31 +8,49 @@
 //     Must precede express.json() so Stripe's signature check gets the raw
 //     bytes, not the parsed JSON object.
 //
-//  2. express.json() + CORS for all other routes.
+//  2. helmet() — baseline security headers (disables X-Powered-By,
+//     sets X-Content-Type-Options, etc.).
 //
-//  3. Health check (no auth needed).
+//  3. Request logging (morgan) — one line per request, skipped in test.
 //
-//  4. Webhook router — Stripe signature is the auth mechanism here, not our
+//  4. express.json() + CORS for all other routes.
+//
+//  5. Rate limiting — applied before auth so unauthenticated brute-force
+//     attempts against /auth/sync are throttled too, not just after login.
+//
+//  6. Health check (no auth needed) — verifies DB connectivity so an
+//     orchestrator (Render/Railway/Fly/k8s) can tell "process is up" apart
+//     from "process can actually serve requests."
+//
+//  7. Webhook router — Stripe signature is the auth mechanism here, not our
 //     JWT. Mounted before authMiddleware deliberately.
 //
-//  5. Auth sync router — handles POST /auth/sync, which is called right after
+//  8. Auth sync router — handles POST /auth/sync, which is called right after
 //     Clerk sign-in before a User row exists in the DB. Must be before
 //     authMiddleware for this reason.
 //
-//  6. authMiddleware — verifies the Clerk JWT and populates req.user from the
+//  9. authMiddleware — verifies the Clerk JWT and populates req.user from the
 //     DB User row. Everything below this line requires a valid session.
 //
-//  7. All authenticated application routers.
+// 10. All authenticated application routers.
 //
-//  8. Global error handler.
+// 11. 404 handler for anything that reached here unmatched.
+//
+// 12. Global error handler.
 //
 // ── Security invariant ───────────────────────────────────────────────────
 //  Only two routers are intentionally pre-auth:
 //    · webhookRouter  — Stripe HMAC authentication
 //    · authRouter     — Clerk JWT verified inline per request
 
+import "./lib/env"; // validates required env vars and fails fast if missing
+
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import morgan from "morgan";
+import rateLimit from "express-rate-limit";
+import { prisma } from "./lib/prisma";
 import { authMiddleware } from "./middleware/auth";
 import authRouter from "./routes/auth.routes";
 import webhookRouter from "./routes/webhook.routes";
@@ -42,8 +60,14 @@ import attendanceRouter from "./routes/attendance.routes";
 import committeesRouter from "./routes/committees.routes";
 import duesRouter from "./routes/dues.routes";
 import messagesRouter from "./routes/messages.routes";
+import settingsRouter from "./routes/settings.routes";
+import modulesRouter from "./routes/modules.routes";
+import documentsRouter from "./routes/documents.routes";
+import feedbackRouter from "./routes/feedback.routes";
+import permissionsRouter from "./routes/permissions.routes";
 
 const app = express();
+const isProduction = process.env.NODE_ENV === "production";
 
 // ── 1. Raw body for Stripe webhook (must precede express.json) ────────────
 app.use(
@@ -51,36 +75,103 @@ app.use(
   express.raw({ type: "application/json" })
 );
 
-// ── 2. Standard middleware ─────────────────────────────────────────────────
+// ── 2. Security headers ────────────────────────────────────────────────────
+app.use(helmet());
+
+// ── 3. Request logging ─────────────────────────────────────────────────────
+// "combined" in production (includes remote addr / user agent, useful for
+// an aggregator like Render/Railway/Datadog); terser "dev" locally. Skipped
+// entirely under test to keep test output readable.
+if (process.env.NODE_ENV !== "test") {
+  app.use(morgan(isProduction ? "combined" : "dev"));
+}
+
+// ── 4. Standard middleware ──────────────────────────────────────────────────
 app.use(express.json({ limit: "2mb" }));
+
+// CORS_ORIGIN must be an explicit comma-separated allowlist in production —
+// `credentials: true` combined with a wildcard origin is rejected by
+// browsers anyway and is a real misconfiguration smell, not just unused
+// permissiveness. Mobile clients (this app) don't send cookies and aren't
+// subject to CORS at all, so this mainly guards a future admin web client.
+const corsOrigin = process.env.CORS_ORIGIN?.split(",").map((o) => o.trim());
+if (isProduction && !corsOrigin) {
+  throw new Error(
+    "CORS_ORIGIN must be set in production (comma-separated list of allowed origins)."
+  );
+}
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN?.split(",") ?? "*",
-    credentials: true,
+    origin: corsOrigin ?? "*",
+    credentials: !!corsOrigin,
   })
 );
 
-// ── 3. Health check ────────────────────────────────────────────────────────
-app.get("/health", (_req, res) => res.json({ ok: true, ts: new Date() }));
+// ── 5. Rate limiting ────────────────────────────────────────────────────────
+// Generous defaults for a chapter-sized user base (dozens to low hundreds of
+// members hitting a handful of screens) — tight enough to blunt credential
+// stuffing / scripted abuse, loose enough that normal app usage (pull to
+// refresh, tab switching) never trips it.
+app.use(
+  "/api/v1",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 600,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  })
+);
+// Auth endpoints get a tighter limit — these are the ones worth throttling
+// harder against brute force / token-guessing.
+app.use(
+  "/api/v1/auth",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  })
+);
 
-// ── 4. Stripe webhook (Stripe HMAC auth, not JWT) ─────────────────────────
+// ── 6. Health check — verifies DB connectivity, not just process liveness ──
+app.get("/health", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, ts: new Date(), db: "ok" });
+  } catch (err) {
+    console.error("[ChapterHub] Health check DB probe failed:", err);
+    res.status(503).json({ ok: false, ts: new Date(), db: "unreachable" });
+  }
+});
+
+// ── 7. Stripe webhook (Stripe HMAC auth, not JWT) ─────────────────────────
 app.use("/api/v1", webhookRouter);
 
-// ── 5. Auth sync (Clerk JWT verified inline; user row may not exist yet) ──
+// ── 8. Auth sync (Clerk JWT verified inline; user row may not exist yet) ──
 app.use("/api/v1", authRouter);
 
-// ── 6. JWT authentication — populates req.user for all routes below ────────
+// ── 9. JWT authentication — populates req.user for all routes below ────────
 app.use("/api/v1", authMiddleware);
 
-// ── 7. Authenticated application routes ───────────────────────────────────
+// ── 10. Authenticated application routes ───────────────────────────────────
 app.use("/api/v1", usersRouter);
 app.use("/api/v1", eventsRouter);
 app.use("/api/v1", attendanceRouter);
 app.use("/api/v1", committeesRouter);
 app.use("/api/v1", duesRouter);       // was incorrectly before authMiddleware
 app.use("/api/v1", messagesRouter);
+app.use("/api/v1", settingsRouter);
+app.use("/api/v1", modulesRouter);
+app.use("/api/v1", documentsRouter);
+app.use("/api/v1", feedbackRouter);
+app.use("/api/v1", permissionsRouter);
 
-// ── 8. Global error handler ───────────────────────────────────────────────
+// ── 11. 404 for anything unmatched ──────────────────────────────────────────
+app.use((req, res) => {
+  res.status(404).json({ error: `No route for ${req.method} ${req.path}` });
+});
+
+// ── 12. Global error handler ───────────────────────────────────────────────
 app.use(
   (
     err: Error,
@@ -94,8 +185,25 @@ app.use(
 );
 
 const PORT = Number(process.env.PORT ?? 4000);
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`ChapterHub API → http://localhost:${PORT}`);
 });
+
+// ── Graceful shutdown ────────────────────────────────────────────────────
+// Stop accepting new connections, let in-flight requests finish, then
+// close the Prisma connection pool. Matters for zero-downtime deploys on
+// platforms that send SIGTERM before killing the container (Render,
+// Railway, Fly.io, k8s all do this).
+function shutdown(signal: string): void {
+  console.log(`[ChapterHub] ${signal} received, shutting down gracefully…`);
+  server.close(async () => {
+    await prisma.$disconnect();
+    process.exit(0);
+  });
+  // Belt-and-suspenders: force-exit if connections don't drain in time.
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 export default app;

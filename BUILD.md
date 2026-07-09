@@ -270,21 +270,34 @@ npx prisma migrate status
 
 ## Known Limitations
 
-| Limitation | Workaround |
+| Limitation | Workaround / status |
 |---|---|
 | Stripe dues payments need STRIPE_SECRET_KEY | Set in `.env` + run `stripe listen --forward-to localhost:4000/api/v1/webhooks/stripe` |
-| MemberProfile, AuditLog, Thread screens show blank | Known stub — navigate away |
-| No push notifications | Phase 4 |
+| AuditLog, Thread screens show a placeholder | No backend read endpoint yet — see `NotImplementedScreen.tsx` |
+| No push notifications | Not built yet — no expo-notifications, no server-side push infra |
 | Chapter-wide events require Exec for QR display | Create events with a committee assigned, or use Exec role |
+| Role-permission edits (Permissions screen) don't affect the real backend's authorization | Real backend still uses flat role checks on existing resources — see `docs/PERMISSIONS.md` "Backend parity gap" |
+| No automated tests | Manual test plan only — see `TESTING.md` |
+| Documents module has no real file storage | Placeholder filenames only — see `Document.fileLabel` doc comment in `schema.prisma` |
 
 ---
 
 ## Production Deployment (Checklist)
 
-- [ ] Backend: deploy to Render / Railway / Fly.io; set all env vars
+- [ ] Backend: deploy to Render / Railway / Fly.io; set all env vars (server
+      now fails fast at boot if `DATABASE_URL`/`CLERK_SECRET_KEY` are missing)
+- [ ] Run a fresh `npx prisma migrate dev` against a real Postgres instance
+      to generate/verify a migration for the current schema — the committed
+      `init` migration predates several schema changes (roles/status/office
+      rework, permissions/modules/settings/documents/feedback models);
+      review the generated SQL carefully, especially the enum changes
 - [ ] Run `npm run db:migrate` as a release step (not `migrate:dev`)
 - [ ] Run seed once on fresh DB
-- [ ] Set `CORS_ORIGIN` to production domain(s)
+- [ ] Set `CORS_ORIGIN` to production domain(s) — required in production,
+      the server now refuses to boot without it
 - [ ] Register Stripe webhook endpoint at `https://yourdomain.com/api/v1/webhooks/stripe`
+- [ ] Decide whether to wire `RolePermission`-backed authorization before
+      exposing the Permissions screen to real Super Admins (see
+      `docs/PERMISSIONS.md`)
 - [ ] Mobile: `eas build --profile production` → submit to App Store / Play Store
 - [ ] Update `EXPO_PUBLIC_API_URL` to production backend URL

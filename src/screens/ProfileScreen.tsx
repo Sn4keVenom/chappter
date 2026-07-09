@@ -1,4 +1,4 @@
-// mobile/screens/ProfileScreen.tsx
+// src/screens/ProfileScreen.tsx
 //
 // Profile tab. Shows the current user's personal data: points this semester,
 // attendance history (last 5), dues status, achievements, and committee

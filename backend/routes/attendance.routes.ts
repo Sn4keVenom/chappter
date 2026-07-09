@@ -16,24 +16,28 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { AuthedRequest, requireRole, requireCommitteeScope, writeAuditLog } from "../middleware/rbac";
+import { asyncHandler } from "../lib/asyncHandler";
+import { AuthedRequest, requireRole, requireCommitteeScope, writeAuditLog, isAtLeast } from "../middleware/rbac";
 
 const router = Router();
 
 // ── GET /events/:eventId/attendance — roster with RSVP join ──────────────
-// Officer scoped to this event's committee, or Exec+.
+// Officer scoped to this event's committee, or Exec+. Includes PNM alongside
+// ACTIVE — Rush events specifically target prospective members, so a
+// roster that only showed ACTIVE would never show the people the event
+// is for.
 router.get(
   "/events/:eventId/attendance",
   requireCommitteeScope(async (req) => {
     const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
     return event?.committeeId ?? null;
   }),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
     if (!event) return res.status(404).json({ error: "Event not found" });
 
     const members = await prisma.user.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: { in: ["ACTIVE", "PNM"] } },
       select: {
         id: true, firstName: true, lastName: true, email: true, pledgeClassLabel: true,
         rsvps: { where: { eventId: req.params.eventId }, select: { status: true } },
@@ -58,7 +62,7 @@ router.get(
     const checkedInCount = roster.filter((r) => r.attendance).length;
 
     res.json({ event: { id: event.id, title: event.title, pointValue: event.pointValue }, roster, checkedInCount });
-  }
+  })
 );
 
 // ── POST /events/:eventId/attendance/:userId — manual override ────────────
@@ -77,7 +81,7 @@ router.post(
     const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
     return event?.committeeId ?? null;
   }),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = manualSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -184,38 +188,41 @@ router.post(
     });
 
     res.json({ removed: true });
-  }
+  })
 );
 
 // ── GET /attendance/history — current user ────────────────────────────────
-router.get("/attendance/history", async (req: AuthedRequest, res: Response) => {
-  const { semesterId, limit = "20", cursor } = req.query;
+router.get(
+  "/attendance/history",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const { semesterId, limit = "20", cursor } = req.query;
 
-  const records = await prisma.attendance.findMany({
-    where: {
-      userId: req.user!.id,
-      ...(semesterId
-        ? { event: { ledgerEntries: { some: { semesterId: String(semesterId) } } } }
-        : {}),
-    },
-    orderBy: { checkInTime: "desc" },
-    take: Number(limit) + 1,
-    ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
-    include: {
-      event: {
-        select: { id: true, title: true, category: true, startTime: true, pointValue: true },
+    const records = await prisma.attendance.findMany({
+      where: {
+        userId: req.user!.id,
+        ...(semesterId
+          ? { event: { ledgerEntries: { some: { semesterId: String(semesterId) } } } }
+          : {}),
       },
-    },
-  });
+      orderBy: { checkInTime: "desc" },
+      take: Number(limit) + 1,
+      ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
+      include: {
+        event: {
+          select: { id: true, title: true, category: true, startTime: true, pointValue: true },
+        },
+      },
+    });
 
-  const hasMore = records.length > Number(limit);
-  const items = hasMore ? records.slice(0, -1) : records;
+    const hasMore = records.length > Number(limit);
+    const items = hasMore ? records.slice(0, -1) : records;
 
-  res.json({
-    records: items,
-    nextCursor: hasMore ? items[items.length - 1]?.id : null,
-  });
-});
+    res.json({
+      records: items,
+      nextCursor: hasMore ? items[items.length - 1]?.id : null,
+    });
+  })
+);
 
 // ── GET /attendance/history/:userId — Exec+ ───────────────────────────────
 // TODO: the mock/mobile-side permission engine (permissions/permissions.ts)
@@ -226,7 +233,7 @@ router.get("/attendance/history", async (req: AuthedRequest, res: Response) => {
 router.get(
   "/attendance/history/:userId",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { semesterId, limit = "50" } = req.query;
 
     const records = await prisma.attendance.findMany({
@@ -244,99 +251,106 @@ router.get(
     });
 
     res.json({ records });
-  }
+  })
 );
 
 // ── GET /points/leaderboard ───────────────────────────────────────────────
 // Aggregate per-user totals for the given semester; if omitted, uses current.
-router.get("/points/leaderboard", async (req: AuthedRequest, res: Response) => {
-  const now = new Date();
-  let semesterId = req.query.semesterId ? String(req.query.semesterId) : null;
+router.get(
+  "/points/leaderboard",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const now = new Date();
+    let semesterId = req.query.semesterId ? String(req.query.semesterId) : null;
 
-  if (!semesterId) {
-    const sem = await prisma.semester.findFirst({
-      where: { startDate: { lte: now }, endDate: { gte: now } },
-    });
-    if (!sem) return res.json({ leaderboard: [], semesterLabel: null });
-    semesterId = sem.id;
-  }
+    if (!semesterId) {
+      const sem = await prisma.semester.findFirst({
+        where: { startDate: { lte: now }, endDate: { gte: now } },
+      });
+      if (!sem) return res.json({ leaderboard: [], semesterLabel: null });
+      semesterId = sem.id;
+    }
 
-  const semester = await prisma.semester.findUnique({ where: { id: semesterId } });
+    const semester = await prisma.semester.findUnique({ where: { id: semesterId } });
 
-  // Raw aggregation with rank via window function
-  const rows = await prisma.$queryRaw<
-    { userId: string; total: bigint; firstName: string; lastName: string; avatarUrl: string | null }[]
-  >`
-    SELECT
-      u.id AS "userId",
-      u."firstName",
-      u."lastName",
-      u."avatarUrl",
-      COALESCE(SUM(pl.amount), 0)::int AS total
-    FROM "User" u
-    LEFT JOIN "PointsLedger" pl
-      ON pl."userId" = u.id AND pl."semesterId" = ${semesterId}
-    WHERE u.status IN ('ACTIVE', 'PNM')
-    GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl"
-    ORDER BY total DESC
-  `;
+    // Raw aggregation with rank via window function. Safe from SQL injection:
+    // this is Prisma's tagged-template $queryRaw form, which parameterizes
+    // every ${...} interpolation — it is never string-concatenated.
+    const rows = await prisma.$queryRaw<
+      { userId: string; total: bigint; firstName: string; lastName: string; avatarUrl: string | null }[]
+    >`
+      SELECT
+        u.id AS "userId",
+        u."firstName",
+        u."lastName",
+        u."avatarUrl",
+        COALESCE(SUM(pl.amount), 0)::int AS total
+      FROM "User" u
+      LEFT JOIN "PointsLedger" pl
+        ON pl."userId" = u.id AND pl."semesterId" = ${semesterId}
+      WHERE u.status IN ('ACTIVE', 'PNM')
+      GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl"
+      ORDER BY total DESC
+    `;
 
-  const leaderboard = rows.map((row, i) => ({
-    rank: i + 1,
-    userId: row.userId,
-    firstName: row.firstName,
-    lastName: row.lastName,
-    avatarUrl: row.avatarUrl,
-    total: Number(row.total),
-    isMe: row.userId === req.user!.id,
-  }));
+    const leaderboard = rows.map((row, i) => ({
+      rank: i + 1,
+      userId: row.userId,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      avatarUrl: row.avatarUrl,
+      total: Number(row.total),
+      isMe: row.userId === req.user!.id,
+    }));
 
-  res.json({ leaderboard, semesterLabel: semester?.label ?? null });
-});
+    res.json({ leaderboard, semesterLabel: semester?.label ?? null });
+  })
+);
 
 // ── GET /points/ledger/:userId ────────────────────────────────────────────
 // Self: any authenticated user. Other users: Exec+.
-router.get("/points/ledger/:userId", async (req: AuthedRequest, res: Response) => {
-  const isSelf = req.params.userId === req.user!.id;
-  const isExecPlus = ["EXEC", "SUPER_ADMIN"].includes(req.user!.role);
+router.get(
+  "/points/ledger/:userId",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const isSelf = req.params.userId === req.user!.id;
 
-  if (!isSelf && !isExecPlus) {
-    return res.status(403).json({ error: "Not permitted" });
-  }
+    if (!isSelf && !isAtLeast(req.user!.role, "EXEC")) {
+      return res.status(403).json({ error: "Not permitted" });
+    }
 
-  const { semesterId, limit = "50", cursor } = req.query;
+    const { semesterId, limit = "50", cursor } = req.query;
 
-  const entries = await prisma.pointsLedger.findMany({
-    where: {
-      userId: req.params.userId,
-      ...(semesterId ? { semesterId: String(semesterId) } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    take: Number(limit) + 1,
-    ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
-    include: {
-      event: { select: { id: true, title: true, category: true } },
-      awardedBy: { select: { firstName: true, lastName: true } },
-    },
-  });
+    const entries = await prisma.pointsLedger.findMany({
+      where: {
+        userId: req.params.userId,
+        ...(semesterId ? { semesterId: String(semesterId) } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: Number(limit) + 1,
+      ...(cursor ? { cursor: { id: String(cursor) }, skip: 1 } : {}),
+      include: {
+        event: { select: { id: true, title: true, category: true } },
+        awardedBy: { select: { firstName: true, lastName: true } },
+      },
+    });
 
-  const hasMore = entries.length > Number(limit);
-  const items = hasMore ? entries.slice(0, -1) : entries;
+    const hasMore = entries.length > Number(limit);
+    const items = hasMore ? entries.slice(0, -1) : entries;
 
-  const totals = await prisma.pointsLedger.aggregate({
-    where: {
-      userId: req.params.userId,
-      ...(semesterId ? { semesterId: String(semesterId) } : {}),
-    },
-    _sum: { amount: true },
-  });
+    const totals = await prisma.pointsLedger.aggregate({
+      where: {
+        userId: req.params.userId,
+        ...(semesterId ? { semesterId: String(semesterId) } : {}),
+      },
+      _sum: { amount: true },
+    });
 
-  res.json({
-    entries: items,
-    total: totals._sum.amount ?? 0,
-    nextCursor: hasMore ? items[items.length - 1]?.id : null,
-  });
-});
+    res.json({
+      entries: items,
+      total: totals._sum.amount ?? 0,
+      nextCursor: hasMore ? items[items.length - 1]?.id : null,
+    });
+  })
+);
 
 // ── POST /points/adjust — Exec+ manual bonus/penalty ─────────────────────
 const adjustSchema = z.object({
@@ -350,7 +364,7 @@ const adjustSchema = z.object({
 router.post(
   "/points/adjust",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = adjustSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -376,7 +390,7 @@ router.post(
     });
 
     res.status(201).json({ entry });
-  }
+  })
 );
 
 export default router;

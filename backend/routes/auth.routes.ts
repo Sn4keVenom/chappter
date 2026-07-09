@@ -20,6 +20,7 @@ import { Router, Request, Response } from "express";
 import { verifyToken } from "@clerk/backend";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
+import { asyncHandler } from "../lib/asyncHandler";
 
 const router = Router();
 
@@ -38,68 +39,76 @@ const syncSchema = z.object({
 // Upsert the User row from the auth provider identity.
 // Returns the full user profile + committeeChairOf array so the mobile
 // app can initialise useAuthStore immediately without a second round-trip.
-router.post("/auth/sync", async (req: Request, res: Response) => {
-  const header = req.headers.authorization;
-  if (!header?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing authorization header" });
-  }
+router.post(
+  "/auth/sync",
+  asyncHandler(async (req: Request, res: Response) => {
+    const header = req.headers.authorization;
+    if (!header?.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Missing authorization header" });
+    }
 
-  let authProviderId: string;
-  try {
-    const payload = await verifyToken(header.slice(7), {
-      secretKey: process.env.CLERK_SECRET_KEY!,
-    });
-    authProviderId = payload.sub;
-  } catch {
-    return res.status(401).json({ error: "Invalid token" });
-  }
+    let authProviderId: string;
+    try {
+      const payload = await verifyToken(header.slice(7), {
+        secretKey: process.env.CLERK_SECRET_KEY!,
+      });
+      authProviderId = payload.sub;
+    } catch {
+      return res.status(401).json({ error: "Invalid token" });
+    }
 
-  const parsed = syncSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const body = parsed.data;
+    const parsed = syncSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    const body = parsed.data;
 
-  const user = await prisma.user.upsert({
-    where: { authProviderId },
-    update: {
-      firstName: body.firstName,
-      lastName: body.lastName,
-      email: body.email,
-      ...(body.phone ? { phone: body.phone } : {}),
-      ...(body.avatarUrl ? { avatarUrl: body.avatarUrl } : {}),
-    },
-    create: {
-      authProviderId,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      email: body.email,
-      phone: body.phone,
-      avatarUrl: body.avatarUrl,
-      pledgeClassLabel: body.pledgeClassLabel,
-      role: "MEMBER",
-      status: "ACTIVE",
-    },
-    include: {
-      committeeMemberships: {
-        where: { role: "CHAIR" },
-        select: { committeeId: true },
+    const user = await prisma.user.upsert({
+      where: { authProviderId },
+      update: {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+        ...(body.phone ? { phone: body.phone } : {}),
+        ...(body.avatarUrl ? { avatarUrl: body.avatarUrl } : {}),
       },
-    },
-  });
+      create: {
+        authProviderId,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        email: body.email,
+        phone: body.phone,
+        avatarUrl: body.avatarUrl,
+        pledgeClassLabel: body.pledgeClassLabel,
+        role: "MEMBER",
+        status: "ACTIVE",
+      },
+      include: {
+        committeeMemberships: {
+          where: { role: "CHAIR" },
+          select: { committeeId: true },
+        },
+      },
+    });
 
-  res.json({
-    user: {
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-      status: user.status,
-      avatarUrl: user.avatarUrl,
-      pledgeClassLabel: user.pledgeClassLabel,
-      committeeChairOf: user.committeeMemberships.map((m) => m.committeeId),
-    },
-  });
-});
+    res.json({
+      user: {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+        office: user.office,
+        status: user.status,
+        avatarUrl: user.avatarUrl,
+        pledgeClassLabel: user.pledgeClassLabel,
+        // No Team model in the real schema yet (Teams/CommitteeBudget/Expense
+        // are demo-mode-only — see docs/DEMO_MODE.md production gaps).
+        committeeChairOf: user.committeeMemberships.map((m) => m.committeeId),
+      },
+    });
+  })
+);
 
 export default router;

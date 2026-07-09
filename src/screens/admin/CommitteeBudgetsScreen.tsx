@@ -12,10 +12,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator,
-  Modal, TextInput, Alert,
+  Modal, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from "react-native";
 
 import { colors } from "../../theme/colors";
+import { usePermissions } from "../../hooks/usePermissions";
+import RequireAccess from "../../components/RequireAccess";
 import { listCommitteeBudgets, setCommitteeBudget } from "../../api/finance";
 import { formatCurrency } from "../../types";
 import type { CommitteeBudget } from "../../types";
@@ -57,7 +59,10 @@ function EditBudgetModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>{budget.committeeName}</Text>
           <Text style={styles.modalSub}>Set this semester's allocated budget</Text>
@@ -78,12 +83,13 @@ function EditBudgetModal({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 export default function CommitteeBudgetsScreen() {
+  const { isTreasurerOrAdmin } = usePermissions();
   const [budgets, setBudgets] = useState<CommitteeBudget[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<CommitteeBudget | null>(null);
@@ -100,6 +106,10 @@ export default function CommitteeBudgetsScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  if (!isTreasurerOrAdmin) {
+    return <RequireAccess message="Only the Treasurer or Super Admin can view committee budgets." />;
+  }
 
   if (loading && !budgets.length) {
     return (

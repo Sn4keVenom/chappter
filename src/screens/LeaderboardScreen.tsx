@@ -1,4 +1,4 @@
-// mobile/screens/LeaderboardScreen.tsx
+// src/screens/LeaderboardScreen.tsx
 //
 // Points tab. Individual/Team segmented toggle:
 //   Individual — ranked members with a points breakdown (attendance count,

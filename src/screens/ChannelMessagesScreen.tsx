@@ -1,4 +1,4 @@
-// mobile/screens/ChannelMessagesScreen.tsx
+// src/screens/ChannelMessagesScreen.tsx
 //
 // Integration points:
 //   · useMessagesStore — fetchMessages, loadMoreMessages, sendMessage, togglePin

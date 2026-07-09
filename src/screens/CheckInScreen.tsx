@@ -1,4 +1,4 @@
-// mobile/screens/CheckInScreen.tsx
+// src/screens/CheckInScreen.tsx
 //
 // Dual-mode screen controlled by route.params.mode:
 //   "officer" — displays rotating HMAC-signed QR code; fetches token every 55s
@@ -18,7 +18,7 @@ import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from "rea
 import QRCode from "react-native-qrcode-svg";
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from "expo-camera";
 import { useRoute, useNavigation } from "@react-navigation/native";
-import { getCheckInToken, selfCheckIn } from "../api/attendance";
+import { getCheckInToken, selfCheckIn, getEventRoster } from "../api/attendance";
 import { colors } from "../theme/colors";
 
 type CheckInMode = "officer" | "member";
@@ -53,23 +53,29 @@ function OfficerView({ eventId }: { eventId: string }) {
     }
   }, [eventId]);
 
+  const fetchCount = useCallback(async () => {
+    try {
+      const { checkedInCount } = await getEventRoster(eventId);
+      setCheckedIn(checkedInCount);
+    } catch {
+      // Leave the previous count visible; will retry on the next tick
+    }
+  }, [eventId]);
+
   useEffect(() => {
     fetchToken();
+    fetchCount();
     // Refresh token every 55s (token TTL is 60s)
     refreshRef.current = setInterval(fetchToken, 55_000);
-    // Poll checked-in count every 10s
-    countRef.current = setInterval(async () => {
-      try {
-        // Simple approach: re-fetch a lightweight count via event detail
-        // In production, add GET /events/:id/attendance-count endpoint
-      } catch {}
-    }, 10_000);
+    // Poll checked-in count every 10s so the officer sees new scans land
+    // without needing to leave and reopen this screen.
+    countRef.current = setInterval(fetchCount, 10_000);
 
     return () => {
       if (refreshRef.current) clearInterval(refreshRef.current);
       if (countRef.current) clearInterval(countRef.current);
     };
-  }, [fetchToken]);
+  }, [fetchToken, fetchCount]);
 
   const secondsLeft = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
 
