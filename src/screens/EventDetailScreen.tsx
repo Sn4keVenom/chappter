@@ -24,17 +24,22 @@ import {
   Modal,
   TextInput,
   FlatList,
+  Linking,
 } from "react-native";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { colors } from "../theme/colors";
 import { usePermissions } from "../hooks/usePermissions";
 import { useAuthStore } from "../store/useAuthStore";
+import { useModulesStore } from "../store/useModulesStore";
 import {
   getEvent, setRsvp, addEventDelegate, removeEventDelegate,
   type EventDetail, type RsvpStatus, type EventDelegate,
 } from "../api/events";
 import { getRoster } from "../api/users";
 import type { UserSummary } from "../types";
+import {
+  buildGoogleCalendarUrl, buildOutlookCalendarUrl, addToDeviceCalendar, shareIcs, eventToCalendarInput,
+} from "../utils/calendar";
 
 const CATEGORY_COLOR: Record<string, string> = {
   BROTHERHOOD: colors.categoryBrotherhood,
@@ -155,6 +160,7 @@ export default function EventDetailScreen() {
 
   const currentUser = useAuthStore((s) => s.user);
   const { canManageEvent, canGenerateCheckIn } = usePermissions();
+  const isCalendarEnabled = useModulesStore((s) => s.isEnabled("calendar"));
 
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -197,6 +203,25 @@ export default function EventDetailScreen() {
     if (!event) return;
     const delegates = await addEventDelegate(event.id, userId);
     setEvent({ ...event, attendanceDelegates: delegates });
+  }
+
+  function handleAddToCalendar() {
+    if (!event) return;
+    const input = eventToCalendarInput(event);
+    Alert.alert(
+      "Add to Calendar",
+      undefined,
+      [
+        { text: "Apple/Device Calendar", onPress: async () => {
+          try { await addToDeviceCalendar(input); Alert.alert("Added", "Event added to your device calendar."); }
+          catch (e: any) { Alert.alert("Error", e?.message ?? "Could not add to calendar"); }
+        } },
+        { text: "Google Calendar", onPress: () => Linking.openURL(buildGoogleCalendarUrl(input)) },
+        { text: "Outlook Calendar", onPress: () => Linking.openURL(buildOutlookCalendarUrl(input)) },
+        { text: "Share as .ics", onPress: () => shareIcs(input) },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
   }
 
   function confirmRemoveDelegate(delegate: EventDelegate) {
@@ -270,6 +295,12 @@ export default function EventDetailScreen() {
       ) : null}
 
       {event.description ? <Text style={styles.description}>{event.description}</Text> : null}
+
+      {isCalendarEnabled && (
+        <Pressable style={styles.calendarBtn} onPress={handleAddToCalendar}>
+          <Text style={styles.calendarBtnText}>📅 Add to Calendar</Text>
+        </Pressable>
+      )}
 
       {error ? <Text style={styles.errorBanner}>{error}</Text> : null}
 
@@ -428,6 +459,11 @@ const styles = StyleSheet.create({
   dateTime: { fontSize: 15, color: colors.textSecondary, marginBottom: 2 },
   location: { fontSize: 15, color: colors.primary, marginBottom: 14, textDecorationLine: "underline" },
   description: { fontSize: 15, lineHeight: 22, color: colors.textPrimary, marginBottom: 24 },
+  calendarBtn: {
+    alignSelf: "flex-start", borderRadius: 8, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: 14, paddingVertical: 9, marginBottom: 20, backgroundColor: colors.surface,
+  },
+  calendarBtnText: { fontSize: 13, fontWeight: "600", color: colors.textPrimary },
   sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.textMuted, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
   rsvpSection: { marginBottom: 28 },
   rsvpRow: { flexDirection: "row", gap: 8 },

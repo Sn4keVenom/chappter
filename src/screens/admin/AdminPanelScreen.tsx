@@ -44,6 +44,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../../theme/colors";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useModulesStore } from "../../store/useModulesStore";
 import { getRoster, getLeaderboard } from "../../api/users";
 import { getAllDues, sendDuesReminders } from "../../api/dues";
 import { listCommittees } from "../../api/committees";
@@ -139,7 +140,13 @@ interface AdminStats {
 
 export default function AdminPanelScreen() {
   const navigation = useNavigation<NavProp>();
-  const { isExecOrAbove, isTreasurerOrAdmin } = usePermissions();
+  const { isExecOrAbove, isTreasurerOrAdmin, isSuperAdmin } = usePermissions();
+  const isEventsEnabled = useModulesStore((s) => s.isEnabled("events"));
+  const isDuesEnabled = useModulesStore((s) => s.isEnabled("dues"));
+  const isCommitteesEnabled = useModulesStore((s) => s.isEnabled("committees"));
+  const isMessagingEnabled = useModulesStore((s) => s.isEnabled("messaging"));
+  const isDocumentsEnabled = useModulesStore((s) => s.isEnabled("documents"));
+  const isFeedbackEnabled = useModulesStore((s) => s.isEnabled("feedback"));
 
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -310,15 +317,19 @@ export default function AdminPanelScreen() {
       </View>
 
       {/* Events */}
-      <SectionHeader title="Events" />
-      <View style={styles.actionGroup}>
-        <ActionRow
-          icon="◷"
-          label="All Events"
-          sub="Create or manage chapter events — attendance is tracked by the Scribe"
-          onPress={() => navigation.navigate("Tabs", { screen: "EventsFeed" })}
-        />
-      </View>
+      {isEventsEnabled && (
+        <>
+          <SectionHeader title="Events" />
+          <View style={styles.actionGroup}>
+            <ActionRow
+              icon="◷"
+              label="All Events"
+              sub="Create or manage chapter events — attendance is tracked by the Scribe"
+              onPress={() => navigation.navigate("Tabs", { screen: "EventsFeed" })}
+            />
+          </View>
+        </>
+      )}
 
       {/* Members */}
       <SectionHeader title="Members" />
@@ -348,7 +359,7 @@ export default function AdminPanelScreen() {
       </View>
 
       {/* Dues — Exec+ only, Treasurer-owned */}
-      {isExecOrAbove && (
+      {isExecOrAbove && isDuesEnabled && (
         <>
           <SectionHeader title="Dues — Treasurer" />
           <View style={styles.actionGroup}>
@@ -374,7 +385,7 @@ export default function AdminPanelScreen() {
 
       {/* Finance — Treasurer/SuperAdmin only (Feature 5, brand new — no
           prior broader access to preserve) */}
-      {isTreasurerOrAdmin && (
+      {isTreasurerOrAdmin && isCommitteesEnabled && (
         <>
           <SectionHeader title="Finance — Treasurer" />
           <View style={styles.actionGroup}>
@@ -399,7 +410,7 @@ export default function AdminPanelScreen() {
       )}
 
       {/* Committees */}
-      {(stats?.committees?.length ?? 0) > 0 && (
+      {isCommitteesEnabled && (stats?.committees?.length ?? 0) > 0 && (
         <>
           <SectionHeader title="Committees" />
           <View style={styles.actionGroup}>
@@ -419,15 +430,73 @@ export default function AdminPanelScreen() {
       )}
 
       {/* Messaging shortcut */}
-      <SectionHeader title="Communications" />
-      <View style={styles.actionGroup}>
-        <ActionRow
-          icon="✉"
-          label="Channels"
-          sub="Post announcements, manage pinned messages"
-          onPress={() => navigation.navigate("Tabs", { screen: "Messaging" })}
-        />
-      </View>
+      {isMessagingEnabled && (
+        <>
+          <SectionHeader title="Communications" />
+          <View style={styles.actionGroup}>
+            <ActionRow
+              icon="✉"
+              label="Channels"
+              sub="Post announcements, manage pinned messages"
+              onPress={() => navigation.navigate("Tabs", { screen: "Messaging" })}
+            />
+          </View>
+        </>
+      )}
+
+      {/* Documents & Feedback management — Exec+ (documents.upload/delete,
+          feedback.view/manage presets), hidden entirely when their module
+          is disabled */}
+      {(isDocumentsEnabled || isFeedbackEnabled) && (
+        <>
+          <SectionHeader title="Documents & Feedback" />
+          <View style={styles.actionGroup}>
+            {isDocumentsEnabled && (
+              <ActionRow
+                icon="📄"
+                label="Documents"
+                sub="Chapter files, forms, and external links"
+                onPress={() => navigation.navigate("Documents")}
+              />
+            )}
+            {isFeedbackEnabled && (
+              <ActionRow
+                icon="💬"
+                label="Feedback Submissions"
+                sub="Review bug reports and feature requests"
+                onPress={() => navigation.navigate("FeedbackList")}
+              />
+            )}
+          </View>
+        </>
+      )}
+
+      {/* Chapter Administration — Super Admin only (spec §4) */}
+      {isSuperAdmin && (
+        <>
+          <SectionHeader title="Chapter Administration" />
+          <View style={styles.actionGroup}>
+            <ActionRow
+              icon="🏛"
+              label="Chapter Settings"
+              sub="Chapter name, semester dates, dues & attendance defaults"
+              onPress={() => navigation.navigate("ChapterSettings")}
+            />
+            <ActionRow
+              icon="🧩"
+              label="Modules"
+              sub="Enable or disable entire app sections"
+              onPress={() => navigation.navigate("Modules")}
+            />
+            <ActionRow
+              icon="🔑"
+              label="Permissions"
+              sub="Edit what each role can do"
+              onPress={() => navigation.navigate("Permissions")}
+            />
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 }

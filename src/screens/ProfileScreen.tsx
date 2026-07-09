@@ -26,6 +26,7 @@ import { useAppAuth } from "../hooks/useAppAuth";
 
 import { colors } from "../theme/colors";
 import { useAuthStore } from "../store/useAuthStore";
+import { useModulesStore } from "../store/useModulesStore";
 import { getMe, getLeaderboard, getPointsLedger } from "../api/users";
 import { getMyDues, payDuesWithPyli } from "../api/dues";
 import { getMyAttendanceHistory } from "../api/attendance";
@@ -34,8 +35,13 @@ import { DEMO_MODE } from "../config/demo";
 import { DEMO_SWITCHABLE_USERS, DEMO_DEFAULT_USER_ID } from "../mocks/identity";
 import { switchDemoUser } from "../mocks/bootstrap";
 import { computeAchievements, type Achievement } from "../utils/achievements";
-import type { User, DuesRecord, DuesStatus, DuesPlan, AttendanceRecord } from "../types";
+import type { User, DuesRecord, DuesStatus, DuesPlan, AttendanceRecord, ExecOffice } from "../types";
 import { formatCurrency, fullName } from "../types";
+
+function officeLabel(office?: ExecOffice | null): string {
+  if (!office) return "";
+  return office.split("_").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ");
+}
 
 const DUES_COLOR: Record<DuesStatus, string> = {
   PAID: colors.success,
@@ -137,6 +143,8 @@ export default function ProfileScreen() {
   const userFromStore = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const { signOut } = useAppAuth();
+  const isDocumentsEnabled = useModulesStore((s) => s.isEnabled("documents"));
+  const isFeedbackEnabled = useModulesStore((s) => s.isEnabled("feedback"));
 
   const [profile, setProfile] = useState<User | null>(null);
   const [dues, setDues] = useState<DuesRecord | null>(null);
@@ -283,7 +291,12 @@ export default function ProfileScreen() {
           </Text>
         </View>
         <Text style={styles.heroName}>{displayName}</Text>
-        <Text style={styles.heroRole}>{profile?.role ?? userFromStore?.role}</Text>
+        <Text style={styles.heroRole}>
+          {(profile?.office ?? userFromStore?.office)
+            ? `${officeLabel(profile?.office ?? userFromStore?.office)} · `
+            : ""}
+          {profile?.role ?? userFromStore?.role}
+        </Text>
         {profile?.pledgeClassLabel && (
           <Text style={styles.heroPledgeClass}>{profile.pledgeClassLabel}</Text>
         )}
@@ -412,6 +425,24 @@ export default function ProfileScreen() {
           ))}
         </View>
       )}
+
+      {/* More — Documents & Feedback (spec §8/§9), hidden when their module
+          is disabled via Chapter Settings > Modules */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>More</Text>
+        {isDocumentsEnabled && (
+          <Pressable style={styles.moreRow} onPress={() => navigation.navigate("Documents")}>
+            <Text style={styles.moreRowText}>📄 Documents</Text>
+            <Text style={styles.moreRowChevron}>›</Text>
+          </Pressable>
+        )}
+        {isFeedbackEnabled && (
+          <Pressable style={styles.moreRow} onPress={() => navigation.navigate("Feedback")}>
+            <Text style={styles.moreRowText}>💬 Send Feedback</Text>
+            <Text style={styles.moreRowChevron}>›</Text>
+          </Pressable>
+        )}
+      </View>
 
       {/* Sign out */}
       <Pressable style={styles.signOutBtn} onPress={handleSignOut}>
@@ -542,6 +573,14 @@ const styles = StyleSheet.create({
   historyTitle: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
   historyMeta: { fontSize: 12, color: colors.textSecondary, marginTop: 1 },
   historyPoints: { fontSize: 16, fontWeight: "800", color: colors.success },
+
+  // More section
+  moreRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  moreRowText: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
+  moreRowChevron: { fontSize: 18, color: colors.textMuted },
 
   // Sign out
   signOutBtn: {

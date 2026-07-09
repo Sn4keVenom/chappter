@@ -29,9 +29,19 @@ import type {
   DuesStatus,
   DuesPlan,
   PaymentMethod,
-  OfficerTitle,
+  ExecOffice,
   ReimbursementStatus,
+  Permission,
+  ModuleConfig,
+  ChapterSettings,
+  DocumentCategory,
+  ChapterDocument,
+  ExternalLink,
+  FeedbackType,
+  FeedbackStatus,
+  FeedbackReport,
 } from "../types";
+import { defaultRolePermissions } from "../permissions/permissions";
 
 // ── Date helpers ────────────────────────────────────────────────────────────
 
@@ -66,7 +76,7 @@ export interface MockUser {
   phone?: string;
   avatarUrl?: string | null;
   role: UserRole;
-  title?: OfficerTitle | null;
+  office?: ExecOffice | null;
   status: MemberStatus;
   pledgeClassLabel?: string | null;
   teamId?: string | null; // gamification team — see MockTeam below
@@ -217,27 +227,31 @@ export function findTeam(id: string): MockTeam | undefined {
 }
 
 // ── Users ────────────────────────────────────────────────────────────────
-// A realistic 15-person roster spanning every role, exec-board title, and
-// membership status. Regent/Vice Regent/Scribe/Treasurer map to Feature 1–5
-// permission gating (see usePermissions.ts) — SUSPENDED/ALUMNI members are
-// excluded from teams since they aren't active participants.
+// A realistic 15-person roster spanning every role, exec office, and
+// membership status. Regent/Vice Regent/Scribe/Treasurer map to the
+// permission-gated admin surfaces (see usePermissions.ts). Role and status
+// are independent fields — they usually correlate (a PNM-status person is
+// typically role PNM, etc.) but aren't derived from one another, so a Super
+// Admin can assign either independently. INACTIVE members keep role MEMBER
+// (still fundamentally a member, just not currently participating) and are
+// excluded from teams, unlike PNM/ALUMNI which are their own role tier.
 
 export const users: MockUser[] = [
-  { id: "u1", firstName: "Marcus", lastName: "Reyes", email: "marcus.reyes@thetatau.demo", role: "SUPER_ADMIN", title: "REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0101", teamId: "team_a" },
-  { id: "u2", firstName: "Sofia", lastName: "Nguyen", email: "sofia.nguyen@thetatau.demo", role: "EXEC", title: "VICE_REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0102", teamId: "team_b" },
-  { id: "u3", firstName: "Jordan", lastName: "Blake", email: "jordan.blake@thetatau.demo", role: "EXEC", title: "TREASURER", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0103", teamId: "team_c" },
-  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_d" },
-  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_a" },
-  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "OFFICER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_b" },
+  { id: "u1", firstName: "Marcus", lastName: "Reyes", email: "marcus.reyes@thetatau.demo", role: "SUPER_ADMIN", office: "REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0101", teamId: "team_a" },
+  { id: "u2", firstName: "Sofia", lastName: "Nguyen", email: "sofia.nguyen@thetatau.demo", role: "EXEC", office: "VICE_REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0102", teamId: "team_b" },
+  { id: "u3", firstName: "Jordan", lastName: "Blake", email: "jordan.blake@thetatau.demo", role: "EXEC", office: "TREASURER", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0103", teamId: "team_c" },
+  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_d" },
+  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_a" },
+  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_b" },
   { id: "u7", firstName: "Noah", lastName: "Bennett", email: "noah.bennett@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_c" },
   { id: "u8", firstName: "Ava", lastName: "Torres", email: "ava.torres@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_d" },
   { id: "u9", firstName: "Liam", lastName: "Osei", email: "liam.osei@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_a" },
   { id: "u10", firstName: "Chloe", lastName: "Martinez", email: "chloe.martinez@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2025", teamId: "team_b" },
-  { id: "u11", firstName: "Dylan", lastName: "Foster", email: "dylan.foster@thetatau.demo", role: "MEMBER", status: "PLEDGE", pledgeClassLabel: "Fall 2026", teamId: "team_c" },
-  { id: "u12", firstName: "Maya", lastName: "Singh", email: "maya.singh@thetatau.demo", role: "MEMBER", status: "PLEDGE", pledgeClassLabel: "Fall 2026", teamId: "team_a" },
-  { id: "u13", firstName: "Ryan", lastName: "O'Connell", email: "ryan.oconnell@thetatau.demo", role: "MEMBER", status: "SUSPENDED", pledgeClassLabel: "Fall 2024" },
-  { id: "u14", firstName: "Isabella", lastName: "Cruz", email: "isabella.cruz@thetatau.demo", role: "MEMBER", status: "ALUMNI", pledgeClassLabel: "Fall 2021" },
-  { id: "u15", firstName: "Emma", lastName: "Chavez", email: "emma.chavez@thetatau.demo", role: "EXEC", title: "SCRIBE", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0115", teamId: "team_c" },
+  { id: "u11", firstName: "Dylan", lastName: "Foster", email: "dylan.foster@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_c" },
+  { id: "u12", firstName: "Maya", lastName: "Singh", email: "maya.singh@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_a" },
+  { id: "u13", firstName: "Ryan", lastName: "O'Connell", email: "ryan.oconnell@thetatau.demo", role: "MEMBER", status: "INACTIVE", pledgeClassLabel: "Fall 2024" },
+  { id: "u14", firstName: "Isabella", lastName: "Cruz", email: "isabella.cruz@thetatau.demo", role: "ALUMNI", status: "ALUMNI", pledgeClassLabel: "Fall 2021" },
+  { id: "u15", firstName: "Emma", lastName: "Chavez", email: "emma.chavez@thetatau.demo", role: "EXEC", office: "SCRIBE", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0115", teamId: "team_c" },
 ];
 
 export function findUser(id: string): MockUser | undefined {
@@ -541,9 +555,16 @@ export const channels: MockChannel[] = [
   { id: "ch7", name: "Sofia Nguyen", type: "DM", committeeId: null },
 ];
 
+// #officers membership: Exec+ (role) or anyone who chairs a committee —
+// mirrors hasAnyManagementAccess() in permissions/permissions.ts, since the
+// removed OFFICER role tier used to cover exactly this same set of people.
+const chairUserIds = new Set(committeeMemberships.filter((m) => m.role === "CHAIR").map((m) => m.userId));
+
 export const channelMemberships: MockChannelMembership[] = [
   ...users.map((u) => ({ channelId: "ch1", userId: u.id, role: "MEMBER" as ChannelMemberRole })),
-  ...users.filter((u) => u.role !== "MEMBER").map((u) => ({ channelId: "ch2", userId: u.id, role: "MEMBER" as ChannelMemberRole })),
+  ...users
+    .filter((u) => u.role === "EXEC" || u.role === "SUPER_ADMIN" || chairUserIds.has(u.id))
+    .map((u) => ({ channelId: "ch2", userId: u.id, role: "MEMBER" as ChannelMemberRole })),
   ...committeeMemberships.filter((m) => m.committeeId === "c1").map((m) => ({ channelId: "ch3", userId: m.userId, role: "MEMBER" as ChannelMemberRole })),
   ...committeeMemberships.filter((m) => m.committeeId === "c2").map((m) => ({ channelId: "ch4", userId: m.userId, role: "MEMBER" as ChannelMemberRole })),
   ...committeeMemberships.filter((m) => m.committeeId === "c3").map((m) => ({ channelId: "ch5", userId: m.userId, role: "MEMBER" as ChannelMemberRole })),
@@ -595,4 +616,103 @@ seedMessage("ch7", "u1", "Yep, just approved it. Nice work getting the Habitat b
 
 export function findMessage(id: string): MockMessage | undefined {
   return messages.find((m) => m.id === id);
+}
+
+// ── Role Permissions (mutable — Super Admin can edit at runtime) ────────
+// Seeded from the shared defaults in permissions/permissions.ts so there's
+// exactly one place (that file) defining what "reasonable defaults" means;
+// this is the live, mutable copy the mock server actually reads/writes.
+
+export const rolePermissions: Record<UserRole, Permission[]> = defaultRolePermissions();
+
+// ── Modules (Feature/module toggles) ────────────────────────────────────
+// Disabling a module hides its nav entry/tab and its AdminPanel section —
+// see store/useModulesStore.ts and AppNavigator.tsx. officeInventory and
+// attendanceRaffles are placeholders proving the system scales to features
+// that don't exist yet (comingSoon: true — toggling them has no attached
+// screens).
+
+export const moduleConfigs: ModuleConfig[] = [
+  { key: "events", label: "Events", description: "Chapter events, RSVPs, and check-in", enabled: true },
+  { key: "attendance", label: "Attendance", description: "Check-in tracking and manual overrides", enabled: true },
+  { key: "messaging", label: "Messaging", description: "Channels and direct messages", enabled: true },
+  { key: "documents", label: "Documents", description: "Chapter files, forms, and external links", enabled: true },
+  { key: "points", label: "Points & Leaderboard", description: "Individual and team point standings", enabled: true },
+  { key: "calendar", label: "Calendar", description: "Add-to-calendar and calendar sync for events", enabled: true },
+  { key: "feedback", label: "Feedback & Bug Reports", description: "In-app bug reports and feature requests", enabled: true },
+  { key: "committees", label: "Committees", description: "Committee rosters, budgets, and reimbursements", enabled: true },
+  { key: "dues", label: "Dues", description: "Dues tracking and Pyli payments", enabled: true },
+  { key: "teams", label: "Teams", description: "Gamification teams and team leaderboard", enabled: true },
+  { key: "officeInventory", label: "Office Inventory", description: "Chapter property/equipment tracking", enabled: false, comingSoon: true },
+  { key: "attendanceRaffles", label: "Attendance Raffles", description: "Raffle prizes for event check-ins", enabled: false, comingSoon: true },
+];
+
+export function findModule(key: string): ModuleConfig | undefined {
+  return moduleConfigs.find((m) => m.key === key);
+}
+
+// ── Chapter Settings (mutable single record) ────────────────────────────
+
+export const chapterSettings: ChapterSettings = {
+  chapterName: "Theta Tau — Beta Chapter",
+  chapterLetters: "ΘΤ",
+  university: "State University",
+  logoUrl: null,
+  currentSemesterLabel: semester.label,
+  semesterStartDate: semester.startDate,
+  semesterEndDate: semester.endDate,
+  defaultDuesAmount: 150,
+  defaultDuesPlan: "FULL",
+  attendanceLateThresholdMinutes: 15,
+  defaultEventPointValue: 5,
+};
+
+// ── Documents & external links ──────────────────────────────────────────
+
+export const documents: ChapterDocument[] = [
+  { id: "doc1", category: "CONSTITUTION", name: "Chapter Constitution (2024 revision)", fileLabel: "constitution_2024.pdf", sizeLabel: "412 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-120) },
+  { id: "doc2", category: "BYLAWS", name: "Chapter Bylaws", fileLabel: "bylaws_current.pdf", sizeLabel: "268 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-120) },
+  { id: "doc3", category: "MEETING_MINUTES", name: "Chapter Meeting — Week 1 Minutes", fileLabel: "minutes_week1.pdf", sizeLabel: "88 KB", uploadedBy: { id: "u15", firstName: "Emma", lastName: "Chavez" }, uploadedAt: daysFromNow(-20) },
+  { id: "doc4", category: "MEETING_MINUTES", name: "Chapter Meeting — Week 3 Minutes", fileLabel: "minutes_week3.pdf", sizeLabel: "91 KB", uploadedBy: { id: "u15", firstName: "Emma", lastName: "Chavez" }, uploadedAt: daysFromNow(-2) },
+  { id: "doc5", category: "RECRUITMENT", name: "Rush Info Night Slide Deck", fileLabel: "rush_info_night.pptx", sizeLabel: "2.1 MB", uploadedBy: { id: "u4", firstName: "Priya", lastName: "Patel" }, uploadedAt: daysFromNow(-10) },
+  { id: "doc6", category: "FORMS", name: "Expense Reimbursement Form", fileLabel: "reimbursement_form.pdf", sizeLabel: "64 KB", uploadedBy: { id: "u3", firstName: "Jordan", lastName: "Blake" }, uploadedAt: daysFromNow(-60) },
+  { id: "doc7", category: "OFFICER_RESOURCES", name: "Exec Board Transition Guide", fileLabel: "transition_guide.pdf", sizeLabel: "530 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-200) },
+];
+let documentIdCounter = documents.length + 1;
+
+export function findDocument(id: string): ChapterDocument | undefined {
+  return documents.find((d) => d.id === id);
+}
+
+export function nextDocumentId(): string {
+  return `doc${documentIdCounter++}`;
+}
+
+export const externalLinks: ExternalLink[] = [
+  { id: "link1", label: "Pyli — Dues Payments", url: "https://pyli.app", category: "Payments" },
+  { id: "link2", label: "CMT — Chapter Management Tool", url: "https://cmtusa.org", category: "National" },
+  { id: "link3", label: "Chapter Website", url: "https://betachapter-thetatau.demo", category: "Chapter" },
+  { id: "link4", label: "National Website", url: "https://thetatau.org", category: "National" },
+];
+let externalLinkIdCounter = externalLinks.length + 1;
+
+export function nextExternalLinkId(): string {
+  return `link${externalLinkIdCounter++}`;
+}
+
+// ── Feedback & bug reports ───────────────────────────────────────────────
+
+export const feedbackReports: FeedbackReport[] = [
+  { id: "fb1", type: "BUG", message: "The check-in button flashed twice when I tapped it quickly at Habitat build — didn't double-award points, just a visual glitch.", submittedBy: { id: "u8", firstName: "Ava", lastName: "Torres" }, appVersion: "1.0.0", platform: "ios", status: "RESOLVED", createdAt: daysFromNow(-16) },
+  { id: "fb2", type: "FEATURE_REQUEST", message: "Would love a dark mode option for the app.", submittedBy: { id: "u9", firstName: "Liam", lastName: "Osei" }, appVersion: "1.0.0", platform: "android", status: "OPEN", createdAt: daysFromNow(-4) },
+  { id: "fb3", type: "GENERAL", message: "Really like how easy it is to see committee budgets now — makes planning events much easier.", submittedBy: { id: "u5", firstName: "Ethan", lastName: "Walsh" }, appVersion: "1.0.0", platform: "ios", status: "OPEN", createdAt: daysFromNow(-1) },
+];
+let feedbackIdCounter = feedbackReports.length + 1;
+
+export function nextFeedbackId(): string {
+  return `fb${feedbackIdCounter++}`;
+}
+
+export function findFeedback(id: string): FeedbackReport | undefined {
+  return feedbackReports.find((f) => f.id === id);
 }

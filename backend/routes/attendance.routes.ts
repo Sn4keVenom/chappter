@@ -217,10 +217,15 @@ router.get("/attendance/history", async (req: AuthedRequest, res: Response) => {
   });
 });
 
-// ── GET /attendance/history/:userId — Officer+ ────────────────────────────
+// ── GET /attendance/history/:userId — Exec+ ───────────────────────────────
+// TODO: the mock/mobile-side permission engine (permissions/permissions.ts)
+// now also grants this to a committee chair via a granular "attendance.view"
+// preset — requireRole only expresses a flat tier here. Matching that
+// exactly needs a requireCommitteeScope-style resolver; tracked as a gap,
+// see docs/DEMO_MODE.md.
 router.get(
   "/attendance/history/:userId",
-  requireRole("OFFICER"),
+  requireRole("EXEC"),
   async (req: AuthedRequest, res: Response) => {
     const { semesterId, limit = "50" } = req.query;
 
@@ -271,7 +276,7 @@ router.get("/points/leaderboard", async (req: AuthedRequest, res: Response) => {
     FROM "User" u
     LEFT JOIN "PointsLedger" pl
       ON pl."userId" = u.id AND pl."semesterId" = ${semesterId}
-    WHERE u.status = 'ACTIVE'
+    WHERE u.status IN ('ACTIVE', 'PNM')
     GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl"
     ORDER BY total DESC
   `;
@@ -290,12 +295,12 @@ router.get("/points/leaderboard", async (req: AuthedRequest, res: Response) => {
 });
 
 // ── GET /points/ledger/:userId ────────────────────────────────────────────
-// Self: any authenticated user. Other users: Officer+.
+// Self: any authenticated user. Other users: Exec+.
 router.get("/points/ledger/:userId", async (req: AuthedRequest, res: Response) => {
   const isSelf = req.params.userId === req.user!.id;
-  const isOfficerPlus = ["OFFICER", "EXEC", "SUPER_ADMIN"].includes(req.user!.role);
+  const isExecPlus = ["EXEC", "SUPER_ADMIN"].includes(req.user!.role);
 
-  if (!isSelf && !isOfficerPlus) {
+  if (!isSelf && !isExecPlus) {
     return res.status(403).json({ error: "Not permitted" });
   }
 

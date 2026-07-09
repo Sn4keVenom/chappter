@@ -2,40 +2,54 @@
 //
 // View another member's profile — reached from LeaderboardScreen and
 // CommitteeDetailScreen member rows. Read-only for everyone; Exec+ sees an
-// "Adjust Points" shortcut into PointsAdjustScreen.
+// "Adjust Points" shortcut into PointsAdjustScreen. Super Admin additionally
+// sees a "Manage Member" section to reassign role/office/status (spec §4).
 //
 // Integration:
-//   - getMemberProfile, getPointsLedger → api/users.ts
+//   - getMemberProfile, getPointsLedger, updateUserFields → api/users.ts
 //   - getMemberAttendanceHistory → api/attendance.ts
-//   - usePermissions: isExecOrAbove gates "Adjust Points"
+//   - usePermissions: isExecOrAbove gates "Adjust Points", isSuperAdmin gates
+//     the role/office/status editor
 //   - Navigation: AppStackParamList → MemberProfile { userId: string }
 
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../theme/colors";
 import { usePermissions } from "../hooks/usePermissions";
-import { getMemberProfile, getPointsLedger } from "../api/users";
+import { getMemberProfile, getPointsLedger, updateUserFields } from "../api/users";
 import { getMemberAttendanceHistory } from "../api/attendance";
-import type { User, AttendanceRecord } from "../types";
+import type { User, AttendanceRecord, UserRole, ExecOffice, MemberStatus } from "../types";
 import type { AppStackParamList } from "../navigation/types";
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type RoutePropType = RouteProp<AppStackParamList, "MemberProfile">;
 
+const ASSIGNABLE_ROLES: UserRole[] = ["SUPER_ADMIN", "EXEC", "MEMBER", "PNM", "ALUMNI"];
+const ASSIGNABLE_OFFICES: ExecOffice[] = [
+  "REGENT", "VICE_REGENT", "TREASURER", "SCRIBE", "MARSHAL", "CORRESPONDING_SECRETARY", "NEW_MEMBER_EDUCATOR",
+];
+const ASSIGNABLE_STATUSES: MemberStatus[] = ["ACTIVE", "PNM", "ALUMNI", "INACTIVE"];
+
+function officeLabel(office?: ExecOffice | null): string {
+  if (!office) return "";
+  return office.split("_").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ");
+}
+
 export default function MemberProfileScreen() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { userId } = route.params;
-  const { isExecOrAbove } = usePermissions();
+  const { isExecOrAbove, isSuperAdmin } = usePermissions();
 
   const [profile, setProfile] = useState<User | null>(null);
   const [history, setHistory] = useState<AttendanceRecord[]>([]);
   const [totalPoints, setTotalPoints] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +71,84 @@ export default function MemberProfileScreen() {
   }, [userId, navigation]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleChangeRole() {
+    if (!profile) return;
+    Alert.alert(
+      "Change Role",
+      `Current role: ${profile.role}`,
+      [
+        ...ASSIGNABLE_ROLES.map((role) => ({
+          text: role === profile.role ? `${role} (current)` : role,
+          onPress: async () => {
+            setSaving(true);
+            try {
+              setProfile(await updateUserFields(userId, { role }));
+            } catch (e: any) {
+              Alert.alert("Error", e?.message ?? "Could not update role");
+            } finally {
+              setSaving(false);
+            }
+          },
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ]
+    );
+  }
+
+  async function handleChangeOffice() {
+    if (!profile) return;
+    Alert.alert(
+      "Change Office",
+      profile.office ? `Current office: ${officeLabel(profile.office)}` : "No office assigned",
+      [
+        { text: "None", onPress: async () => {
+          setSaving(true);
+          try { setProfile(await updateUserFields(userId, { office: null })); }
+          catch (e: any) { Alert.alert("Error", e?.message ?? "Could not update office"); }
+          finally { setSaving(false); }
+        } },
+        ...ASSIGNABLE_OFFICES.map((office) => ({
+          text: officeLabel(office),
+          onPress: async () => {
+            setSaving(true);
+            try {
+              setProfile(await updateUserFields(userId, { office }));
+            } catch (e: any) {
+              Alert.alert("Error", e?.message ?? "Could not update office");
+            } finally {
+              setSaving(false);
+            }
+          },
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ]
+    );
+  }
+
+  async function handleChangeStatus() {
+    if (!profile) return;
+    Alert.alert(
+      "Change Status",
+      `Current status: ${profile.status}`,
+      [
+        ...ASSIGNABLE_STATUSES.map((status) => ({
+          text: status === profile.status ? `${status} (current)` : status,
+          onPress: async () => {
+            setSaving(true);
+            try {
+              setProfile(await updateUserFields(userId, { status }));
+            } catch (e: any) {
+              Alert.alert("Error", e?.message ?? "Could not update status");
+            } finally {
+              setSaving(false);
+            }
+          },
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ]
+    );
+  }
 
   if (loading) {
     return (
@@ -81,10 +173,30 @@ export default function MemberProfileScreen() {
           <Text style={styles.avatarInitials}>{profile.firstName.charAt(0)}{profile.lastName.charAt(0)}</Text>
         </View>
         <Text style={styles.heroName}>{profile.firstName} {profile.lastName}</Text>
-        <Text style={styles.heroRole}>{profile.role} · {profile.status}</Text>
+        <Text style={styles.heroRole}>
+          {profile.office ? `${officeLabel(profile.office)} · ` : ""}{profile.role} · {profile.status}
+        </Text>
         {profile.pledgeClassLabel && <Text style={styles.heroMeta}>{profile.pledgeClassLabel}</Text>}
         <Text style={styles.heroMeta}>{profile.email}</Text>
       </View>
+
+      {isSuperAdmin && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Manage Member</Text>
+          <Pressable style={styles.row} onPress={handleChangeRole} disabled={saving}>
+            <Text style={styles.rowText}>Role</Text>
+            <Text style={styles.rowMeta}>{profile.role} ›</Text>
+          </Pressable>
+          <Pressable style={styles.row} onPress={handleChangeOffice} disabled={saving}>
+            <Text style={styles.rowText}>Office</Text>
+            <Text style={styles.rowMeta}>{profile.office ? officeLabel(profile.office) : "None"} ›</Text>
+          </Pressable>
+          <Pressable style={styles.row} onPress={handleChangeStatus} disabled={saving}>
+            <Text style={styles.rowText}>Status</Text>
+            <Text style={styles.rowMeta}>{profile.status} ›</Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Points this semester</Text>

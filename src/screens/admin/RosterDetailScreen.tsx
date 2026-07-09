@@ -21,14 +21,15 @@ import type { AppStackParamList } from "../../navigation/types";
 
 type NavProp = NativeStackNavigationProp<AppStackParamList>;
 
-const ROLES: UserRole[] = ["MEMBER", "OFFICER", "EXEC", "SUPER_ADMIN"];
-const STATUSES: MemberStatus[] = ["ACTIVE", "PLEDGE", "SUSPENDED", "ALUMNI"];
+const ROLES: UserRole[] = ["MEMBER", "EXEC", "SUPER_ADMIN", "PNM", "ALUMNI"];
+const STATUSES: MemberStatus[] = ["ACTIVE", "PNM", "ALUMNI", "INACTIVE"];
 
 const ROLE_COLOR: Record<UserRole, string> = {
   MEMBER: colors.textMuted,
-  OFFICER: colors.categoryBrotherhood,
   EXEC: colors.accent,
   SUPER_ADMIN: colors.primary,
+  PNM: colors.categoryRush,
+  ALUMNI: colors.categoryBrotherhood,
 };
 
 export default function RosterDetailScreen() {

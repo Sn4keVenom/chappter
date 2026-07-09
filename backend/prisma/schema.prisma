@@ -14,18 +14,80 @@ datasource db {
 // Enums
 // ─────────────────────────────────────────────────────────────────────────
 
+// Permission tier. The OFFICER tier was removed — committee chairs are
+// tracked via CommitteeMembership.role = CHAIR (already existed,
+// independent of this enum), not a separate role value. See
+// middleware/rbac.ts requireCommitteeScope for the scoped chair check, and
+// the mobile app's src/permissions/permissions.ts for the full granular
+// permission system this enum feeds into (roles are just presets there).
 enum UserRole {
-  MEMBER
-  OFFICER
-  EXEC
   SUPER_ADMIN
+  EXEC
+  MEMBER
+  PNM
+  ALUMNI
 }
 
+// Membership lifecycle status — independent of UserRole (see User.role/
+// User.office doc comments below). PNM/ALUMNI status usually correlates
+// with the same-named role, but isn't derived from it.
 enum MemberStatus {
   ACTIVE
+  PNM
   ALUMNI
-  SUSPENDED
-  PLEDGE
+  INACTIVE
+}
+
+// Named exec-board position. Independent from UserRole/permissions by
+// design — assigning a new office never changes what a user can do; only
+// role + the RolePermission table does. New offices can be added here
+// without touching the permission system.
+enum ExecOffice {
+  REGENT
+  VICE_REGENT
+  TREASURER
+  SCRIBE
+  MARSHAL
+  CORRESPONDING_SECRETARY
+  NEW_MEMBER_EDUCATOR
+}
+
+enum ModuleKey {
+  EVENTS
+  ATTENDANCE
+  MESSAGING
+  DOCUMENTS
+  POINTS
+  CALENDAR
+  FEEDBACK
+  COMMITTEES
+  DUES
+  TEAMS
+  OFFICE_INVENTORY
+  ATTENDANCE_RAFFLES
+}
+
+enum DocumentCategory {
+  CONSTITUTION
+  BYLAWS
+  MEETING_MINUTES
+  RECRUITMENT
+  FORMS
+  OFFICER_RESOURCES
+  OTHER
+}
+
+enum FeedbackType {
+  BUG
+  FEATURE_REQUEST
+  GENERAL
+}
+
+enum FeedbackStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  CLOSED
 }
 
 enum EventCategory {
@@ -86,6 +148,7 @@ enum DuesStatus {
 
 enum PaymentMethod {
   STRIPE
+  PYLI
   CASH
   VENMO
   CHECK
@@ -105,6 +168,7 @@ model User {
   phone         String?
   avatarUrl     String?
   role          UserRole      @default(MEMBER)
+  office        ExecOffice?   // Exec-board position, independent of role/permissions — see ExecOffice doc comment
   status        MemberStatus  @default(ACTIVE)
   pledgeClassLabel String?    // e.g. "Fall 2024" — free text by design, cosmetic only
   createdAt     DateTime      @default(now())
@@ -122,6 +186,8 @@ model User {
   messages             Message[]
   createdEvents        Event[]               @relation("EventCreatedBy")
   auditLogs            AuditLog[]            @relation("AuditActor")
+  uploadedDocuments    Document[]            @relation("DocumentUploadedBy")
+  feedbackReports      FeedbackReport[]      @relation("FeedbackSubmittedBy")
 
   @@index([role])
   @@index([status])
@@ -377,4 +443,102 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorId])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Permission system — "roles should simply be permission presets."
+// One row per (role, permission) grant. Permission is a free-text string
+// (not an enum) so a new permission can be introduced by the application
+// layer without a migration — matches src/types/index.ts ALL_PERMISSIONS
+// on the mobile side, which is the source of truth for valid values.
+// SUPER_ADMIN intentionally has no rows here — it always bypasses (see
+// mobile src/permissions/permissions.ts hasPermission()); this mirrors that
+// in the schema by simply never being queried for that role.
+// ─────────────────────────────────────────────────────────────────────────
+
+model RolePermission {
+  id         String   @id @default(cuid())
+  role       UserRole
+  permission String
+  createdAt  DateTime @default(now())
+
+  @@unique([role, permission])
+  @@index([role])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Module / feature toggles
+// ─────────────────────────────────────────────────────────────────────────
+
+model Module {
+  key         ModuleKey @id
+  label       String
+  description String?
+  enabled     Boolean   @default(true)
+  comingSoon  Boolean   @default(false)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Chapter Settings — singleton row (id is always "default")
+// ─────────────────────────────────────────────────────────────────────────
+
+model ChapterSettings {
+  id                              String   @id @default("default")
+  chapterName                     String
+  chapterLetters                  String
+  university                      String
+  logoUrl                         String?
+  currentSemesterLabel            String
+  semesterStartDate               DateTime
+  semesterEndDate                 DateTime
+  defaultDuesAmount               Decimal  @db.Decimal(10, 2)
+  defaultDuesPlan                 String   @default("FULL")
+  attendanceLateThresholdMinutes  Int      @default(15)
+  defaultEventPointValue          Int      @default(5)
+  updatedAt                       DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Documents & external links
+// ─────────────────────────────────────────────────────────────────────────
+
+model Document {
+  id           String           @id @default(cuid())
+  category     DocumentCategory
+  name         String
+  fileLabel    String           // placeholder filename — no real object storage yet, see docs/DEMO_MODE.md
+  sizeLabel    String?
+  uploadedById String
+  uploadedAt   DateTime         @default(now())
+
+  uploadedBy User @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@index([category])
+}
+
+model ExternalLink {
+  id       String  @id @default(cuid())
+  label    String
+  url      String
+  category String?
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Feedback & bug reports
+// ─────────────────────────────────────────────────────────────────────────
+
+model FeedbackReport {
+  id             String         @id @default(cuid())
+  type           FeedbackType
+  message        String
+  submittedById  String?
+  appVersion     String
+  platform       String
+  status         FeedbackStatus @default(OPEN)
+  createdAt      DateTime       @default(now())
+
+  submittedBy User? @relation("FeedbackSubmittedBy", fields: [submittedById], references: [id])
+
+  @@index([status])
+  @@index([type])
 }

@@ -88,7 +88,10 @@ function LoginScreen() {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        office: user.office,
+        status: user.status,
         committeeChairOf: user.committeeChairOf,
+        teamId: user.teamId,
       });
     } catch (err: any) {
       // Reset the token if login failed mid-flow so the next attempt starts

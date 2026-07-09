@@ -16,6 +16,7 @@ import { Text } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { usePermissions } from "../hooks/usePermissions";
+import { useModulesStore } from "../store/useModulesStore";
 import { colors } from "../theme/colors";
 import type { AppStackParamList, MainTabParamList } from "./types";
 
@@ -42,6 +43,13 @@ import TeamDetailScreen from "../screens/TeamDetailScreen";
 import SubmitExpenseScreen from "../screens/SubmitExpenseScreen";
 import ExpensesScreen from "../screens/admin/ExpensesScreen";
 import CommitteeBudgetsScreen from "../screens/admin/CommitteeBudgetsScreen";
+import ChapterSettingsScreen from "../screens/admin/ChapterSettingsScreen";
+import ModulesScreen from "../screens/admin/ModulesScreen";
+import PermissionsScreen from "../screens/admin/PermissionsScreen";
+import DocumentsScreen from "../screens/DocumentsScreen";
+import DocumentCategoryScreen from "../screens/DocumentCategoryScreen";
+import FeedbackScreen from "../screens/FeedbackScreen";
+import FeedbackListScreen from "../screens/admin/FeedbackListScreen";
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -65,6 +73,8 @@ function TabIcon({ label, focused }: { label: string; focused: boolean }) {
 
 function MainTabs() {
   const { canViewAdminPanel } = usePermissions();
+  const isMessagingEnabled = useModulesStore((s) => s.isEnabled("messaging"));
+  const isPointsEnabled = useModulesStore((s) => s.isEnabled("points"));
 
   return (
     <Tab.Navigator
@@ -90,15 +100,26 @@ function MainTabs() {
         component={EventsFeedScreen}
         options={{ title: "Events" }}
       />
+      {/*
+        Messaging/Leaderboard tabs are always declared (same fixed-tab-count
+        rationale as AdminPanel below) but hide their button when their
+        module is disabled via Chapter Settings > Modules.
+      */}
       <Tab.Screen
         name="Messaging"
         component={MessagingScreen}
-        options={{ title: "Messages" }}
+        options={{
+          title: "Messages",
+          tabBarButton: isMessagingEnabled ? undefined : () => null,
+        }}
       />
       <Tab.Screen
         name="Leaderboard"
         component={LeaderboardScreen}
-        options={{ title: "Points" }}
+        options={{
+          title: "Points",
+          tabBarButton: isPointsEnabled ? undefined : () => null,
+        }}
       />
       <Tab.Screen
         name="Profile"
@@ -179,6 +200,23 @@ export default function AppNavigator() {
       <Stack.Screen name="SubmitExpense" component={SubmitExpenseScreen} options={{ title: "Submit Expense" }} />
       <Stack.Screen name="Expenses" component={ExpensesScreen} options={{ title: "Reimbursements" }} />
       <Stack.Screen name="CommitteeBudgets" component={CommitteeBudgetsScreen} options={{ title: "Committee Budgets" }} />
+
+      {/* Chapter administration — Super Admin only */}
+      <Stack.Screen name="ChapterSettings" component={ChapterSettingsScreen} options={{ title: "Chapter Settings" }} />
+      <Stack.Screen name="Modules" component={ModulesScreen} options={{ title: "Modules" }} />
+      <Stack.Screen name="Permissions" component={PermissionsScreen} options={{ title: "Permissions" }} />
+
+      {/* Documents & external links */}
+      <Stack.Screen name="Documents" component={DocumentsScreen} options={{ title: "Documents" }} />
+      <Stack.Screen
+        name="DocumentCategory"
+        component={DocumentCategoryScreen}
+        options={({ route }: any) => ({ title: route.params?.label ?? "Documents" })}
+      />
+
+      {/* Feedback & bug reports */}
+      <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: "Send Feedback" }} />
+      <Stack.Screen name="FeedbackList" component={FeedbackListScreen} options={{ title: "Feedback" }} />
     </Stack.Navigator>
   );
 }

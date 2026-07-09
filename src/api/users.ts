@@ -4,7 +4,7 @@
 
 import { apiClient } from "./client";
 import type {
-  User, UserSummary, DashboardData, LeaderboardEntry, LedgerEntry
+  User, UserSummary, DashboardData, LeaderboardEntry, LedgerEntry, ExecOffice, MemberStatus, UserRole
 } from "../types";
 
 export async function getMe(): Promise<User> {
@@ -44,6 +44,17 @@ export async function updateUserRole(
     `/users/${userId}/role`,
     { role }
   );
+  return data.user;
+}
+
+// Fuller editor (spec §4 — Super Admin: assign roles, assign exec offices,
+// change membership status). role/office/status are independent fields —
+// only the ones present in payload are touched.
+export async function updateUserFields(
+  userId: string,
+  payload: { role?: UserRole; office?: ExecOffice | null; status?: MemberStatus }
+): Promise<User> {
+  const { data } = await apiClient.patch<{ user: User }>(`/users/${userId}`, payload);
   return data.user;
 }
 

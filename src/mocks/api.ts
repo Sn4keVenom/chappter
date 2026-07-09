@@ -13,6 +13,13 @@
 
 import * as db from "./seed";
 import { getCurrentDemoUser, getCurrentDemoUserId, toAppUser } from "./identity";
+import {
+  hasPermission,
+  isExecOrAbove as roleIsExecOrAbove,
+  isSuperAdmin as roleIsSuperAdmin,
+  hasAnyManagementAccess,
+  hasScopedManagementAccess,
+} from "../permissions/permissions";
 import type {
   User,
   UserSummary,
@@ -37,55 +44,83 @@ import type {
   DuesPlan,
   PaymentMethod,
   UserRole,
+  ExecOffice,
+  MemberStatus,
   Team,
   TeamMemberSummary,
   TeamLeaderboardEntry,
   CommitteeBudget,
   Expense,
   ReimbursementStatus,
+  Permission,
+  RolePermissions,
+  ModuleConfig,
+  ModuleKey,
+  ChapterSettings,
+  ChapterDocument,
+  DocumentCategory,
+  ExternalLink,
+  FeedbackType,
+  FeedbackStatus,
+  FeedbackReport,
 } from "../types";
 
 // ── Shared helpers ─────────────────────────────────────────────────────────
-
-const ROLE_RANK: Record<UserRole, number> = { MEMBER: 0, OFFICER: 1, EXEC: 2, SUPER_ADMIN: 3 };
-
-function isExecOrAbove(userId: string): boolean {
-  const u = db.findUser(userId);
-  return !!u && ROLE_RANK[u.role] >= ROLE_RANK.EXEC;
-}
-
-function isOfficerOrAbove(userId: string): boolean {
-  const u = db.findUser(userId);
-  return !!u && ROLE_RANK[u.role] >= ROLE_RANK.OFFICER;
-}
-
-function isSuperAdmin(userId: string): boolean {
-  const u = db.findUser(userId);
-  return !!u && u.role === "SUPER_ADMIN";
-}
-
-// Named exec-board title checks (Vice Regent/Scribe/Treasurer). Additive to
-// the tier checks above — see usePermissions.ts for the client-side mirror
-// and the "why additive, not exclusive" reasoning.
-function isViceRegentOrAdmin(userId: string): boolean {
-  const u = db.findUser(userId);
-  return isSuperAdmin(userId) || u?.title === "VICE_REGENT";
-}
-
-function isScribeOrAdmin(userId: string): boolean {
-  const u = db.findUser(userId);
-  return isSuperAdmin(userId) || u?.title === "SCRIBE";
-}
-
-function isTreasurerOrAdmin(userId: string): boolean {
-  const u = db.findUser(userId);
-  return isSuperAdmin(userId) || u?.title === "TREASURER";
-}
+// All permission logic is delegated to permissions/permissions.ts — the
+// exact same engine the client's usePermissions.ts hook uses — so the two
+// can never drift apart. These wrappers just resolve a userId to the data
+// that engine needs (role/status/committeeChairOf/current permission map).
 
 function committeeChairOf(userId: string): string[] {
   return db.committeeMemberships
     .filter((m) => m.userId === userId && m.role === "CHAIR")
     .map((m) => m.committeeId);
+}
+
+function can(userId: string, permission: Permission): boolean {
+  const u = db.findUser(userId);
+  if (!u) return false;
+  return hasPermission(u.role, db.rolePermissions, permission);
+}
+
+function isExecOrAbove(userId: string): boolean {
+  const u = db.findUser(userId);
+  return !!u && roleIsExecOrAbove(u.role);
+}
+
+function isOfficerOrAbove(userId: string): boolean {
+  const u = db.findUser(userId);
+  if (!u) return false;
+  return hasAnyManagementAccess({ role: u.role, status: u.status, committeeChairOf: committeeChairOf(userId) });
+}
+
+function isSuperAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return !!u && roleIsSuperAdmin(u.role);
+}
+
+// Named exec-board office checks (Vice Regent/Scribe/Treasurer). Additive to
+// the permission checks above — see usePermissions.ts for the client-side
+// mirror and the "why additive, not exclusive" reasoning.
+function isViceRegentOrAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return isSuperAdmin(userId) || u?.office === "VICE_REGENT";
+}
+
+function isScribeOrAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return isSuperAdmin(userId) || u?.office === "SCRIBE";
+}
+
+function isTreasurerOrAdmin(userId: string): boolean {
+  const u = db.findUser(userId);
+  return isSuperAdmin(userId) || u?.office === "TREASURER";
+}
+
+function committeeManageAccess(userId: string, committeeId: string): boolean {
+  const u = db.findUser(userId);
+  if (!u) return false;
+  return hasScopedManagementAccess({ role: u.role, status: u.status, committeeChairOf: committeeChairOf(userId), committeeId });
 }
 
 // Can this user generate/display THIS event's check-in code? Exec+, Scribe,
@@ -94,9 +129,7 @@ function committeeChairOf(userId: string): string[] {
 // not general attendance-management authority.
 function canAccessCheckIn(userId: string, event: db.MockEvent): boolean {
   if (isExecOrAbove(userId) || isScribeOrAdmin(userId)) return true;
-  if (isOfficerOrAbove(userId) && event.committeeId && committeeChairOf(userId).includes(event.committeeId)) {
-    return true;
-  }
+  if (event.committeeId && committeeManageAccess(userId, event.committeeId)) return true;
   return db.getEventDelegates(event.id).some((d) => d.userId === userId);
 }
 
@@ -219,7 +252,7 @@ function toUserSummary(u: db.MockUser): UserSummary {
     email: u.email,
     avatarUrl: u.avatarUrl ?? null,
     role: u.role,
-    title: u.title ?? null,
+    office: u.office ?? null,
     status: u.status,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
   };
@@ -242,7 +275,7 @@ function toFullUser(u: db.MockUser): User {
     phone: u.phone ?? null,
     avatarUrl: u.avatarUrl ?? null,
     role: u.role,
-    title: u.title ?? null,
+    office: u.office ?? null,
     status: u.status,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
     committeeChairOf: committeeChairOf(u.id),
@@ -297,7 +330,7 @@ function userPointsBreakdown(userId: string): PointsBreakdown {
 function leaderboardRows(): LeaderboardEntry[] {
   const userId = getCurrentDemoUserId();
   const scored = db.users
-    .filter((u) => u.status === "ACTIVE" || u.status === "PLEDGE")
+    .filter((u) => u.status === "ACTIVE" || u.status === "PNM")
     .map((u) => ({ u, breakdown: userPointsBreakdown(u.id) }))
     .sort((a, b) => b.breakdown.total - a.breakdown.total);
   return scored.map(({ u, breakdown }, i) => ({
@@ -381,10 +414,29 @@ export function getMemberProfile(userId: string): User {
 export function updateUserRole(userId: string, role: UserRole): User {
   const u = db.findUser(userId);
   if (!u) throw new DemoApiError(404, "User not found");
-  if (!isExecOrAbove(getCurrentDemoUserId())) {
-    throw new DemoApiError(403, "Only Exec+ can change member roles");
+  if (!can(getCurrentDemoUserId(), "users.manage")) {
+    throw new DemoApiError(403, "Not authorized to change member roles");
   }
   u.role = role;
+  return toFullUser(u);
+}
+
+// Fuller editor (spec §4 — Super Admin: manage users, assign roles, assign
+// exec offices). Same authorization as updateUserRole; office/status are
+// independent fields (see types/index.ts doc comment) so each is optional
+// and only touched when present in the payload.
+export function updateUserFields(
+  userId: string,
+  payload: { role?: UserRole; office?: ExecOffice | null; status?: MemberStatus }
+): User {
+  const u = db.findUser(userId);
+  if (!u) throw new DemoApiError(404, "User not found");
+  if (!can(getCurrentDemoUserId(), "users.manage")) {
+    throw new DemoApiError(403, "Not authorized to edit member roles/status");
+  }
+  if (payload.role !== undefined) u.role = payload.role;
+  if (payload.office !== undefined) u.office = payload.office;
+  if (payload.status !== undefined) u.status = payload.status;
   return toFullUser(u);
 }
 
@@ -429,8 +481,9 @@ export function adjustPoints(payload: {
   type: "BONUS" | "PENALTY" | "MANUAL_ADJUSTMENT";
   reason: string;
 }): LedgerEntry {
-  if (!isOfficerOrAbove(getCurrentDemoUserId())) {
-    throw new DemoApiError(403, "Officer+ required to adjust points");
+  const permission = payload.amount < 0 ? "points.deduct" : "points.award";
+  if (!can(getCurrentDemoUserId(), permission)) {
+    throw new DemoApiError(403, "Not authorized to adjust points");
   }
   if (!db.findUser(payload.userId)) throw new DemoApiError(404, "User not found");
   const entry: db.MockLedgerEntry = {
@@ -739,7 +792,7 @@ export function getCommittee(id: string): Committee {
 }
 
 export function createCommittee(payload: { name: string; description?: string }): Committee {
-  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  if (!can(getCurrentDemoUserId(), "committees.manage")) throw new DemoApiError(403, "Not authorized to create committees");
   const committee: db.MockCommittee = {
     id: db.nextId("c"),
     name: payload.name,
@@ -753,6 +806,9 @@ export function createCommittee(payload: { name: string; description?: string })
 export function updateCommittee(id: string, payload: { name?: string; description?: string }): Committee {
   const c = db.committees.find((x) => x.id === id);
   if (!c) throw new DemoApiError(404, "Committee not found");
+  if (!can(getCurrentDemoUserId(), "committees.manage") && !committeeManageAccess(getCurrentDemoUserId(), id)) {
+    throw new DemoApiError(403, "Not authorized to edit this committee");
+  }
   if (payload.name !== undefined) c.name = payload.name;
   if (payload.description !== undefined) c.description = payload.description;
   return toCommittee(c);
@@ -765,6 +821,9 @@ export function addCommitteeMember(
   const c = db.committees.find((x) => x.id === committeeId);
   const u = db.findUser(payload.userId);
   if (!c || !u) throw new DemoApiError(404, "Committee or user not found");
+  if (!can(getCurrentDemoUserId(), "committees.manage") && !committeeManageAccess(getCurrentDemoUserId(), committeeId)) {
+    throw new DemoApiError(403, "Not authorized to manage this committee's members");
+  }
   const existing = db.committeeMemberships.find((m) => m.committeeId === committeeId && m.userId === payload.userId);
   if (!existing) {
     db.committeeMemberships.push({ committeeId, userId: payload.userId, role: payload.role ?? "MEMBER" });
@@ -773,6 +832,9 @@ export function addCommitteeMember(
 }
 
 export function removeCommitteeMember(committeeId: string, userId: string): void {
+  if (!can(getCurrentDemoUserId(), "committees.manage") && !committeeManageAccess(getCurrentDemoUserId(), committeeId)) {
+    throw new DemoApiError(403, "Not authorized to manage this committee's members");
+  }
   const idx = db.committeeMemberships.findIndex((m) => m.committeeId === committeeId && m.userId === userId);
   if (idx >= 0) db.committeeMemberships.splice(idx, 1);
 }
@@ -834,7 +896,7 @@ export function getTeamLeaderboard(): { leaderboard: TeamLeaderboardEntry[]; sem
 }
 
 export function addTeamMember(teamId: string, userId: string): Team {
-  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  if (!can(getCurrentDemoUserId(), "teams.manage")) throw new DemoApiError(403, "Not authorized to manage teams");
   const team = db.findTeam(teamId);
   const user = db.findUser(userId);
   if (!team || !user) throw new DemoApiError(404, "Team or user not found");
@@ -843,7 +905,7 @@ export function addTeamMember(teamId: string, userId: string): Team {
 }
 
 export function removeTeamMember(teamId: string, userId: string): Team {
-  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  if (!can(getCurrentDemoUserId(), "teams.manage")) throw new DemoApiError(403, "Not authorized to manage teams");
   const team = db.findTeam(teamId);
   const user = db.findUser(userId);
   if (!team || !user) throw new DemoApiError(404, "Team or user not found");
@@ -858,12 +920,12 @@ function channelCanPost(channel: db.MockChannel, userId: string): boolean {
   if (!u) return false;
   switch (channel.type) {
     case "GENERAL":
-      return ROLE_RANK[u.role] >= ROLE_RANK.EXEC;
+      return isExecOrAbove(userId);
     case "OFFICERS":
-      return ROLE_RANK[u.role] >= ROLE_RANK.OFFICER;
+      return isOfficerOrAbove(userId);
     case "COMMITTEE":
       return (
-        ROLE_RANK[u.role] >= ROLE_RANK.EXEC ||
+        isExecOrAbove(userId) ||
         db.channelMemberships.some((m) => m.channelId === channel.id && m.userId === userId)
       );
     case "DM":
@@ -875,9 +937,9 @@ function channelVisible(channel: db.MockChannel, userId: string): boolean {
   const u = db.findUser(userId);
   if (!u) return false;
   if (channel.type === "GENERAL") return true;
-  if (channel.type === "OFFICERS") return ROLE_RANK[u.role] >= ROLE_RANK.OFFICER;
+  if (channel.type === "OFFICERS") return isOfficerOrAbove(userId);
   // COMMITTEE / DM — membership required, Exec+ can see all committee channels
-  if (channel.type === "COMMITTEE" && ROLE_RANK[u.role] >= ROLE_RANK.EXEC) return true;
+  if (channel.type === "COMMITTEE" && isExecOrAbove(userId)) return true;
   return db.channelMemberships.some((m) => m.channelId === channel.id && m.userId === userId);
 }
 
@@ -1028,7 +1090,7 @@ export function getAllDues(params: { semesterId?: string; status?: string }): {
   records: (DuesRecord & { user: { id: string; firstName: string; lastName: string; email: string } })[];
   summary: { status: string; _count: { _all: number }; _sum: { amountOwed: number; amountPaid: number } }[];
 } {
-  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  if (!can(getCurrentDemoUserId(), "dues.manage")) throw new DemoApiError(403, "Not authorized to view dues");
   let list = db.duesRecords.filter((d) => d.semesterId === (params.semesterId ?? db.semester.id));
   if (params.status) list = list.filter((d) => d.status === params.status);
 
@@ -1064,7 +1126,7 @@ export function recordPayment(
   userId: string,
   payload: { semesterId: string; amount: number; method: PaymentMethod; note?: string }
 ): { payment: Payment; duesRecord: DuesRecord } {
-  if (!isOfficerOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Officer+ required");
+  if (!can(getCurrentDemoUserId(), "dues.manage")) throw new DemoApiError(403, "Not authorized to record payments");
   const record = db.findDuesRecord(userId, payload.semesterId);
   if (!record) throw new DemoApiError(404, "Dues record not found");
 
@@ -1121,7 +1183,7 @@ export function payDuesWithPyli(payload: {
 }
 
 export function waiveDues(userId: string, semesterId: string, reason: string): DuesRecord {
-  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  if (!can(getCurrentDemoUserId(), "dues.manage")) throw new DemoApiError(403, "Not authorized to waive dues");
   const record = db.findDuesRecord(userId, semesterId);
   if (!record) throw new DemoApiError(404, "Dues record not found");
   record.status = "WAIVED";
@@ -1134,10 +1196,10 @@ export function initializeSemesterDues(payload: {
   dueDate?: string;
   userIds?: string[];
 }): { created: number; total: number } {
-  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  if (!can(getCurrentDemoUserId(), "dues.manage")) throw new DemoApiError(403, "Not authorized to initialize dues");
   const targets = payload.userIds?.length
     ? payload.userIds
-    : db.users.filter((u) => u.status === "ACTIVE" || u.status === "PLEDGE").map((u) => u.id);
+    : db.users.filter((u) => u.status === "ACTIVE" || u.status === "PNM").map((u) => u.id);
 
   let created = 0;
   for (const userId of targets) {
@@ -1160,7 +1222,7 @@ export function sendDuesReminders(semesterId: string): {
   sent: number;
   members: { userId: string; firstName: string; email: string; status: string }[];
 } {
-  if (!isExecOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Exec+ required");
+  if (!can(getCurrentDemoUserId(), "dues.manage")) throw new DemoApiError(403, "Not authorized to send dues reminders");
   const outstanding = db.duesRecords.filter(
     (d) => d.semesterId === semesterId && (d.status === "UNPAID" || d.status === "PARTIAL")
   );
@@ -1303,4 +1365,168 @@ export function updateExpenseStatus(
   expense.reviewedById = getCurrentDemoUserId();
 
   return toExpense(expense);
+}
+
+// ── Role Permissions (spec §3) ──────────────────────────────────────────
+// "Roles should simply be permission presets" — this is the mutable
+// preset editor's backing API. Reads are unrestricted (every client needs
+// the current map to gate its own UI correctly, regardless of the current
+// user's role — this is metadata, not sensitive data); only writes require
+// permissions.manage. SUPER_ADMIN is never editable (it always bypasses,
+// see permissions/permissions.ts hasPermission()), so it's omitted from
+// both the read and write surface.
+
+export function getRolePermissions(): RolePermissions[] {
+  return (Object.keys(db.rolePermissions) as UserRole[])
+    .filter((role) => role !== "SUPER_ADMIN")
+    .map((role) => ({ role, permissions: db.rolePermissions[role] }));
+}
+
+export function updateRolePermissions(role: UserRole, permissions: Permission[]): RolePermissions {
+  if (!can(getCurrentDemoUserId(), "permissions.manage")) {
+    throw new DemoApiError(403, "Not authorized to modify role permissions");
+  }
+  if (role === "SUPER_ADMIN") throw new DemoApiError(400, "Super Admin permissions can't be edited — always unrestricted");
+  db.rolePermissions[role] = permissions;
+  return { role, permissions };
+}
+
+// ── Modules (spec §5) ────────────────────────────────────────────────────
+
+export function getModules(): ModuleConfig[] {
+  return db.moduleConfigs.slice();
+}
+
+export function setModuleEnabled(key: ModuleKey, enabled: boolean): ModuleConfig {
+  if (!can(getCurrentDemoUserId(), "modules.manage")) {
+    throw new DemoApiError(403, "Not authorized to enable/disable modules");
+  }
+  const mod = db.findModule(key);
+  if (!mod) throw new DemoApiError(404, "Module not found");
+  mod.enabled = enabled;
+  return mod;
+}
+
+// ── Chapter Settings (spec §6) ───────────────────────────────────────────
+
+export function getChapterSettings(): ChapterSettings {
+  return { ...db.chapterSettings };
+}
+
+export function updateChapterSettings(payload: Partial<ChapterSettings>): ChapterSettings {
+  if (!can(getCurrentDemoUserId(), "settings.manage")) {
+    throw new DemoApiError(403, "Not authorized to edit chapter settings");
+  }
+  Object.assign(db.chapterSettings, payload);
+  return { ...db.chapterSettings };
+}
+
+// ── Documents & external links (spec §8) ────────────────────────────────
+
+export function listDocuments(params: { category?: DocumentCategory }): ChapterDocument[] {
+  let list = db.documents.slice();
+  if (params.category) list = list.filter((d) => d.category === params.category);
+  return list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+}
+
+export function uploadDocument(payload: {
+  category: DocumentCategory;
+  name: string;
+  fileLabel: string;
+}): ChapterDocument {
+  if (!can(getCurrentDemoUserId(), "documents.upload")) {
+    throw new DemoApiError(403, "Not authorized to upload documents");
+  }
+  const user = getCurrentDemoUser();
+  const doc: ChapterDocument = {
+    id: db.nextDocumentId(),
+    category: payload.category,
+    name: payload.name,
+    fileLabel: payload.fileLabel,
+    sizeLabel: null,
+    uploadedBy: { id: user.id, firstName: user.firstName, lastName: user.lastName },
+    uploadedAt: new Date().toISOString(),
+  };
+  db.documents.push(doc);
+  return doc;
+}
+
+export function deleteDocument(id: string): void {
+  if (!can(getCurrentDemoUserId(), "documents.delete")) {
+    throw new DemoApiError(403, "Not authorized to delete documents");
+  }
+  const idx = db.documents.findIndex((d) => d.id === id);
+  if (idx < 0) throw new DemoApiError(404, "Document not found");
+  db.documents.splice(idx, 1);
+}
+
+export function listExternalLinks(): ExternalLink[] {
+  return db.externalLinks.slice();
+}
+
+export function createExternalLink(payload: { label: string; url: string; category?: string }): ExternalLink {
+  if (!can(getCurrentDemoUserId(), "documents.upload")) {
+    throw new DemoApiError(403, "Not authorized to add links");
+  }
+  const link: ExternalLink = {
+    id: db.nextExternalLinkId(),
+    label: payload.label,
+    url: payload.url,
+    category: payload.category ?? null,
+  };
+  db.externalLinks.push(link);
+  return link;
+}
+
+export function deleteExternalLink(id: string): void {
+  if (!can(getCurrentDemoUserId(), "documents.delete")) {
+    throw new DemoApiError(403, "Not authorized to remove links");
+  }
+  const idx = db.externalLinks.findIndex((l) => l.id === id);
+  if (idx < 0) throw new DemoApiError(404, "Link not found");
+  db.externalLinks.splice(idx, 1);
+}
+
+// ── Feedback & bug reports (spec §9) ─────────────────────────────────────
+
+export function submitFeedback(payload: {
+  type: FeedbackType;
+  message: string;
+  appVersion: string;
+  platform: string;
+}): FeedbackReport {
+  if (!payload.message.trim()) throw new DemoApiError(400, "Message is required");
+  const user = getCurrentDemoUser();
+  const report: FeedbackReport = {
+    id: db.nextFeedbackId(),
+    type: payload.type,
+    message: payload.message.trim(),
+    submittedBy: { id: user.id, firstName: user.firstName, lastName: user.lastName },
+    appVersion: payload.appVersion,
+    platform: payload.platform,
+    status: "OPEN",
+    createdAt: new Date().toISOString(),
+  };
+  db.feedbackReports.push(report);
+  return report;
+}
+
+export function listFeedback(params: { type?: FeedbackType; status?: FeedbackStatus }): FeedbackReport[] {
+  if (!can(getCurrentDemoUserId(), "feedback.view")) {
+    throw new DemoApiError(403, "Not authorized to view feedback submissions");
+  }
+  let list = db.feedbackReports.slice();
+  if (params.type) list = list.filter((f) => f.type === params.type);
+  if (params.status) list = list.filter((f) => f.status === params.status);
+  return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function updateFeedbackStatus(id: string, status: FeedbackStatus): FeedbackReport {
+  if (!can(getCurrentDemoUserId(), "feedback.manage")) {
+    throw new DemoApiError(403, "Not authorized to update feedback status");
+  }
+  const report = db.findFeedback(id);
+  if (!report) throw new DemoApiError(404, "Feedback report not found");
+  report.status = status;
+  return report;
 }

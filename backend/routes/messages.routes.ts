@@ -7,7 +7,11 @@
 //
 // Access model (mirrors product spec §4.3):
 //   GENERAL   — all members read; Exec+ post (announcement channel)
-//   OFFICERS  — Officer+ read and post
+//   OFFICERS  — Exec+ read and post (the OFFICER role tier was removed —
+//               see permissions/permissions.ts on the mobile side, which
+//               additionally grants this to an ACTIVE-status committee
+//               chair via hasAnyManagementAccess; that scoped nuance isn't
+//               replicated here yet, see docs/DEMO_MODE.md)
 //   COMMITTEE — ChannelMembership members OR Exec+ bypass
 //   DM        — ChannelMembership members only
 //
@@ -22,7 +26,7 @@ import { AuthedRequest, requireRole, writeAuditLog } from "../middleware/rbac";
 const router = Router();
 
 const ROLE_RANK: Record<string, number> = {
-  MEMBER: 0, OFFICER: 1, EXEC: 2, SUPER_ADMIN: 3,
+  PNM: 0, ALUMNI: 0, MEMBER: 0, EXEC: 1, SUPER_ADMIN: 2,
 };
 
 // ── Channel access helpers ────────────────────────────────────────────────
@@ -33,7 +37,7 @@ async function canReadChannel(channelId: string, req: AuthedRequest): Promise<bo
   const rank = ROLE_RANK[req.user!.role];
 
   if (channel.type === "GENERAL") return true;
-  if (channel.type === "OFFICERS") return rank >= ROLE_RANK.OFFICER;
+  if (channel.type === "OFFICERS") return rank >= ROLE_RANK.EXEC;
   if (rank >= ROLE_RANK.EXEC) return true; // Exec bypasses COMMITTEE + DM scoping
 
   const membership = await prisma.channelMembership.findUnique({
@@ -49,7 +53,7 @@ async function canPostToChannel(channelId: string, req: AuthedRequest): Promise<
   const rank = ROLE_RANK[req.user!.role];
 
   if (channel.type === "GENERAL") return rank >= ROLE_RANK.EXEC;
-  if (channel.type === "OFFICERS") return rank >= ROLE_RANK.OFFICER;
+  if (channel.type === "OFFICERS") return rank >= ROLE_RANK.EXEC;
   if (rank >= ROLE_RANK.EXEC) return true;
 
   const membership = await prisma.channelMembership.findUnique({
@@ -68,7 +72,7 @@ router.get("/channels", async (req: AuthedRequest, res: Response) => {
     where: {
       OR: [
         { type: "GENERAL" },
-        ...(rank >= ROLE_RANK.OFFICER ? [{ type: "OFFICERS" as const }] : []),
+        ...(rank >= ROLE_RANK.EXEC ? [{ type: "OFFICERS" as const }] : []),
         ...(rank >= ROLE_RANK.EXEC
           ? [{ type: "COMMITTEE" as const }, { type: "DM" as const }]
           : [
@@ -114,7 +118,7 @@ router.get("/channels", async (req: AuthedRequest, res: Response) => {
 
 function canPostToChannelSync(type: string, rank: number): boolean {
   if (type === "GENERAL") return rank >= ROLE_RANK.EXEC;
-  if (type === "OFFICERS") return rank >= ROLE_RANK.OFFICER;
+  if (type === "OFFICERS") return rank >= ROLE_RANK.EXEC;
   // COMMITTEE / DM — caller verified via membership; return true for display
   return true;
 }
@@ -234,7 +238,7 @@ router.get(
 // ── PATCH /messages/:id/pin — Officer+ ───────────────────────────────────
 router.patch(
   "/messages/:id/pin",
-  requireRole("OFFICER"),
+  requireRole("EXEC"),
   async (req: AuthedRequest, res: Response) => {
     const { pinned } = req.body as { pinned?: boolean };
     if (typeof pinned !== "boolean") {
@@ -271,7 +275,7 @@ router.delete("/messages/:id", async (req: AuthedRequest, res: Response) => {
   }
 
   const isSender = message.senderId === req.user!.id;
-  const isOfficerPlus = ROLE_RANK[req.user!.role] >= ROLE_RANK.OFFICER;
+  const isOfficerPlus = ROLE_RANK[req.user!.role] >= ROLE_RANK.EXEC;
 
   if (!isSender && !isOfficerPlus) {
     return res.status(403).json({ error: "Not permitted" });

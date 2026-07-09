@@ -82,6 +82,7 @@ route("get", "/users/me", () => ({ user: api.getMe() }));
 route("get", "/users/:id", (p) => ({ user: api.getMemberProfile(p.id) }));
 route("get", "/users", (_p, q) => api.getRoster(q));
 route("patch", "/users/:id/role", (p, _q, body) => ({ user: api.updateUserRole(p.id, body.role) }));
+route("patch", "/users/:id", (p, _q, body) => ({ user: api.updateUserFields(p.id, body) }));
 route("get", "/points/leaderboard", (_p, q) => api.getLeaderboard());
 route("get", "/points/ledger/:userId", (p, q) => api.getPointsLedger(p.userId, q));
 route("post", "/points/adjust", (_p, _q, body) => ({ entry: api.adjustPoints(body) }));
@@ -135,6 +136,37 @@ route("patch", "/committees/:id/budget", (p, _q, body) => ({ budget: api.setComm
 route("get", "/expenses", (_p, q) => ({ expenses: api.listExpenses(q) }));
 route("post", "/expenses", (_p, _q, body) => ({ expense: api.submitExpense(body) }));
 route("patch", "/expenses/:id", (p, _q, body) => ({ expense: api.updateExpenseStatus(p.id, body) }));
+
+// Permissions (spec §3)
+route("get", "/permissions", () => ({ roles: api.getRolePermissions() }));
+route("patch", "/permissions/:role", (p, _q, body) => ({ role: api.updateRolePermissions(p.role as any, body.permissions) }));
+
+// Modules (spec §5)
+route("get", "/modules", () => ({ modules: api.getModules() }));
+route("patch", "/modules/:key", (p, _q, body) => ({ module: api.setModuleEnabled(p.key as any, body.enabled) }));
+
+// Chapter settings (spec §6)
+route("get", "/settings", () => ({ settings: api.getChapterSettings() }));
+route("patch", "/settings", (_p, _q, body) => ({ settings: api.updateChapterSettings(body) }));
+
+// Documents & external links (spec §8)
+route("get", "/documents", (_p, q) => ({ documents: api.listDocuments(q) }));
+route("post", "/documents", (_p, _q, body) => ({ document: api.uploadDocument(body) }));
+route("delete", "/documents/:id", (p) => {
+  api.deleteDocument(p.id);
+  return {};
+});
+route("get", "/links", () => ({ links: api.listExternalLinks() }));
+route("post", "/links", (_p, _q, body) => ({ link: api.createExternalLink(body) }));
+route("delete", "/links/:id", (p) => {
+  api.deleteExternalLink(p.id);
+  return {};
+});
+
+// Feedback & bug reports (spec §9)
+route("get", "/feedback", (_p, q) => ({ reports: api.listFeedback(q) }));
+route("post", "/feedback", (_p, _q, body) => ({ report: api.submitFeedback(body) }));
+route("patch", "/feedback/:id", (p, _q, body) => ({ report: api.updateFeedbackStatus(p.id, body.status) }));
 
 // ── Adapter plumbing ─────────────────────────────────────────────────────
 

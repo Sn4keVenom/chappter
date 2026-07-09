@@ -1,12 +1,29 @@
 // src/hooks/usePermissions.ts
 //
-// Thin client-side mirror of the server RBAC table (spec §2.2). This exists
-// ONLY to hide/disable UI affordances early so officers aren't shown dead
+// Thin client-side mirror of the server RBAC table (spec §3). This exists
+// ONLY to hide/disable UI affordances early so members aren't shown dead
 // buttons — the backend re-checks every one of these independently and is
 // the real authorization boundary. Never add a permission here that isn't
-// also enforced server-side.
+// also enforced server-side (see mocks/api.ts, which imports the same
+// permissions/permissions.ts engine).
+//
+// `can(permission)` is the general-purpose check new code should use.
+// The named booleans below it (isExecOrAbove, canManageEvent, etc.) exist
+// for the screens written before the granular permission system existed —
+// they're now DERIVED from `can(...)` / the shared engine instead of raw
+// role-tier comparisons, so behavior is unchanged but the underlying model
+// is real permissions, not hardcoded role checks.
 
 import { useAuthStore } from "../store/useAuthStore";
+import { usePermissionsStore } from "../store/usePermissionsStore";
+import {
+  hasPermission,
+  isExecOrAbove as isExecOrAboveOf,
+  isSuperAdmin as isSuperAdminOf,
+  hasAnyManagementAccess,
+  hasScopedManagementAccess,
+} from "../permissions/permissions";
+import type { Permission } from "../types";
 
 interface ScopedEvent {
   committeeId?: string | null;
@@ -18,27 +35,45 @@ interface DelegatableEvent extends ScopedEvent {
 
 export function usePermissions() {
   const user = useAuthStore((s) => s.user);
+  const presets = usePermissionsStore((s) => s.presets);
 
-  const isSuperAdmin = !!user && user.role === "SUPER_ADMIN";
-  const isExecOrAbove = !!user && (user.role === "EXEC" || user.role === "SUPER_ADMIN");
-  const isOfficerOrAbove = !!user && (isExecOrAbove || user.role === "OFFICER");
+  const role = user?.role ?? null;
+  const office = user?.office ?? null;
 
-  // Named exec-board positions (Feature set: points/attendance/finance).
-  // These are ADDITIVE to the tier checks above, never subtractive — a
-  // title holder gets access to their specific surface even in the (real
-  // org) case where every titled officer is already EXEC-tier, and
-  // SUPER_ADMIN always bypasses regardless of title.
-  const isViceRegentOrAdmin = isSuperAdmin || user?.title === "VICE_REGENT";
-  const isScribeOrAdmin = isSuperAdmin || user?.title === "SCRIBE";
-  const isTreasurerOrAdmin = isSuperAdmin || user?.title === "TREASURER";
+  const isSuperAdmin = isSuperAdminOf(role);
+  const isExecOrAbove = isExecOrAboveOf(role);
+
+  // Broad "has some management responsibility" signal — Exec+ or an ACTIVE
+  // member who chairs at least one committee. Replaces the removed OFFICER
+  // role tier (committee chairs used to literally hold that role; now
+  // chairing is tracked via committeeChairOf, independent of role).
+  const isOfficerOrAbove = hasAnyManagementAccess({
+    role,
+    status: user?.status ?? null,
+    committeeChairOf: user?.committeeChairOf ?? [],
+  });
+
+  // Named exec-board offices — ADDITIVE to the permission checks below,
+  // never subtractive. SUPER_ADMIN always bypasses regardless of office.
+  const isViceRegentOrAdmin = isSuperAdmin || office === "VICE_REGENT";
+  const isScribeOrAdmin = isSuperAdmin || office === "SCRIBE";
+  const isTreasurerOrAdmin = isSuperAdmin || office === "TREASURER";
+
+  /** General-purpose granular permission check — use this for any new code. */
+  function can(permission: Permission): boolean {
+    return hasPermission(role, presets, permission);
+  }
 
   /** Can this user manage (edit, check in attendees for) this specific event? */
   function canManageEvent(event: ScopedEvent): boolean {
     if (!user) return false;
-    if (isExecOrAbove) return true;
-    if (!isOfficerOrAbove) return false;
-    if (!event.committeeId) return false; // chapter-wide events are Exec-managed only
-    return user.committeeChairOf.includes(event.committeeId);
+    if (can("events.edit")) return true;
+    return hasScopedManagementAccess({
+      role,
+      status: user.status,
+      committeeChairOf: user.committeeChairOf,
+      committeeId: event.committeeId,
+    });
   }
 
   /**
@@ -47,7 +82,7 @@ export function usePermissions() {
    * Additive to canManageEvent — never narrower than the existing check.
    */
   function canManageAttendance(event?: ScopedEvent): boolean {
-    if (isScribeOrAdmin) return true;
+    if (isScribeOrAdmin || can("attendance.edit")) return true;
     return !!event && canManageEvent(event);
   }
 
@@ -64,19 +99,18 @@ export function usePermissions() {
   }
 
   return {
-    role: user?.role ?? null,
-    title: user?.title ?? null,
+    role,
+    office,
     isOfficerOrAbove,
     isExecOrAbove,
     isSuperAdmin,
     isViceRegentOrAdmin,
     isScribeOrAdmin,
     isTreasurerOrAdmin,
+    can,
     canManageEvent,
     canManageAttendance,
     canGenerateCheckIn,
     canViewAdminPanel: isOfficerOrAbove,
-    canManageDues: isExecOrAbove,
-    canViewAuditLog: isExecOrAbove,
   };
 }

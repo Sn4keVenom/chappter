@@ -32,7 +32,8 @@ export function toAppUser(user: MockUser): AppUser {
     firstName: user.firstName,
     lastName: user.lastName,
     role: user.role,
-    title: user.title ?? null,
+    office: user.office ?? null,
+    status: user.status,
     committeeChairOf: committeeMemberships
       .filter((m) => m.userId === user.id && m.role === "CHAIR")
       .map((m) => m.committeeId),
@@ -45,16 +46,19 @@ export function getCurrentDemoUser(): MockUser {
 }
 
 // A curated roster for the "Switch demo role" picker — one per named
-// exec-board title plus a committee-chair officer and a standard member,
-// enough to exercise every permission-gated code path (Feature 1–5 included)
-// without overwhelming the picker with all 15 mock users.
+// exec-board office plus a committee-chair member, a standard member, a
+// PNM, and an Alumni, enough to exercise every permission-gated code path
+// (including the new role/status/module/permission system) without
+// overwhelming the picker with all 15 mock users.
 export const DEMO_SWITCHABLE_USERS: { user: MockUser; blurb: string }[] = [
-  { user: findUser("u1")!, blurb: "Regent — sees every tab and admin action" },
-  { user: findUser("u2")!, blurb: "Vice Regent — points system oversight" },
-  { user: findUser("u15")!, blurb: "Scribe — attendance tracking & check-in delegation" },
-  { user: findUser("u3")!, blurb: "Treasurer — dues, budgets & reimbursements" },
-  { user: findUser("u5")!, blurb: "Officer — manages Service Committee only" },
+  { user: findUser("u1")!, blurb: "Super Admin, Regent — unrestricted access to every module and setting" },
+  { user: findUser("u2")!, blurb: "Exec, Vice Regent — points system oversight" },
+  { user: findUser("u15")!, blurb: "Exec, Scribe — attendance tracking & check-in delegation" },
+  { user: findUser("u3")!, blurb: "Exec, Treasurer — dues, budgets & reimbursements" },
+  { user: findUser("u5")!, blurb: "Member — chairs the Service Committee only" },
   { user: findUser("u9")!, blurb: "Standard member view — no admin tab" },
+  { user: findUser("u11")!, blurb: "PNM — limited, prospective-member view" },
+  { user: findUser("u14")!, blurb: "Alumni — limited, alumni view" },
 ];
 
 export { users as demoAllUsers };

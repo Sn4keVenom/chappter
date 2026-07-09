@@ -60,6 +60,19 @@ export type AppStackParamList = {
   SubmitExpense: { committeeId: string; committeeName: string };
   Expenses: undefined;
   CommitteeBudgets: undefined;
+
+  // Chapter administration (Super Admin only — spec §4/§5/§6)
+  ChapterSettings: undefined;
+  Modules: undefined;
+  Permissions: undefined;
+
+  // Documents & external links (spec §8)
+  Documents: undefined;
+  DocumentCategory: { category: string; label: string };
+
+  // Feedback & bug reports (spec §9)
+  Feedback: undefined;
+  FeedbackList: undefined;
 };
 
 export type RootStackParamList = {

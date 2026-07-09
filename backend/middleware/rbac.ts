@@ -19,10 +19,11 @@ export interface AuthedRequest extends Request {
 }
 
 const ROLE_RANK: Record<UserRole, number> = {
+  PNM: 0,
+  ALUMNI: 0,
   MEMBER: 0,
-  OFFICER: 1,
-  EXEC: 2,
-  SUPER_ADMIN: 3,
+  EXEC: 1,
+  SUPER_ADMIN: 2,
 };
 
 /** Require at least this base role. Use for chapter-wide actions (Exec+). */

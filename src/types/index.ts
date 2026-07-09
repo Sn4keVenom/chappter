@@ -8,15 +8,39 @@
 //   · All api/*.ts files import from here for request/response typing
 //   · All store/*.ts files import from here for state shape typing
 //   · All screen components import from here for prop/local-state typing
-//   · events.ts already defines EventDetail and RsvpStatus — keep those;
-//     this file adds everything else and re-exports to avoid circular deps.
+//   · src/permissions/permissions.ts is the engine that consumes Permission/
+//     UserRole/RolePermissions defined here — see that file for hasPermission()
+//     and the default role presets.
 
 // ─────────────────────────────────────────────────────────────────────────
-// Enums (string literals matching Prisma enum names)
+// Membership status & roles
+//
+// Status describes where someone is in the membership lifecycle. Role
+// describes their permission tier. They're independent fields — most PNMs
+// happen to have role PNM and most Alumni happen to have role ALUMNI, but a
+// Super Admin can assign either independently (e.g. an Alumni-status brother
+// who still needs Exec-level access during a transition period).
 // ─────────────────────────────────────────────────────────────────────────
 
-export type UserRole = "MEMBER" | "OFFICER" | "EXEC" | "SUPER_ADMIN";
-export type MemberStatus = "ACTIVE" | "ALUMNI" | "SUSPENDED" | "PLEDGE";
+export type MemberStatus = "ACTIVE" | "PNM" | "ALUMNI" | "INACTIVE";
+
+export type UserRole = "SUPER_ADMIN" | "EXEC" | "MEMBER" | "PNM" | "ALUMNI";
+
+// Named exec-board positions — independent from UserRole/Permission on
+// purpose (per product spec: "Office should be independent from permissions
+// so new offices can be added easily later"). An office is a label an Exec
+// member holds; it never itself grants access — permissions.ts never checks
+// `office` directly, only `role` + the mutable role→permission map. Adding a
+// new office is just adding a string here, no permission-engine changes.
+export type ExecOffice =
+  | "REGENT"
+  | "VICE_REGENT"
+  | "TREASURER"
+  | "SCRIBE"
+  | "MARSHAL"
+  | "CORRESPONDING_SECRETARY"
+  | "NEW_MEMBER_EDUCATOR";
+
 export type EventCategory = "BROTHERHOOD" | "SERVICE" | "PROFESSIONAL" | "RUSH" | "ADMIN";
 export type EventStatus = "DRAFT" | "PUBLISHED" | "CANCELLED";
 export type RsvpStatus = "GOING" | "MAYBE" | "NOT_GOING";
@@ -28,16 +52,150 @@ export type ChannelMemberRole = "MEMBER" | "ADMIN";
 export type DuesStatus = "PAID" | "PARTIAL" | "UNPAID" | "WAIVED";
 export type PaymentMethod = "STRIPE" | "PYLI" | "CASH" | "VENMO" | "CHECK" | "OTHER";
 export type DuesPlan = "FULL" | "MONTHLY";
-
-// Named exec-board positions — distinct from the coarse-grained UserRole
-// tier (MEMBER/OFFICER/EXEC/SUPER_ADMIN) used for broad permission checks.
-// A title holder is typically also role=EXEC, but the title itself is what
-// gates the specific admin surfaces named after it (see usePermissions.ts).
-// No backing schema.prisma field exists yet — see docs/DEMO_MODE.md and the
-// PR notes for what production would need.
-export type OfficerTitle = "REGENT" | "VICE_REGENT" | "SCRIBE" | "TREASURER";
-
 export type ReimbursementStatus = "SUBMITTED" | "APPROVED" | "REIMBURSED" | "REJECTED";
+
+// ─────────────────────────────────────────────────────────────────────────
+// Permission system (spec §3) — "Roles should simply be permission
+// presets." Permission is a flat, namespaced string union so adding a new
+// permission later is a one-line addition here plus a default assignment in
+// permissions.ts, no structural/schema change. Grouped by the module the
+// action belongs to (also how the Super Admin permissions-editor UI groups
+// them) — the namespace prefix (before the ".") IS the group.
+// ─────────────────────────────────────────────────────────────────────────
+
+export const ALL_PERMISSIONS = [
+  "events.view",
+  "events.create",
+  "events.edit",
+  "events.delete",
+  "attendance.view",
+  "attendance.take",
+  "attendance.edit",
+  "documents.view",
+  "documents.upload",
+  "documents.delete",
+  "points.award",
+  "points.deduct",
+  "messaging.post",
+  "messaging.moderate",
+  "committees.manage",
+  "dues.manage",
+  "finance.manage",
+  "teams.manage",
+  "feedback.view",
+  "feedback.manage",
+  "users.manage",
+  "settings.manage",
+  "modules.manage",
+  "permissions.manage",
+] as const;
+
+export type Permission = (typeof ALL_PERMISSIONS)[number];
+
+// Wire format for GET/PATCH of a role's permission set — see
+// src/permissions/permissions.ts for the mutable in-memory map this mirrors
+// and api/permissions.ts for the client wrapper.
+export interface RolePermissions {
+  role: UserRole;
+  permissions: Permission[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Module / feature toggles (spec §5)
+// ─────────────────────────────────────────────────────────────────────────
+
+export type ModuleKey =
+  | "events"
+  | "attendance"
+  | "messaging"
+  | "documents"
+  | "points"
+  | "calendar"
+  | "feedback"
+  | "committees"
+  | "dues"
+  | "teams"
+  // Placeholders proving the module system scales to features not built yet —
+  // toggling these currently has no attached screens (see docs/DEMO_MODE.md).
+  | "officeInventory"
+  | "attendanceRaffles";
+
+export interface ModuleConfig {
+  key: ModuleKey;
+  label: string;
+  description?: string | null;
+  enabled: boolean;
+  comingSoon?: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Chapter Settings (spec §6) — centralized, the primary place future
+// chapter-wide customization should live.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ChapterSettings {
+  chapterName: string;
+  chapterLetters: string;
+  university: string;
+  logoUrl?: string | null;
+  currentSemesterLabel: string;
+  semesterStartDate: string;
+  semesterEndDate: string;
+  defaultDuesAmount: number;
+  defaultDuesPlan: DuesPlan;
+  attendanceLateThresholdMinutes: number;
+  defaultEventPointValue: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Documents & file management (spec §8)
+// ─────────────────────────────────────────────────────────────────────────
+
+export type DocumentCategory =
+  | "CONSTITUTION"
+  | "BYLAWS"
+  | "MEETING_MINUTES"
+  | "RECRUITMENT"
+  | "FORMS"
+  | "OFFICER_RESOURCES"
+  | "OTHER";
+
+export interface ChapterDocument {
+  id: string;
+  category: DocumentCategory;
+  name: string;
+  // Demo mode stores only a placeholder label (e.g. "bylaws_2026.pdf") — no
+  // real file storage. See docs/DEMO_MODE.md for the production gap.
+  fileLabel: string;
+  sizeLabel?: string | null;
+  uploadedBy: { id: string; firstName: string; lastName: string };
+  uploadedAt: string;
+}
+
+export interface ExternalLink {
+  id: string;
+  label: string;
+  url: string;
+  category?: string | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Feedback & bug reports (spec §9)
+// ─────────────────────────────────────────────────────────────────────────
+
+export type FeedbackType = "BUG" | "FEATURE_REQUEST" | "GENERAL";
+export type FeedbackStatus = "OPEN" | "IN_REVIEW" | "RESOLVED" | "CLOSED";
+
+export interface FeedbackReport {
+  id: string;
+  type: FeedbackType;
+  message: string;
+  submittedBy: { id: string; firstName: string; lastName: string } | null;
+  appVersion: string;
+  platform: string;
+  status: FeedbackStatus;
+  createdAt: string;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // Core entities
@@ -51,7 +209,7 @@ export interface User {
   phone?: string | null;
   avatarUrl?: string | null;
   role: UserRole;
-  title?: OfficerTitle | null;
+  office?: ExecOffice | null;
   status: MemberStatus;
   pledgeClassLabel?: string | null;
   committeeChairOf: string[];
@@ -67,7 +225,7 @@ export interface UserSummary {
   email: string;
   avatarUrl?: string | null;
   role: UserRole;
-  title?: OfficerTitle | null;
+  office?: ExecOffice | null;
   status: MemberStatus;
   pledgeClassLabel?: string | null;
 }

@@ -164,10 +164,10 @@ router.get("/users/me/dashboard", async (req: AuthedRequest, res: Response) => {
 });
 
 // ── GET /users — roster ───────────────────────────────────────────────────
-// Officer+ only. Supports search by name/email and filtering by role/status.
+// Exec+ only. Supports search by name/email and filtering by role/status.
 router.get(
   "/users",
-  requireRole("OFFICER"),
+  requireRole("EXEC"),
   async (req: AuthedRequest, res: Response) => {
     const { q, role, status, page = "1", limit = "50" } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
@@ -224,7 +224,7 @@ router.get(
 // ── GET /users/:id ────────────────────────────────────────────────────────
 router.get(
   "/users/:id",
-  requireRole("OFFICER"),
+  requireRole("EXEC"),
   async (req: AuthedRequest, res: Response) => {
     const user = await prisma.user.findUnique({
       where: { id: req.params.id },
@@ -243,7 +243,7 @@ router.get(
 // Super Admin only; self-role changes are blocked to prevent accidental
 // lock-out of the only admin account.
 const roleSchema = z.object({
-  role: z.enum(["MEMBER", "OFFICER", "EXEC", "SUPER_ADMIN"]),
+  role: z.enum(["SUPER_ADMIN", "EXEC", "MEMBER", "PNM", "ALUMNI"]),
 });
 
 router.patch(

@@ -10,12 +10,19 @@
 // it's the only way the demo user identity changes after launch.
 
 import { useAuthStore } from "../store/useAuthStore";
+import { usePermissionsStore } from "../store/usePermissionsStore";
+import { useModulesStore } from "../store/useModulesStore";
 import { getCurrentDemoUser, setCurrentDemoUserId, toAppUser } from "./identity";
 import { DEMO_MODE } from "../config/demo";
 
 export function bootstrapDemoSession(): void {
   if (!DEMO_MODE) return;
   useAuthStore.getState().setUser(toAppUser(getCurrentDemoUser()));
+  // Global (not per-user) state — permission presets and module toggles.
+  // Fetched once at boot so any admin edits already applied this session
+  // are reflected everywhere immediately.
+  usePermissionsStore.getState().fetchPermissions();
+  useModulesStore.getState().fetchModules();
 }
 
 export function switchDemoUser(userId: string): void {
