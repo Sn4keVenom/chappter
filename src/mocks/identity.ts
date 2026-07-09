@@ -10,7 +10,7 @@
 // needs to know Demo Mode exists — useAuthStore is unchanged from the
 // generated version.
 
-import { findUser, committeeMemberships, users, type MockUser } from "./seed";
+import { findUser, committeeMemberships, users, DEMO_CHAPTER_ID, type MockUser } from "./seed";
 import type { AppUser } from "../store/useAuthStore";
 
 export const DEMO_DEFAULT_USER_ID = "u1";
@@ -29,8 +29,21 @@ export function setCurrentDemoUserId(userId: string): void {
 export function toAppUser(user: MockUser): AppUser {
   return {
     id: user.id,
+    // MockUser predates username (added with the real account system) —
+    // derived from email rather than touching every seeded user record.
+    username: user.email.split("@")[0],
     firstName: user.firstName,
     lastName: user.lastName,
+    // Every demo user is already "in the chapter" — Demo Mode exists to
+    // show the fully-populated app, not the join flow. chapterId must still
+    // be set (not just hasChapter) — ChapterInviteManagerScreen/
+    // JoinRequestsScreen read user.chapterId directly and silently no-op
+    // (stuck spinner) without it.
+    hasChapter: true,
+    chapterId: DEMO_CHAPTER_ID,
+    roleNumber: user.roleNumber ?? null,
+    major: user.major ?? null,
+    graduationYear: user.graduationYear ?? null,
     role: user.role,
     office: user.office ?? null,
     status: user.status,

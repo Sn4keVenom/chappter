@@ -41,7 +41,7 @@ import type {
   FeedbackStatus,
   FeedbackReport,
 } from "../types";
-import { defaultRolePermissions } from "../permissions/permissions";
+import { defaultRolePermissions, defaultOfficePermissions } from "../permissions/permissions";
 
 // ── Date helpers ────────────────────────────────────────────────────────────
 
@@ -80,6 +80,17 @@ export interface MockUser {
   status: MemberStatus;
   pledgeClassLabel?: string | null;
   teamId?: string | null; // gamification team — see MockTeam below
+  // Permanent, assigned post-initiation, unique across the roster — never
+  // set for PNMs (see account-system spec §6). Mirrors
+  // ChapterMembership.roleNumber on the real backend.
+  roleNumber?: number | null;
+  // This user's Big — a userId reference, forming the same single-parent
+  // tree structure as ChapterMembership.bigMembershipId on the real
+  // backend (see schema.prisma doc comment). Resolved to Littles via
+  // reverse lookup in mocks/api.ts, same as the real /users/:id/family route.
+  bigId?: string | null;
+  major?: string | null;
+  graduationYear?: number | null;
 }
 
 export interface MockSemester {
@@ -236,22 +247,29 @@ export function findTeam(id: string): MockTeam | undefined {
 // (still fundamentally a member, just not currently participating) and are
 // excluded from teams, unlike PNM/ALUMNI which are their own role tier.
 
+// Big/Little assignments form one tree, oldest pledge class first, so the
+// family view (MyFamilyScreen) has real multi-generation depth to show —
+// u14 (an alumna) is the root, demonstrating that Big/Little relationships
+// keep working across ALUMNI/INACTIVE status changes (account-system spec
+// §7/§12), and role numbers are assigned in initiation order and stay with
+// a member permanently regardless of later status (§6) — PNMs (u11/u12)
+// have neither yet.
 export const users: MockUser[] = [
-  { id: "u1", firstName: "Marcus", lastName: "Reyes", email: "marcus.reyes@thetatau.demo", role: "SUPER_ADMIN", office: "REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0101", teamId: "team_a" },
-  { id: "u2", firstName: "Sofia", lastName: "Nguyen", email: "sofia.nguyen@thetatau.demo", role: "EXEC", office: "VICE_REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0102", teamId: "team_b" },
-  { id: "u3", firstName: "Jordan", lastName: "Blake", email: "jordan.blake@thetatau.demo", role: "EXEC", office: "TREASURER", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0103", teamId: "team_c" },
-  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_d" },
-  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_a" },
-  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_b" },
-  { id: "u7", firstName: "Noah", lastName: "Bennett", email: "noah.bennett@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_c" },
-  { id: "u8", firstName: "Ava", lastName: "Torres", email: "ava.torres@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_d" },
-  { id: "u9", firstName: "Liam", lastName: "Osei", email: "liam.osei@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_a" },
-  { id: "u10", firstName: "Chloe", lastName: "Martinez", email: "chloe.martinez@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2025", teamId: "team_b" },
-  { id: "u11", firstName: "Dylan", lastName: "Foster", email: "dylan.foster@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_c" },
-  { id: "u12", firstName: "Maya", lastName: "Singh", email: "maya.singh@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_a" },
-  { id: "u13", firstName: "Ryan", lastName: "O'Connell", email: "ryan.oconnell@thetatau.demo", role: "MEMBER", status: "INACTIVE", pledgeClassLabel: "Fall 2024" },
-  { id: "u14", firstName: "Isabella", lastName: "Cruz", email: "isabella.cruz@thetatau.demo", role: "ALUMNI", status: "ALUMNI", pledgeClassLabel: "Fall 2021" },
-  { id: "u15", firstName: "Emma", lastName: "Chavez", email: "emma.chavez@thetatau.demo", role: "EXEC", office: "SCRIBE", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0115", teamId: "team_c" },
+  { id: "u14", firstName: "Isabella", lastName: "Cruz", email: "isabella.cruz@thetatau.demo", role: "ALUMNI", status: "ALUMNI", pledgeClassLabel: "Fall 2021", roleNumber: 198, bigId: null, major: "Mechanical Engineering", graduationYear: 2025 },
+  { id: "u1", firstName: "Marcus", lastName: "Reyes", email: "marcus.reyes@thetatau.demo", role: "SUPER_ADMIN", office: "REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0101", teamId: "team_a", roleNumber: 214, bigId: "u14", major: "Computer Science", graduationYear: 2027 },
+  { id: "u2", firstName: "Sofia", lastName: "Nguyen", email: "sofia.nguyen@thetatau.demo", role: "EXEC", office: "VICE_REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0102", teamId: "team_b", roleNumber: 215, bigId: "u14", major: "Civil Engineering", graduationYear: 2027 },
+  { id: "u3", firstName: "Jordan", lastName: "Blake", email: "jordan.blake@thetatau.demo", role: "EXEC", office: "TREASURER", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0103", teamId: "team_c", roleNumber: 227, bigId: "u1", major: "Finance", graduationYear: 2027 },
+  { id: "u15", firstName: "Emma", lastName: "Chavez", email: "emma.chavez@thetatau.demo", role: "EXEC", office: "SCRIBE", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0115", teamId: "team_c", roleNumber: 228, bigId: "u2", major: "Biomedical Engineering", graduationYear: 2027 },
+  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_d", roleNumber: 241, bigId: "u3", major: "Industrial Engineering", graduationYear: 2028 },
+  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_a", roleNumber: 242, bigId: "u1", major: "Electrical Engineering", graduationYear: 2028 },
+  { id: "u7", firstName: "Noah", lastName: "Bennett", email: "noah.bennett@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_c", roleNumber: 243, bigId: "u2", major: "Computer Engineering", graduationYear: 2028 },
+  { id: "u13", firstName: "Ryan", lastName: "O'Connell", email: "ryan.oconnell@thetatau.demo", role: "MEMBER", status: "INACTIVE", pledgeClassLabel: "Fall 2024", roleNumber: 244, bigId: "u15", major: "Chemical Engineering", graduationYear: 2028 },
+  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_b", roleNumber: 255, bigId: "u15", major: "Environmental Engineering", graduationYear: 2028 },
+  { id: "u8", firstName: "Ava", lastName: "Torres", email: "ava.torres@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_d", roleNumber: 256, bigId: "u5", major: "Materials Science", graduationYear: 2029 },
+  { id: "u9", firstName: "Liam", lastName: "Osei", email: "liam.osei@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_a", roleNumber: 257, bigId: "u3", major: "Aerospace Engineering", graduationYear: 2029 },
+  { id: "u10", firstName: "Chloe", lastName: "Martinez", email: "chloe.martinez@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2025", teamId: "team_b", roleNumber: 268, bigId: "u6", major: "Computer Science", graduationYear: 2029 },
+  { id: "u11", firstName: "Dylan", lastName: "Foster", email: "dylan.foster@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_c", roleNumber: null, bigId: null },
+  { id: "u12", firstName: "Maya", lastName: "Singh", email: "maya.singh@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_a", roleNumber: null, bigId: null },
 ];
 
 export function findUser(id: string): MockUser | undefined {
@@ -625,6 +643,12 @@ export function findMessage(id: string): MockMessage | undefined {
 
 export const rolePermissions: Record<UserRole, Permission[]> = defaultRolePermissions();
 
+// Office-scoped grants (mutable) — e.g. Scribe → role numbers, independent
+// of role tier (spec §6/§11). Seeded from the same shared defaults the real
+// backend's OfficePermission table seeds from, so Emma (Scribe, u15) can
+// assign role numbers in Demo Mode exactly as she could against the real API.
+export const officePermissions: Partial<Record<ExecOffice, Permission[]>> = defaultOfficePermissions();
+
 // ── Modules (Feature/module toggles) ────────────────────────────────────
 // Disabling a module hides its nav entry/tab and its AdminPanel section —
 // see store/useModulesStore.ts and AppNavigator.tsx. officeInventory and
@@ -715,4 +739,81 @@ export function nextFeedbackId(): string {
 
 export function findFeedback(id: string): FeedbackReport | undefined {
   return feedbackReports.find((f) => f.id === id);
+}
+
+// ── Chapter, Invites & Join Requests (account-system spec §3) ────────────
+// Demo Mode only ever models one chapter (see docs/DEMO_MODE.md) — this
+// is just enough to demonstrate the invite/join-request admin screens
+// (ChapterInviteManagerScreen, JoinRequestsScreen), which are reachable
+// from AdminPanelScreen for any Exec+ demo user.
+
+export const DEMO_CHAPTER_ID = "chapter_demo";
+
+export interface MockChapterInvite {
+  id: string;
+  chapterId: string;
+  code: string;
+  role: UserRole;
+  status: MemberStatus;
+  maxUses: number | null;
+  useCount: number;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  createdById: string;
+  createdAt: string;
+}
+
+export const chapterInvites: MockChapterInvite[] = [
+  {
+    id: "inv1", chapterId: DEMO_CHAPTER_ID, code: "RUSH2026", role: "PNM", status: "PNM",
+    maxUses: null, useCount: 6, expiresAt: daysFromNow(30), revokedAt: null,
+    createdById: "u4", createdAt: daysFromNow(-9),
+  },
+  {
+    id: "inv2", chapterId: DEMO_CHAPTER_ID, code: "TRANSFER8Q", role: "MEMBER", status: "ACTIVE",
+    maxUses: 1, useCount: 0, expiresAt: null, revokedAt: null,
+    createdById: "u1", createdAt: daysFromNow(-2),
+  },
+];
+let inviteIdCounter = chapterInvites.length + 1;
+
+export function findInviteByCode(code: string): MockChapterInvite | undefined {
+  return chapterInvites.find((i) => i.code === code);
+}
+
+export function nextInviteId(): string {
+  return `inv${inviteIdCounter++}`;
+}
+
+export interface MockJoinRequest {
+  id: string;
+  chapterId: string;
+  message: string | null;
+  status: "PENDING" | "APPROVED" | "DENIED";
+  createdAt: string;
+  user: { id: string; firstName: string; lastName: string; email: string };
+}
+
+// Prospective members aren't in `users` (they haven't created an account
+// yet) — these are fabricated identities purely to demonstrate the review
+// queue, same as a real "Request to Join" submitted before ever syncing a
+// User row.
+export const joinRequests: MockJoinRequest[] = [
+  {
+    id: "jr1", chapterId: DEMO_CHAPTER_ID,
+    message: "Met a few brothers at the engineering career fair — would love to get involved with Rush events this semester.",
+    status: "PENDING", createdAt: daysFromNow(-1),
+    user: { id: "prospect_1", firstName: "Jake", lastName: "Sullivan", email: "jake.sullivan@demo.edu" },
+  },
+  {
+    id: "jr2", chapterId: DEMO_CHAPTER_ID,
+    message: "My roommate is a member and suggested I reach out before Info Night.",
+    status: "PENDING", createdAt: daysFromNow(-0.3),
+    user: { id: "prospect_2", firstName: "Amara", lastName: "Johnson", email: "amara.johnson@demo.edu" },
+  },
+];
+let joinRequestIdCounter = joinRequests.length + 1;
+
+export function nextJoinRequestId(): string {
+  return `jr${joinRequestIdCounter++}`;
 }

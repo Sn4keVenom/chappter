@@ -28,9 +28,9 @@ enum UserRole {
   ALUMNI
 }
 
-// Membership lifecycle status — independent of UserRole (see User.role/
-// User.office doc comments below). PNM/ALUMNI status usually correlates
-// with the same-named role, but isn't derived from it.
+// Membership lifecycle status — independent of UserRole (see
+// ChapterMembership's role/office fields below). PNM/ALUMNI status usually
+// correlates with the same-named role, but isn't derived from it.
 enum MemberStatus {
   ACTIVE
   PNM
@@ -155,25 +155,51 @@ enum PaymentMethod {
   OTHER
 }
 
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Core identity
+//
+// User is identity only — auth + personal-profile facts that exist
+// independent of any chapter. Membership facts (role, office, status, role
+// number, pledge class, major, graduation year, Big/Little) live on
+// ChapterMembership instead, because they're properties of "this person's
+// membership in this chapter," not of the person globally. This is what
+// lets role numbers be unique per-chapter, Big/Little resolve within one
+// chapter's roster, and a person hold (now or later) more than one chapter
+// membership without any of those concepts colliding. See ChapterMembership
+// below and docs/PERMISSIONS.md for how role/office/status continue to
+// drive permissions from there.
 // ─────────────────────────────────────────────────────────────────────────
 
 model User {
-  id            String        @id @default(cuid())
-  authProviderId String       @unique // Clerk/Firebase UID
-  email         String        @unique
-  firstName     String
-  lastName      String
-  phone         String?
-  avatarUrl     String?
-  role          UserRole      @default(MEMBER)
-  office        ExecOffice?   // Exec-board position, independent of role/permissions — see ExecOffice doc comment
-  status        MemberStatus  @default(ACTIVE)
-  pledgeClassLabel String?    // e.g. "Fall 2024" — free text by design, cosmetic only
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id             String   @id @default(cuid())
+  authProviderId String   @unique // Clerk/Firebase UID
+  email          String   @unique
+  username       String   @unique
+  firstName      String
+  lastName       String
+  phone          String?
+  avatarUrl      String?
+  // Which chapter's membership currently drives this user's flattened
+  // role/office/status in API responses. Null until they join their first
+  // chapter (see auth.routes.ts /auth/sync and chapters.routes.ts redeem/
+  // approve flows, which set this the first time it's unset). A user
+  // belonging to more than one chapter is already representable via
+  // chapterMemberships below — switching activeChapterId between them is
+  // future UI, not required now.
+  activeChapterId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
+  activeChapter        Chapter?              @relation("UserActiveChapter", fields: [activeChapterId], references: [id])
+  chapterMemberships   ChapterMembership[]
+  inviteRedemptions    ChapterInviteRedemption[]
+  joinRequests         ChapterJoinRequest[]
   committeeMemberships CommitteeMembership[]
   rsvps                Rsvp[]
   attendances          Attendance[]          @relation("AttendanceUser")
@@ -189,8 +215,144 @@ model User {
   uploadedDocuments    Document[]            @relation("DocumentUploadedBy")
   feedbackReports      FeedbackReport[]      @relation("FeedbackSubmittedBy")
 
-  @@index([role])
-  @@index([status])
+  @@index([activeChapterId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Chapter & Membership
+//
+// A Chapter is a tenant. ChapterMembership is the join row that carries
+// everything that's actually "about this person's time in this chapter":
+// role/office/status (permission-relevant — see docs/PERMISSIONS.md),
+// roleNumber (permanent, assigned post-initiation, unique per chapter),
+// Big/Little (self-relation scoped to the same chapter's memberships so
+// family trees never cross chapters), and the historical fields (initiation/
+// graduation dates) called for in spec §10 — nullable today so they can be
+// filled in gradually without another migration.
+//
+// Status changes (ACTIVE → ALUMNI/INACTIVE) only ever update this row's
+// `status` column — they never touch bigMembershipId/littles, so family
+// relationships keep working after someone graduates or goes inactive.
+// ─────────────────────────────────────────────────────────────────────────
+
+model Chapter {
+  id         String   @id @default(cuid())
+  name       String
+  letters    String?
+  university String?
+  logoUrl    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  settings        ChapterSettings?
+  memberships     ChapterMembership[]
+  invites         ChapterInvite[]
+  joinRequests    ChapterJoinRequest[]
+  // Users whose activeChapterId currently points here — not "all members"
+  // (that's memberships above), just whichever users have this chapter
+  // selected as their current context.
+  usersActiveHere User[]              @relation("UserActiveChapter")
+
+  @@index([name])
+}
+
+model ChapterMembership {
+  id               String       @id @default(cuid())
+  userId           String
+  chapterId        String
+  role             UserRole     @default(MEMBER)
+  office           ExecOffice?  // Exec-board position, independent of role/permissions — see ExecOffice doc comment
+  status           MemberStatus @default(PNM)
+  // Assigned after initiation only — enforced in membership.routes.ts, not
+  // just by convention. Unique per chapter; Postgres treats multiple NULLs
+  // (every PNM) as distinct, so PNMs never collide with each other or block
+  // a real assignment.
+  roleNumber       Int?
+  pledgeClassLabel String?      // e.g. "Fall 2024" — free text by design, cosmetic only
+  major            String?
+  graduationYear   Int?
+  initiationDate   DateTime?
+  graduationDate   DateTime?
+  // This membership's Big — a self-relation so Big/Little always resolves
+  // within the same chapter's roster. onDelete: SetNull because membership
+  // rows are never deleted in normal operation (status handles lifecycle);
+  // this only guards against an intentional admin data-wipe corrupting the
+  // rest of a family line.
+  bigMembershipId  String?
+  // Provenance: which membership invited (via invite code) or approved
+  // (via join request) this one — optional, not enforced, just historical.
+  invitedById      String?
+  joinedAt         DateTime     @default(now())
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter        Chapter             @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  big            ChapterMembership?  @relation("BigLittle", fields: [bigMembershipId], references: [id], onDelete: SetNull)
+  littles        ChapterMembership[] @relation("BigLittle")
+  invitedBy      ChapterMembership?  @relation("MembershipInvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedMembers ChapterMembership[] @relation("MembershipInvitedBy")
+  createdInvites ChapterInvite[]
+  reviewedJoinRequests ChapterJoinRequest[]
+
+  @@unique([chapterId, userId])
+  @@unique([chapterId, roleNumber])
+  @@index([chapterId, role])
+  @@index([chapterId, status])
+  @@index([bigMembershipId])
+}
+
+// One row per invite code. A "link" is just this same code embedded in a
+// deep link (chapterhub://join?code=XXXX) — no separate model needed for
+// "code" vs. "link", they're two presentations of the same redeemable thing.
+model ChapterInvite {
+  id          String       @id @default(cuid())
+  chapterId   String
+  code        String       @unique
+  role        UserRole     @default(MEMBER)
+  status      MemberStatus @default(PNM) // status a redeemer starts as
+  maxUses     Int?         // null = unlimited
+  useCount    Int          @default(0)
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdById String
+  createdAt   DateTime     @default(now())
+
+  chapter     Chapter                   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  createdBy   ChapterMembership         @relation(fields: [createdById], references: [id])
+  redemptions ChapterInviteRedemption[]
+
+  @@index([chapterId])
+}
+
+model ChapterInviteRedemption {
+  id         String   @id @default(cuid())
+  inviteId   String
+  userId     String
+  redeemedAt DateTime @default(now())
+
+  invite ChapterInvite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([inviteId, userId])
+}
+
+model ChapterJoinRequest {
+  id           String            @id @default(cuid())
+  chapterId    String
+  userId       String
+  message      String?
+  status       JoinRequestStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime          @default(now())
+
+  chapter    Chapter            @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy ChapterMembership? @relation(fields: [reviewedById], references: [id])
+
+  @@index([chapterId, status])
+  @@index([userId])
 }
 
 model Semester {
@@ -475,6 +637,20 @@ model RolePermission {
   @@unique([role, permission])
 }
 
+// Parallel to RolePermission, for grants scoped to a named exec office
+// rather than a role tier — e.g. "Scribe can assign role numbers" even
+// though MEMBER-tier role presets don't grant it. Checked as an additional
+// OR alongside RolePermission, never a replacement for it (see
+// requirePermission in middleware/rbac.ts).
+model OfficePermission {
+  id         String     @id @default(cuid())
+  office     ExecOffice
+  permission String
+  createdAt  DateTime   @default(now())
+
+  @@unique([office, permission])
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Module / feature toggles
 // ─────────────────────────────────────────────────────────────────────────
@@ -488,30 +664,27 @@ model Module {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Chapter Settings — singleton row (id is always "default")
+// Chapter Settings — one row per Chapter (chapterId is unique, so it's a
+// 1:1 with Chapter, not a free-standing singleton).
 //
-// This whole schema assumes ONE chapter per deployed database/backend
-// instance (matches "ChapterHub" being branded and seeded for a single
-// chapter). Nothing here is multi-tenant: there's no Chapter model, and
-// every table (User, Event, DuesRecord, ...) is implicitly scoped to
-// "whichever chapter this database belongs to." Scaling to MANY chapters
-// sharing one deployment would need a Chapter model and a chapterId
-// foreign key + index added to every tenant-scoped table — a real
-// architectural change, not a config tweak. If that's the actual target
-// deployment model (one shared backend for many chapters), plan it as its
-// own migration project rather than retrofitting incrementally.
+// This used to be a hardcoded `id: "default"` singleton because there was
+// no Chapter model at all. Identity/roster/family/role-number/invite data
+// is now genuinely multi-chapter-capable (see Chapter/ChapterMembership
+// above) — this settings row just carries the per-chapter operational
+// defaults (semester label/dates, dues defaults, attendance thresholds).
+// Chapter's own name/letters/university live on Chapter itself now, not
+// duplicated here.
 //
-// Application code must always upsert this row by id: "default" — never
-// create() with a different id, or the "one row per chapter" assumption
-// silently breaks (Prisma has no built-in "exactly one row" constraint).
+// Note: Event/Committee/DuesRecord/Message/etc. are still NOT chapterId-
+// scoped — that remains a deliberately separate, larger migration (see the
+// account-system implementation plan for the explicit scope line). This
+// settings row only being per-chapter doesn't by itself make those other
+// tables multi-tenant.
 // ─────────────────────────────────────────────────────────────────────────
 
 model ChapterSettings {
-  id                              String   @id @default("default")
-  chapterName                     String
-  chapterLetters                  String
-  university                      String
-  logoUrl                         String?
+  id                              String   @id @default(cuid())
+  chapterId                       String   @unique
   currentSemesterLabel            String
   semesterStartDate               DateTime
   semesterEndDate                 DateTime
@@ -520,6 +693,8 @@ model ChapterSettings {
   attendanceLateThresholdMinutes  Int      @default(15)
   defaultEventPointValue          Int      @default(5)
   updatedAt                       DateTime @updatedAt
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
 }
 
 // ─────────────────────────────────────────────────────────────────────────

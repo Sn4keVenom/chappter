@@ -1,0 +1,225 @@
+// src/screens/auth/LoginScreen.tsx
+//
+// Email-or-username + password sign-in, plus Google/Apple SSO. Clean, dark
+// hero matching the app's "professional, not social" direction — one screen,
+// one primary action, secondary options below the fold.
+//
+// Integration:
+//   · @clerk/clerk-expo useSignIn() — password sign-in
+//   · @clerk/clerk-expo useSSO() — Google/Apple
+//   · hooks/useCompleteAuth.ts — shared activate-session → sync → setUser tail
+//   · navigation/types.ts AuthStackParamList
+
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useSignIn, useSSO } from "@clerk/clerk-expo";
+import { useCompleteAuth } from "../../hooks/useCompleteAuth";
+import { setAuthToken } from "../../api/client";
+import { colors } from "../../theme/colors";
+import type { AuthStackParamList } from "../../navigation/types";
+
+type NavProp = NativeStackNavigationProp<AuthStackParamList>;
+
+export default function LoginScreen() {
+  const navigation = useNavigation<NavProp>();
+  const { isLoaded, signIn } = useSignIn();
+  const { startSSOFlow } = useSSO();
+  const completeAuth = useCompleteAuth();
+
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState<"password" | "google" | "apple" | null>(null);
+
+  async function handlePasswordSignIn() {
+    if (!isLoaded || !identifier.trim() || !password) return;
+    setLoading("password");
+    try {
+      const result = await signIn.create({ identifier: identifier.trim(), password });
+      if (result.status !== "complete" || !result.createdSessionId) {
+        throw new Error("Additional verification is required for this account.");
+      }
+      await completeAuth(result.createdSessionId, undefined, { rememberMe });
+    } catch (err: any) {
+      Alert.alert("Sign in failed", err?.errors?.[0]?.message ?? err?.message ?? "Check your email/username and password.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleSSO(strategy: "oauth_google" | "oauth_apple") {
+    setLoading(strategy === "oauth_google" ? "google" : "apple");
+    try {
+      const result = await startSSOFlow({ strategy });
+      if (!result.createdSessionId) {
+        return; // user cancelled — no error, just stop
+      }
+      await completeAuth(result.createdSessionId, undefined, { rememberMe });
+    } catch (err: any) {
+      setAuthToken(null);
+      Alert.alert("Sign in failed", err?.message ?? "Couldn't connect — check your network and try again.");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={styles.hero}>
+          <View style={styles.logoContainer}>
+            <Text style={styles.logoMark}>ΘΤ</Text>
+          </View>
+          <Text style={styles.appName}>ChapterHub</Text>
+          <Text style={styles.tagline}>Theta Tau Chapter Operations</Text>
+        </View>
+
+        <View style={styles.form}>
+          <TextInput
+            style={styles.input}
+            placeholder="Email or username"
+            placeholderTextColor="rgba(255,255,255,0.45)"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={identifier}
+            onChangeText={setIdentifier}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor="rgba(255,255,255,0.45)"
+            secureTextEntry
+            value={password}
+            onChangeText={setPassword}
+          />
+
+          <Pressable style={styles.rememberRow} onPress={() => setRememberMe((v) => !v)}>
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && <Text style={styles.checkboxMark}>✓</Text>}
+            </View>
+            <Text style={styles.rememberText}>Remember me</Text>
+          </Pressable>
+
+          <Pressable
+            style={[styles.primaryButton, loading && styles.buttonDisabled]}
+            onPress={handlePasswordSignIn}
+            disabled={!!loading || !identifier.trim() || !password}
+          >
+            {loading === "password" ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Text style={styles.primaryButtonText}>Log In</Text>
+            )}
+          </Pressable>
+
+          <Pressable onPress={() => navigation.navigate("ForgotPassword")} disabled={!!loading}>
+            <Text style={styles.linkText}>Forgot password?</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.dividerRow}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or continue with</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <View style={styles.ssoRow}>
+          <Pressable
+            style={[styles.ssoButton, loading && styles.buttonDisabled]}
+            onPress={() => handleSSO("oauth_google")}
+            disabled={!!loading}
+          >
+            {loading === "google" ? (
+              <ActivityIndicator color={colors.textPrimary} />
+            ) : (
+              <Text style={styles.ssoButtonText}>Google</Text>
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.ssoButton, loading && styles.buttonDisabled]}
+            onPress={() => handleSSO("oauth_apple")}
+            disabled={!!loading}
+          >
+            {loading === "apple" ? (
+              <ActivityIndicator color={colors.textPrimary} />
+            ) : (
+              <Text style={styles.ssoButtonText}>Apple</Text>
+            )}
+          </Pressable>
+        </View>
+
+        <Pressable style={styles.createAccountRow} onPress={() => navigation.navigate("SignUp")} disabled={!!loading}>
+          <Text style={styles.createAccountText}>
+            Don't have an account? <Text style={styles.createAccountLink}>Create one</Text>
+          </Text>
+        </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.primary },
+  content: { flexGrow: 1, paddingHorizontal: 28, paddingTop: 72, paddingBottom: 40 },
+  hero: { alignItems: "center", marginBottom: 36 },
+  logoContainer: {
+    width: 80, height: 80, borderRadius: 20, backgroundColor: colors.accent,
+    alignItems: "center", justifyContent: "center", marginBottom: 16,
+  },
+  logoMark: { fontSize: 32, fontWeight: "700", color: colors.primary, letterSpacing: 1 },
+  appName: { fontSize: 30, fontWeight: "800", color: colors.primaryText, letterSpacing: -0.5, marginBottom: 6 },
+  tagline: { fontSize: 14, color: "rgba(255,255,255,0.65)", letterSpacing: 0.2 },
+
+  form: { marginBottom: 24 },
+  input: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: colors.primaryText,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
+  rememberRow: { flexDirection: "row", alignItems: "center", marginBottom: 18 },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)",
+    marginRight: 10, alignItems: "center", justifyContent: "center",
+  },
+  checkboxChecked: { backgroundColor: colors.accent, borderColor: colors.accent },
+  checkboxMark: { color: colors.primary, fontSize: 13, fontWeight: "800" },
+  rememberText: { color: "rgba(255,255,255,0.8)", fontSize: 14 },
+
+  primaryButton: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 15, alignItems: "center", marginBottom: 16 },
+  primaryButtonText: { color: colors.primary, fontWeight: "700", fontSize: 16 },
+  buttonDisabled: { opacity: 0.6 },
+  linkText: { color: colors.primaryText, fontSize: 13, textAlign: "center", textDecorationLine: "underline" },
+
+  dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 24 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.15)" },
+  dividerText: { color: "rgba(255,255,255,0.5)", fontSize: 12, marginHorizontal: 12 },
+
+  ssoRow: { flexDirection: "row", gap: 12 },
+  ssoButton: {
+    flex: 1, backgroundColor: colors.surface, paddingVertical: 14, borderRadius: 12, alignItems: "center",
+  },
+  ssoButtonText: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
+
+  createAccountRow: { marginTop: 28, alignItems: "center" },
+  createAccountText: { color: "rgba(255,255,255,0.75)", fontSize: 14 },
+  createAccountLink: { color: colors.accent, fontWeight: "700" },
+});

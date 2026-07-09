@@ -14,6 +14,21 @@ import type { DocumentCategory } from "../types";
 
 export type AuthStackParamList = {
   Login: undefined;
+  SignUp: undefined;
+  VerifyEmail: { email: string; phone?: string };
+  ForgotPassword: undefined;
+  ResetPassword: { email: string };
+};
+
+// Shown when the user has an account but hasn't joined a chapter yet (spec
+// §2/§3 — never auto-assigned). RootNavigator routes here instead of
+// AuthNavigator/AppNavigator based on useAuthStore's hasChapter/
+// pendingJoinRequest.
+export type OnboardingStackParamList = {
+  // code: pre-filled when opened via an invite deep link
+  // (chapterhub://join?code=XXXX — see RootNavigator's linking config).
+  JoinChapter: { code?: string } | undefined;
+  PendingApproval: undefined;
 };
 
 export type MainTabParamList = {
@@ -46,11 +61,15 @@ export type AppStackParamList = {
 
   // Member screens
   MemberProfile: { userId: string };
+  EditProfile: undefined;
+  MyFamily: { userId?: string }; // omitted = self
 
   // Admin screens
   AuditLog: undefined;
   PointsAdjust: { userId: string; userName: string };
   RosterDetail: undefined;
+  ChapterInviteManager: undefined;
+  JoinRequests: undefined;
 
   // Dues management
   DuesDetail: { userId: string; userName: string };
@@ -79,5 +98,6 @@ export type AppStackParamList = {
 
 export type RootStackParamList = {
   Auth: undefined;
+  Onboarding: undefined;
   App: undefined;
 };

@@ -140,7 +140,7 @@ interface AdminStats {
 
 export default function AdminPanelScreen() {
   const navigation = useNavigation<NavProp>();
-  const { isExecOrAbove, isTreasurerOrAdmin, isSuperAdmin } = usePermissions();
+  const { isExecOrAbove, isTreasurerOrAdmin, isSuperAdmin, can } = usePermissions();
   const isEventsEnabled = useModulesStore((s) => s.isEnabled("events"));
   const isDuesEnabled = useModulesStore((s) => s.isEnabled("dues"));
   const isCommitteesEnabled = useModulesStore((s) => s.isEnabled("committees"));
@@ -357,6 +357,27 @@ export default function AdminPanelScreen() {
           />
         )}
       </View>
+
+      {/* Chapter Membership — chapters.manageInvites (spec §3/§11) */}
+      {can("chapters.manageInvites") && (
+        <>
+          <SectionHeader title="Chapter Membership" />
+          <View style={styles.actionGroup}>
+            <ActionRow
+              icon="🔗"
+              label="Invite Members"
+              sub="Create or revoke invite codes/links"
+              onPress={() => navigation.navigate("ChapterInviteManager")}
+            />
+            <ActionRow
+              icon="📥"
+              label="Join Requests"
+              sub="Review pending requests to join the chapter"
+              onPress={() => navigation.navigate("JoinRequests")}
+            />
+          </View>
+        </>
+      )}
 
       {/* Dues — Exec+ only, Treasurer-owned */}
       {isExecOrAbove && isDuesEnabled && (

@@ -28,14 +28,24 @@ import { enableScreens } from "react-native-screens";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ClerkProvider } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
+import * as WebBrowser from "expo-web-browser";
 
 import RootNavigator from "./src/navigation/RootNavigator";
 import SessionRestore from "./src/navigation/SessionRestore";
+import ClerkTokenBridge from "./src/navigation/ClerkTokenBridge";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { DEMO_MODE } from "./src/config/demo";
 import { bootstrapDemoSession } from "./src/mocks/bootstrap";
 
 enableScreens();
+
+// Required by Clerk's Expo OAuth flow (useSSO/startSSOFlow — Google/Apple
+// sign-in on LoginScreen): without this, the in-app browser session opened
+// for the OAuth redirect never signals completion back to the app, so the
+// promise from startSSOFlow can hang or the browser tab can fail to
+// auto-dismiss after the provider redirects back. Must be called once, at
+// module scope, before any component calls useSSO.
+WebBrowser.maybeCompleteAuthSession();
 
 // Demo Mode (default, no env vars required): populate the auth store with a
 // mock user before the first render, so the app launches straight into the
@@ -105,10 +115,16 @@ export default function App() {
           content
         ) : (
           <ClerkProvider publishableKey={PUBLISHABLE_KEY!} tokenCache={tokenCache}>
-            {/* Restores an existing Clerk session on cold start — see
-                SessionRestore.tsx doc comment. Only ever rendered here,
-                inside ClerkProvider; Demo Mode never mounts it. */}
-            <SessionRestore>{content}</SessionRestore>
+            {/* Keeps every API request's Authorization header on a live,
+                unexpired JWT for the whole session — see ClerkTokenBridge's
+                doc comment for why this can't just be a token cached once
+                at sign-in. */}
+            <ClerkTokenBridge>
+              {/* Restores an existing Clerk session on cold start — see
+                  SessionRestore.tsx doc comment. Only ever rendered here,
+                  inside ClerkProvider; Demo Mode never mounts it. */}
+              <SessionRestore>{content}</SessionRestore>
+            </ClerkTokenBridge>
           </ClerkProvider>
         )}
       </GestureHandlerRootView>

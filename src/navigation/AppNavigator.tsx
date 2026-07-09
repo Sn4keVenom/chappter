@@ -50,6 +50,10 @@ import DocumentsScreen from "../screens/DocumentsScreen";
 import DocumentCategoryScreen from "../screens/DocumentCategoryScreen";
 import FeedbackScreen from "../screens/FeedbackScreen";
 import FeedbackListScreen from "../screens/admin/FeedbackListScreen";
+import EditProfileScreen from "../screens/EditProfileScreen";
+import MyFamilyScreen from "../screens/MyFamilyScreen";
+import ChapterInviteManagerScreen from "../screens/admin/ChapterInviteManagerScreen";
+import JoinRequestsScreen from "../screens/admin/JoinRequestsScreen";
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -188,10 +192,14 @@ export default function AppNavigator() {
 
       {/* Member/Admin */}
       <Stack.Screen name="MemberProfile" component={MemberProfileScreen} options={{ title: "Member" }} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: "Edit Profile" }} />
+      <Stack.Screen name="MyFamily" component={MyFamilyScreen} options={{ title: "Family" }} />
       <Stack.Screen name="AuditLog" component={NotImplementedScreen} options={{ title: "Audit Log" }} />
       <Stack.Screen name="PointsAdjust" component={PointsAdjustScreen} options={{ title: "Adjust Points" }} />
       <Stack.Screen name="RosterDetail" component={RosterDetailScreen} options={{ title: "Roster" }} />
       <Stack.Screen name="DuesDetail" component={DuesDetailScreen} options={{ title: "Dues" }} />
+      <Stack.Screen name="ChapterInviteManager" component={ChapterInviteManagerScreen} options={{ title: "Invites" }} />
+      <Stack.Screen name="JoinRequests" component={JoinRequestsScreen} options={{ title: "Join Requests" }} />
 
       {/* Teams (Feature 2) */}
       <Stack.Screen name="TeamDetail" component={TeamDetailScreen} options={{ title: "Team" }} />

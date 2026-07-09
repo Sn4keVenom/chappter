@@ -11,6 +11,7 @@
 
 import { useAuthStore } from "../store/useAuthStore";
 import { usePermissionsStore } from "../store/usePermissionsStore";
+import { useOfficePermissionsStore } from "../store/useOfficePermissionsStore";
 import { useModulesStore } from "../store/useModulesStore";
 import { getCurrentDemoUser, setCurrentDemoUserId, toAppUser } from "./identity";
 import { DEMO_MODE } from "../config/demo";
@@ -22,6 +23,7 @@ export function bootstrapDemoSession(): void {
   // Fetched once at boot so any admin edits already applied this session
   // are reflected everywhere immediately.
   usePermissionsStore.getState().fetchPermissions();
+  useOfficePermissionsStore.getState().fetchOfficePermissions();
   useModulesStore.getState().fetchModules();
 }
 

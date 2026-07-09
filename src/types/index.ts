@@ -88,6 +88,17 @@ export const ALL_PERMISSIONS = [
   "settings.manage",
   "modules.manage",
   "permissions.manage",
+  // Chapter/membership system (account-system expansion) — chapters.manage
+  // covers chapter identity (create/edit); chapters.manageInvites covers
+  // invite codes/links + join-request review; membership.assignRoleNumber
+  // and membership.manageRelationships are deliberately separate from
+  // users.manage (spec §11 calls them out as distinct concerns), and the
+  // former is granted by office (see DEFAULT_OFFICE_PRESETS in
+  // permissions/permissions.ts), not just role.
+  "chapters.manage",
+  "chapters.manageInvites",
+  "membership.assignRoleNumber",
+  "membership.manageRelationships",
 ] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number];
@@ -97,6 +108,13 @@ export type Permission = (typeof ALL_PERMISSIONS)[number];
 // and api/permissions.ts for the client wrapper.
 export interface RolePermissions {
   role: UserRole;
+  permissions: Permission[];
+}
+
+// Parallel wire format for office-scoped grants (e.g. Scribe → role
+// numbers) — see DEFAULT_OFFICE_PRESETS in permissions/permissions.ts.
+export interface OfficePermissions {
+  office: ExecOffice;
   permissions: Permission[];
 }
 
@@ -201,17 +219,42 @@ export interface FeedbackReport {
 // Core entities
 // ─────────────────────────────────────────────────────────────────────────
 
+// User is the flattened wire shape: identity fields from the User table
+// plus — when the person has joined a chapter — their active
+// ChapterMembership's fields flattened onto the same object (role, office,
+// status, roleNumber, big/littles, major, graduationYear, pledgeClassLabel).
+// The database keeps these on separate rows (see backend schema.prisma
+// Chapter/ChapterMembership doc comment) so role numbers can be unique per
+// chapter and Big/Little resolve within one chapter's roster; the API
+// flattens them back so existing screens that read `user.role` etc. don't
+// need to change. role/office/status/roleNumber are only present once
+// hasChapter is true.
 export interface User {
   id: string;
+  username: string;
   firstName: string;
   lastName: string;
   email: string;
   phone?: string | null;
   avatarUrl?: string | null;
-  role: UserRole;
+  major?: string | null;
+  graduationYear?: number | null;
+  // True once this user has an active chapter membership (redeemed an
+  // invite or had a join request approved). False right after account
+  // creation/email verification — see spec §2/§3: never auto-assigned.
+  hasChapter: boolean;
+  // Only populated (by /auth/sync and GET /chapters/me/pending) when
+  // hasChapter is false — lets onboarding show "pending approval" instead
+  // of the join options when one's already outstanding.
+  pendingJoinRequest?: ChapterJoinRequest | null;
+  chapterId?: string | null;
+  role?: UserRole;
   office?: ExecOffice | null;
-  status: MemberStatus;
+  status?: MemberStatus;
+  roleNumber?: number | null;
   pledgeClassLabel?: string | null;
+  big?: FamilyMemberSummary | null;
+  littles?: FamilyMemberSummary[];
   committeeChairOf: string[];
   committeeMemberships?: CommitteeMembershipSummary[];
   teamId?: string | null;
@@ -220,14 +263,62 @@ export interface User {
 
 export interface UserSummary {
   id: string;
+  username: string;
   firstName: string;
   lastName: string;
   email: string;
   avatarUrl?: string | null;
-  role: UserRole;
+  role?: UserRole;
   office?: ExecOffice | null;
-  status: MemberStatus;
+  status?: MemberStatus;
+  roleNumber?: number | null;
   pledgeClassLabel?: string | null;
+}
+
+// Lightweight reference to a family relation (Big or a Little) — enough to
+// render a row and navigate to their full profile. See MyFamilyScreen and
+// GET /users/:id/family.
+export interface FamilyMemberSummary {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string | null;
+  roleNumber?: number | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Chapters, invites, join requests (spec §3)
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ChapterSummary {
+  id: string;
+  name: string;
+  letters?: string | null;
+  university?: string | null;
+  logoUrl?: string | null;
+}
+
+export interface ChapterInvite {
+  id: string;
+  chapterId: string;
+  code: string;
+  role: UserRole;
+  status: MemberStatus;
+  maxUses?: number | null;
+  useCount: number;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+}
+
+export interface ChapterJoinRequest {
+  id: string;
+  chapterId: string;
+  chapterName?: string;
+  message?: string | null;
+  status: "PENDING" | "APPROVED" | "DENIED";
+  createdAt: string;
+  user?: { id: string; firstName: string; lastName: string; email: string };
 }
 
 export interface Semester {

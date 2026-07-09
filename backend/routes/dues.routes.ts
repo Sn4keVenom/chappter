@@ -95,13 +95,21 @@ router.post(
     const semester = await prisma.semester.findUnique({ where: { id: semesterId } });
     if (!semester) return res.status(404).json({ error: "Semester not found" });
 
-    const targets = userIds
-      ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true } })
-      : await prisma.user.findMany({ where: { status: { in: ["ACTIVE", "PNM"] } }, select: { id: true } });
+    // status lives on ChapterMembership now, not User (see schema.prisma
+    // doc comment) — default target set is ACTIVE/PNM members of the
+    // caller's own chapter.
+    const targetIds = userIds
+      ? userIds
+      : (
+          await prisma.chapterMembership.findMany({
+            where: { chapterId: req.user!.chapterId!, status: { in: ["ACTIVE", "PNM"] } },
+            select: { userId: true },
+          })
+        ).map((m) => m.userId);
 
     const result = await prisma.duesRecord.createMany({
-      data: targets.map((u) => ({
-        userId: u.id,
+      data: targetIds.map((userId) => ({
+        userId,
         semesterId,
         amountOwed,
         dueDate: dueDate ? new Date(dueDate) : null,
@@ -118,7 +126,7 @@ router.post(
       after: { semesterId, amountOwed, count: result.count },
     });
 
-    res.json({ created: result.count, total: targets.length });
+    res.json({ created: result.count, total: targetIds.length });
   })
 );
 

@@ -3,6 +3,7 @@
     "name": "ChapterHub",
     "slug": "chapterhub",
     "version": "1.0.0",
+    "scheme": "chapterhub",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

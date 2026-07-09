@@ -5,16 +5,31 @@
 // or `requireCommitteeScope` — never trust a client-sent role claim.
 
 import { Request, Response, NextFunction } from "express";
-import { UserRole, Prisma } from "@prisma/client";
+import { UserRole, ExecOffice, MemberStatus, Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 
 // Populated by an upstream auth middleware that verifies the Clerk/Firebase
-// JWT and attaches the local User row (looked up by authProviderId), so role
-// changes take effect immediately rather than waiting for token refresh.
+// JWT, loads the local User row, and resolves their active ChapterMembership
+// (role/office/status/permissions now live there, not on User — see
+// schema.prisma's Chapter/ChapterMembership doc comment). All membership
+// fields are optional: a user who hasn't joined a chapter yet is still
+// authenticated (req.user.id is always set) but has none of them, and every
+// requireRole/requirePermission check below correctly denies rather than
+// throwing in that case.
 export interface AuthedRequest extends Request {
   user?: {
     id: string;
-    role: UserRole;
+    chapterId?: string;
+    membershipId?: string;
+    role?: UserRole;
+    office?: ExecOffice;
+    status?: MemberStatus;
+    // Union of RolePermission (by role) + OfficePermission (by office) grants
+    // for this request's membership — computed once in middleware/auth.ts so
+    // requirePermission() below is a cheap in-memory check, not a query per
+    // route. Empty (not undefined) when there's a membership with no grants;
+    // undefined only when there's no membership at all.
+    permissions?: Set<string>;
   };
 }
 
@@ -33,8 +48,10 @@ export const ROLE_RANK: Record<UserRole, number> = {
   SUPER_ADMIN: 2,
 };
 
-/** True if `role` is at least `minRole` in the tier above. */
-export function isAtLeast(role: UserRole, minRole: UserRole): boolean {
+/** True if `role` is at least `minRole` in the tier above. A missing role
+ * (no chapter membership yet) is never at least anything. */
+export function isAtLeast(role: UserRole | undefined, minRole: UserRole): boolean {
+  if (!role) return false;
   return ROLE_RANK[role] >= ROLE_RANK[minRole];
 }
 
@@ -46,6 +63,34 @@ export function requireRole(minRole: UserRole) {
     }
     if (!isAtLeast(req.user.role, minRole)) {
       // No detail on what was required — avoid leaking authorization internals.
+      return res.status(403).json({ error: "Not permitted" });
+    }
+    next();
+  };
+}
+
+/**
+ * Require a specific granular permission (RolePermission ∪ OfficePermission
+ * for the caller's active membership — see middleware/auth.ts, which
+ * resolves and attaches req.user.permissions once per request). SUPER_ADMIN
+ * unconditionally bypasses, mirroring the mobile permission engine's
+ * hasPermission() and RolePermission's own doc comment (it intentionally
+ * has no SUPER_ADMIN rows to query).
+ *
+ * Use this — not requireRole — for the newer chapter/membership/invite
+ * routes, which were built to be genuinely data-driven per spec §11 rather
+ * than hardcoded to a role tier. Existing routes still on requireRole are a
+ * separate, pre-existing gap (see docs/PERMISSIONS.md) this doesn't retrofit.
+ */
+export function requirePermission(permission: string) {
+  return (req: AuthedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    if (req.user.role === "SUPER_ADMIN") {
+      return next();
+    }
+    if (!req.user.permissions?.has(permission)) {
       return res.status(403).json({ error: "Not permitted" });
     }
     next();

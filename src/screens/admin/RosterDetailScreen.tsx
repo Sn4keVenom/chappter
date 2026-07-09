@@ -129,8 +129,8 @@ export default function RosterDetailScreen() {
                 <Text style={styles.rowName}>{item.firstName} {item.lastName}</Text>
                 <Text style={styles.rowMeta}>{item.email}{item.pledgeClassLabel ? ` · ${item.pledgeClassLabel}` : ""}</Text>
               </View>
-              <View style={[styles.roleBadge, { borderColor: ROLE_COLOR[item.role] }]}>
-                <Text style={[styles.roleBadgeText, { color: ROLE_COLOR[item.role] }]}>{item.role}</Text>
+              <View style={[styles.roleBadge, { borderColor: ROLE_COLOR[item.role ?? "MEMBER"] }]}>
+                <Text style={[styles.roleBadgeText, { color: ROLE_COLOR[item.role ?? "MEMBER"] }]}>{item.role}</Text>
               </View>
             </Pressable>
           )}

@@ -1,9 +1,17 @@
 // backend/middleware/auth.ts
 //
-// Verifies the Clerk JWT from the Authorization header, then looks up the
-// local User row so role changes take effect immediately — not on token
-// refresh. Attaches { id, role } to req.user, which is consumed by
-// requireRole / requireCommitteeScope in rbac.ts.
+// Verifies the Clerk JWT from the Authorization header, looks up the local
+// User row, then resolves their active ChapterMembership (role/office/status
+// live there now, not on User — see schema.prisma) plus the permission set
+// that membership grants (RolePermission ∪ OfficePermission). Attaches all
+// of it to req.user so role/permission changes take effect immediately, not
+// on token refresh, and so requireRole/requirePermission in rbac.ts are
+// cheap synchronous checks rather than a query per route.
+//
+// A user with no activeChapterId (hasn't joined a chapter yet) still
+// authenticates successfully — req.user.id is set — but role/office/status/
+// permissions are all left undefined, so every requireRole/requirePermission
+// check correctly denies rather than throwing.
 //
 // Integration points:
 //   · AuthedRequest interface — imported from rbac.ts
@@ -41,7 +49,7 @@ export async function authMiddleware(
 
     const user = await prisma.user.findUnique({
       where: { authProviderId },
-      select: { id: true, role: true },
+      select: { id: true, activeChapterId: true },
     });
 
     if (!user) {
@@ -55,7 +63,44 @@ export async function authMiddleware(
       return;
     }
 
-    req.user = { id: user.id, role: user.role };
+    const membership = user.activeChapterId
+      ? await prisma.chapterMembership.findUnique({
+          where: { chapterId_userId: { chapterId: user.activeChapterId, userId: user.id } },
+          select: { id: true, role: true, office: true, status: true },
+        })
+      : null;
+
+    const permissions = new Set<string>();
+    // SUPER_ADMIN bypasses every check unconditionally (requireRole/
+    // requirePermission both special-case it) — no need to populate its
+    // permission set, matching RolePermission's convention of never storing
+    // rows for that role.
+    if (membership && membership.role !== "SUPER_ADMIN") {
+      const [roleRows, officeRows] = await Promise.all([
+        prisma.rolePermission.findMany({
+          where: { role: membership.role },
+          select: { permission: true },
+        }),
+        membership.office
+          ? prisma.officePermission.findMany({
+              where: { office: membership.office },
+              select: { permission: true },
+            })
+          : Promise.resolve([]),
+      ]);
+      for (const row of roleRows) permissions.add(row.permission);
+      for (const row of officeRows) permissions.add(row.permission);
+    }
+
+    req.user = {
+      id: user.id,
+      chapterId: user.activeChapterId ?? undefined,
+      membershipId: membership?.id,
+      role: membership?.role,
+      office: membership?.office ?? undefined,
+      status: membership?.status,
+      permissions,
+    };
     next();
   } catch {
     res.status(401).json({ error: "Invalid or expired token" });

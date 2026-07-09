@@ -80,7 +80,7 @@ function committeeChairOf(userId: string): string[] {
 function can(userId: string, permission: Permission): boolean {
   const u = db.findUser(userId);
   if (!u) return false;
-  return hasPermission(u.role, db.rolePermissions, permission);
+  return hasPermission(u.role, db.rolePermissions, permission, u.office, db.officePermissions);
 }
 
 function isExecOrAbove(userId: string): boolean {
@@ -247,6 +247,9 @@ export function setRsvp(eventId: string, status: RsvpStatus): void {
 function toUserSummary(u: db.MockUser): UserSummary {
   return {
     id: u.id,
+    // MockUser predates username (added with the real account system) —
+    // derived from email rather than touching every seeded user record.
+    username: u.email.split("@")[0],
     firstName: u.firstName,
     lastName: u.lastName,
     email: u.email,
@@ -254,6 +257,7 @@ function toUserSummary(u: db.MockUser): UserSummary {
     role: u.role,
     office: u.office ?? null,
     status: u.status,
+    roleNumber: u.roleNumber ?? null,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
   };
 }
@@ -269,15 +273,23 @@ function toFullUser(u: db.MockUser): User {
   const team = u.teamId ? db.findTeam(u.teamId) : undefined;
   return {
     id: u.id,
+    username: u.email.split("@")[0],
     firstName: u.firstName,
     lastName: u.lastName,
     email: u.email,
     phone: u.phone ?? null,
     avatarUrl: u.avatarUrl ?? null,
+    // Demo Mode doesn't model Chapter/ChapterMembership as separate tables
+    // (see docs/DEMO_MODE.md) — every seeded user is already "in the
+    // chapter," so this is always true here.
+    hasChapter: true,
     role: u.role,
     office: u.office ?? null,
     status: u.status,
+    roleNumber: u.roleNumber ?? null,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
+    major: u.major ?? null,
+    graduationYear: u.graduationYear ?? null,
     committeeChairOf: committeeChairOf(u.id),
     committeeMemberships: memberships,
     teamId: u.teamId ?? null,
@@ -427,7 +439,14 @@ export function updateUserRole(userId: string, role: UserRole): User {
 // and only touched when present in the payload.
 export function updateUserFields(
   userId: string,
-  payload: { role?: UserRole; office?: ExecOffice | null; status?: MemberStatus }
+  payload: {
+    role?: UserRole;
+    office?: ExecOffice | null;
+    status?: MemberStatus;
+    pledgeClassLabel?: string | null;
+    major?: string | null;
+    graduationYear?: number | null;
+  }
 ): User {
   const u = db.findUser(userId);
   if (!u) throw new DemoApiError(404, "User not found");
@@ -437,7 +456,165 @@ export function updateUserFields(
   if (payload.role !== undefined) u.role = payload.role;
   if (payload.office !== undefined) u.office = payload.office;
   if (payload.status !== undefined) u.status = payload.status;
+  if (payload.pledgeClassLabel !== undefined) u.pledgeClassLabel = payload.pledgeClassLabel;
+  if (payload.major !== undefined) u.major = payload.major;
+  if (payload.graduationYear !== undefined) u.graduationYear = payload.graduationYear;
   return toFullUser(u);
+}
+
+// ── Family (Big/Little) & Role Numbers (account-system spec §6/§7) ───────
+
+function toFamilyMemberSummary(u: db.MockUser) {
+  return {
+    userId: u.id,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    avatarUrl: u.avatarUrl ?? null,
+    roleNumber: u.roleNumber ?? null,
+  };
+}
+
+export function getFamily(userId: string): { big: ReturnType<typeof toFamilyMemberSummary> | null; littles: ReturnType<typeof toFamilyMemberSummary>[] } {
+  const u = db.findUser(userId);
+  if (!u) throw new DemoApiError(404, "User not found");
+  const big = u.bigId ? db.findUser(u.bigId) : undefined;
+  const littles = db.users.filter((m) => m.bigId === userId);
+  return {
+    big: big ? toFamilyMemberSummary(big) : null,
+    littles: littles.map(toFamilyMemberSummary),
+  };
+}
+
+export function setBig(userId: string, bigUserId: string | null): User {
+  const u = db.findUser(userId);
+  if (!u) throw new DemoApiError(404, "User not found");
+  if (!can(getCurrentDemoUserId(), "membership.manageRelationships")) {
+    throw new DemoApiError(403, "Not authorized to assign Big/Little");
+  }
+  if (bigUserId === null) {
+    u.bigId = null;
+    return toFullUser(u);
+  }
+  const big = db.findUser(bigUserId);
+  if (!big) throw new DemoApiError(404, "Proposed Big not found");
+  if (big.id === u.id) throw new DemoApiError(400, "A member can't be their own Big");
+
+  // Same cycle guard as the real backend (membership.routes.ts) — walk the
+  // proposed Big's own lineage for the target, bounded so a corrupt chain
+  // can't loop forever.
+  let cursor: string | null | undefined = big.bigId;
+  for (let hops = 0; cursor && hops < 50; hops++) {
+    if (cursor === u.id) throw new DemoApiError(400, "That assignment would create a Big/Little cycle");
+    cursor = db.findUser(cursor)?.bigId;
+  }
+
+  u.bigId = big.id;
+  return toFullUser(u);
+}
+
+export function setRoleNumber(userId: string, roleNumber: number | null): User {
+  const u = db.findUser(userId);
+  if (!u) throw new DemoApiError(404, "User not found");
+  if (!can(getCurrentDemoUserId(), "membership.assignRoleNumber")) {
+    throw new DemoApiError(403, "Not authorized to assign role numbers");
+  }
+  if (roleNumber !== null && u.status === "PNM") {
+    throw new DemoApiError(400, "PNMs can't be assigned a role number until they're initiated — update status first");
+  }
+  if (roleNumber !== null && db.users.some((m) => m.id !== userId && m.roleNumber === roleNumber)) {
+    throw new DemoApiError(409, "That role number is already in use in this chapter");
+  }
+  u.roleNumber = roleNumber;
+  return toFullUser(u);
+}
+
+export function updateMyProfile(payload: {
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  major?: string | null;
+  graduationYear?: number | null;
+}): User {
+  const u = db.findUser(getCurrentDemoUserId());
+  if (!u) throw new DemoApiError(404, "User not found");
+  if (payload.firstName !== undefined) u.firstName = payload.firstName;
+  if (payload.lastName !== undefined) u.lastName = payload.lastName;
+  if (payload.phone !== undefined) u.phone = payload.phone ?? undefined;
+  if (payload.avatarUrl !== undefined) u.avatarUrl = payload.avatarUrl;
+  if (payload.major !== undefined) u.major = payload.major;
+  if (payload.graduationYear !== undefined) u.graduationYear = payload.graduationYear;
+  return toFullUser(u);
+}
+
+// ── Chapters, invites & join requests (account-system spec §3) ───────────
+// Demo Mode only models one chapter (see docs/DEMO_MODE.md) — enough to
+// demonstrate ChapterInviteManagerScreen/JoinRequestsScreen, reachable from
+// AdminPanelScreen for any Exec+ demo user.
+
+export function listChapters(): { id: string; name: string; letters: string | null; university: string | null; logoUrl: string | null }[] {
+  return [{
+    id: db.DEMO_CHAPTER_ID,
+    name: db.chapterSettings.chapterName,
+    letters: db.chapterSettings.chapterLetters,
+    university: db.chapterSettings.university,
+    logoUrl: db.chapterSettings.logoUrl ?? null,
+  }];
+}
+
+function requireChapterInviteAccess(): void {
+  if (!can(getCurrentDemoUserId(), "chapters.manageInvites")) {
+    throw new DemoApiError(403, "Not authorized to manage chapter invites");
+  }
+}
+
+export function createInvite(
+  _chapterId: string,
+  payload: { role?: UserRole; status?: MemberStatus; maxUses?: number | null; expiresAt?: string | null }
+): db.MockChapterInvite {
+  requireChapterInviteAccess();
+  const code = Math.random().toString(36).slice(2, 10).toUpperCase();
+  const invite: db.MockChapterInvite = {
+    id: db.nextInviteId(),
+    chapterId: db.DEMO_CHAPTER_ID,
+    code,
+    role: payload.role ?? "MEMBER",
+    status: payload.status ?? "PNM",
+    maxUses: payload.maxUses ?? null,
+    useCount: 0,
+    expiresAt: payload.expiresAt ?? null,
+    revokedAt: null,
+    createdById: getCurrentDemoUserId(),
+    createdAt: new Date().toISOString(),
+  };
+  db.chapterInvites.push(invite);
+  return invite;
+}
+
+export function getInvites(_chapterId: string): db.MockChapterInvite[] {
+  requireChapterInviteAccess();
+  return db.chapterInvites.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export function revokeInvite(_chapterId: string, inviteId: string): db.MockChapterInvite {
+  requireChapterInviteAccess();
+  const invite = db.chapterInvites.find((i) => i.id === inviteId);
+  if (!invite) throw new DemoApiError(404, "Invite not found");
+  invite.revokedAt = new Date().toISOString();
+  return invite;
+}
+
+export function getJoinRequests(_chapterId: string, status: string): db.MockJoinRequest[] {
+  requireChapterInviteAccess();
+  return db.joinRequests.filter((r) => r.status === status);
+}
+
+export function reviewJoinRequest(joinRequestId: string, approve: boolean): db.MockJoinRequest {
+  requireChapterInviteAccess();
+  const request = db.joinRequests.find((r) => r.id === joinRequestId);
+  if (!request) throw new DemoApiError(404, "Join request not found");
+  request.status = approve ? "APPROVED" : "DENIED";
+  return request;
 }
 
 export function getLeaderboard(): { leaderboard: LeaderboardEntry[]; semesterLabel: string | null } {
@@ -1389,6 +1566,25 @@ export function updateRolePermissions(role: UserRole, permissions: Permission[])
   if (role === "SUPER_ADMIN") throw new DemoApiError(400, "Super Admin permissions can't be edited — always unrestricted");
   db.rolePermissions[role] = permissions;
   return { role, permissions };
+}
+
+// Office-scoped grants (e.g. Scribe → role numbers) — parallel to the role
+// preset editor above (account-system spec §6/§11).
+const EDITABLE_OFFICES: ExecOffice[] = [
+  "REGENT", "VICE_REGENT", "TREASURER", "SCRIBE", "MARSHAL",
+  "CORRESPONDING_SECRETARY", "NEW_MEMBER_EDUCATOR",
+];
+
+export function getOfficePermissions(): { office: ExecOffice; permissions: Permission[] }[] {
+  return EDITABLE_OFFICES.map((office) => ({ office, permissions: db.officePermissions[office] ?? [] }));
+}
+
+export function updateOfficePermissions(office: ExecOffice, permissions: Permission[]): { office: ExecOffice; permissions: Permission[] } {
+  if (!can(getCurrentDemoUserId(), "permissions.manage")) {
+    throw new DemoApiError(403, "Not authorized to modify office permissions");
+  }
+  db.officePermissions[office] = permissions;
+  return { office, permissions };
 }
 
 // ── Modules (spec §5) ────────────────────────────────────────────────────

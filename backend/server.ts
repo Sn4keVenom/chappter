@@ -65,6 +65,8 @@ import modulesRouter from "./routes/modules.routes";
 import documentsRouter from "./routes/documents.routes";
 import feedbackRouter from "./routes/feedback.routes";
 import permissionsRouter from "./routes/permissions.routes";
+import chaptersRouter from "./routes/chapters.routes";
+import membershipRouter from "./routes/membership.routes";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -165,6 +167,8 @@ app.use("/api/v1", modulesRouter);
 app.use("/api/v1", documentsRouter);
 app.use("/api/v1", feedbackRouter);
 app.use("/api/v1", permissionsRouter);
+app.use("/api/v1", chaptersRouter);
+app.use("/api/v1", membershipRouter);
 
 // ── 11. 404 for anything unmatched ──────────────────────────────────────────
 app.use((req, res) => {

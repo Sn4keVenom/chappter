@@ -291,19 +291,37 @@ export default function ProfileScreen() {
           </Text>
         </View>
         <Text style={styles.heroName}>{displayName}</Text>
+        {profile?.username && <Text style={styles.heroUsername}>@{profile.username}</Text>}
         <Text style={styles.heroRole}>
           {(profile?.office ?? userFromStore?.office)
             ? `${officeLabel(profile?.office ?? userFromStore?.office)} · `
             : ""}
           {profile?.role ?? userFromStore?.role}
+          {profile?.roleNumber != null ? ` · #${profile.roleNumber}` : ""}
         </Text>
         {profile?.pledgeClassLabel && (
           <Text style={styles.heroPledgeClass}>{profile.pledgeClassLabel}</Text>
         )}
+        {(profile?.major || profile?.graduationYear) && (
+          <Text style={styles.heroMeta}>
+            {[profile?.major, profile?.graduationYear ? `Class of ${profile.graduationYear}` : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </Text>
+        )}
         {profile?.email && (
           <Text style={styles.heroEmail}>{profile.email}</Text>
         )}
+        <Pressable style={styles.editProfileBtn} onPress={() => navigation.navigate("EditProfile")}>
+          <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+        </Pressable>
       </View>
+
+      {/* Family (Big/Little) — spec §7/§8 */}
+      <Pressable style={styles.card} onPress={() => navigation.navigate("MyFamily", {})}>
+        <Text style={styles.cardLabel}>Family</Text>
+        <Text style={styles.familyLinkText}>View my Big &amp; Littles ›</Text>
+      </Pressable>
 
       {/* Points card */}
       {semesterLabel && (
@@ -483,9 +501,17 @@ const styles = StyleSheet.create({
   },
   avatarInitials: { fontSize: 30, fontWeight: "800", color: colors.primaryText },
   heroName: { fontSize: 22, fontWeight: "800", color: colors.textPrimary },
+  heroUsername: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   heroRole: { fontSize: 13, color: colors.textSecondary, marginTop: 2, textTransform: "uppercase", letterSpacing: 0.3 },
   heroPledgeClass: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  heroMeta: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
   heroEmail: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  editProfileBtn: {
+    marginTop: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 8,
+    paddingHorizontal: 16, paddingVertical: 8,
+  },
+  editProfileBtnText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
+  familyLinkText: { fontSize: 15, fontWeight: "600", color: colors.primary },
 
   // Cards
   card: {

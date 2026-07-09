@@ -14,7 +14,7 @@
 // presets include it. No other file needs to change — every screen that
 // gates on it calls hasPermission(...) fresh.
 
-import type { Permission, UserRole } from "../types";
+import type { ExecOffice, Permission, UserRole } from "../types";
 import { ALL_PERMISSIONS } from "../types";
 
 // ── Role tier (Exec/Super Admin comparisons only — NOT used for granular
@@ -54,6 +54,7 @@ export const DEFAULT_ROLE_PRESETS: Record<Exclude<UserRole, "SUPER_ADMIN">, Perm
     "teams.manage",
     "feedback.view", "feedback.manage",
     "users.manage",
+    "chapters.manageInvites", "membership.manageRelationships",
   ],
   MEMBER: [
     "events.view",
@@ -83,16 +84,37 @@ export function defaultRolePermissions(): Record<UserRole, Permission[]> {
   };
 }
 
+// ── Default permission grants per named office ────────────────────────────
+// Separate from role presets — a grant here applies regardless of the
+// holder's role tier (spec §11: "default: Super Admin and Scribe" for role
+// numbers, expressed as data here rather than an `office === "SCRIBE"`
+// check wherever role numbers are assigned). SUPER_ADMIN's unconditional
+// bypass in hasPermission() below means it never needs an entry here either.
+
+export const DEFAULT_OFFICE_PRESETS: Partial<Record<ExecOffice, Permission[]>> = {
+  SCRIBE: ["membership.assignRoleNumber"],
+};
+
+export function defaultOfficePermissions(): Partial<Record<ExecOffice, Permission[]>> {
+  return { SCRIBE: [...(DEFAULT_OFFICE_PRESETS.SCRIBE ?? [])] };
+}
+
 // ── The check every screen/mock-endpoint should call ──────────────────────
+// officePresets is optional so existing call sites that don't pass one
+// (nothing granted by office) keep working unchanged.
 
 export function hasPermission(
   role: UserRole | null | undefined,
   currentPresets: Record<UserRole, Permission[]>,
-  permission: Permission
+  permission: Permission,
+  office?: ExecOffice | null,
+  officePresets?: Partial<Record<ExecOffice, Permission[]>>
 ): boolean {
   if (!role) return false;
   if (role === "SUPER_ADMIN") return true; // unconditional bypass, spec §4
-  return (currentPresets[role] ?? []).includes(permission);
+  if ((currentPresets[role] ?? []).includes(permission)) return true;
+  if (office && officePresets?.[office]?.includes(permission)) return true;
+  return false;
 }
 
 // ── Scoped "management access" helper ──────────────────────────────────────
@@ -158,6 +180,10 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "settings.manage": "Manage chapter settings",
   "modules.manage": "Enable/disable modules",
   "permissions.manage": "Modify role permissions",
+  "chapters.manage": "Manage chapter identity",
+  "chapters.manageInvites": "Manage invite codes/links & join requests",
+  "membership.assignRoleNumber": "Assign role numbers",
+  "membership.manageRelationships": "Assign Big/Little",
 };
 
 export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] = [
@@ -170,7 +196,8 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
   { label: "Finance", permissions: ["dues.manage", "finance.manage"] },
   { label: "Teams", permissions: ["teams.manage"] },
   { label: "Feedback", permissions: ["feedback.view", "feedback.manage"] },
-  { label: "Chapter Administration", permissions: ["users.manage", "settings.manage", "modules.manage", "permissions.manage"] },
+  { label: "Membership", permissions: ["membership.assignRoleNumber", "membership.manageRelationships"] },
+  { label: "Chapter Administration", permissions: ["users.manage", "settings.manage", "modules.manage", "permissions.manage", "chapters.manage", "chapters.manageInvites"] },
 ];
 
 export const ASSIGNABLE_ROLES: UserRole[] = ["SUPER_ADMIN", "EXEC", "MEMBER", "PNM", "ALUMNI"];

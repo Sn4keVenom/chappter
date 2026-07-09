@@ -79,6 +79,10 @@ route("delete", "/events/:id/delegates/:userId", (p) => ({ delegates: api.remove
 // Users / points
 route("get", "/users/me/dashboard", () => api.getDashboard());
 route("get", "/users/me", () => ({ user: api.getMe() }));
+route("patch", "/users/me", (_p, _q, body) => ({ user: api.updateMyProfile(body) }));
+route("get", "/users/:id/family", (p) => api.getFamily(p.id));
+route("patch", "/users/:id/big", (p, _q, body) => ({ membership: api.setBig(p.id, body.bigUserId) }));
+route("patch", "/users/:id/role-number", (p, _q, body) => ({ membership: api.setRoleNumber(p.id, body.roleNumber) }));
 route("get", "/users/:id", (p) => ({ user: api.getMemberProfile(p.id) }));
 route("get", "/users", (_p, q) => api.getRoster(q));
 route("patch", "/users/:id/role", (p, _q, body) => ({ user: api.updateUserRole(p.id, body.role) }));
@@ -140,6 +144,19 @@ route("patch", "/expenses/:id", (p, _q, body) => ({ expense: api.updateExpenseSt
 // Permissions (spec §3)
 route("get", "/permissions", () => ({ roles: api.getRolePermissions() }));
 route("patch", "/permissions/:role", (p, _q, body) => ({ role: api.updateRolePermissions(p.role as any, body.permissions) }));
+route("get", "/permissions/offices", () => ({ offices: api.getOfficePermissions() }));
+route("patch", "/permissions/offices/:office", (p, _q, body) => ({ office: api.updateOfficePermissions(p.office as any, body.permissions) }));
+
+// Chapters, invites & join requests (account-system spec §3) — every demo
+// user already has a chapter, so only the admin management screens
+// (reachable from AdminPanelScreen) exercise these; the join/onboarding
+// flow itself is never reached in Demo Mode.
+route("get", "/chapters", () => ({ chapters: api.listChapters() }));
+route("post", "/chapters/:id/invites", (p, _q, body) => ({ invite: api.createInvite(p.id, body) }));
+route("get", "/chapters/:id/invites", (p) => ({ invites: api.getInvites(p.id) }));
+route("delete", "/chapters/:id/invites/:inviteId", (p) => ({ invite: api.revokeInvite(p.id, p.inviteId) }));
+route("get", "/chapters/:id/join-requests", (p, q) => ({ joinRequests: api.getJoinRequests(p.id, q.status ?? "PENDING") }));
+route("patch", "/chapters/join-requests/:id", (p, _q, body) => ({ joinRequest: api.reviewJoinRequest(p.id, body.approve) }));
 
 // Modules (spec §5)
 route("get", "/modules", () => ({ modules: api.getModules() }));

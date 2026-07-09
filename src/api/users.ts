@@ -52,9 +52,30 @@ export async function updateUserRole(
 // only the ones present in payload are touched.
 export async function updateUserFields(
   userId: string,
-  payload: { role?: UserRole; office?: ExecOffice | null; status?: MemberStatus }
+  payload: {
+    role?: UserRole;
+    office?: ExecOffice | null;
+    status?: MemberStatus;
+    pledgeClassLabel?: string | null;
+    major?: string | null;
+    graduationYear?: number | null;
+  }
 ): Promise<User> {
   const { data } = await apiClient.patch<{ user: User }>(`/users/${userId}`, payload);
+  return data.user;
+}
+
+// Self-service profile edit (spec §9/§13 — closes the previous gap where no
+// self-edit flow existed at all). Never accepts role/office/status/roleNumber.
+export async function updateMyProfile(payload: {
+  firstName?: string;
+  lastName?: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  major?: string | null;
+  graduationYear?: number | null;
+}): Promise<User> {
+  const { data } = await apiClient.patch<{ user: User }>("/users/me", payload);
   return data.user;
 }
 

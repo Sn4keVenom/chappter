@@ -362,6 +362,17 @@ still authorizes every *other* route with a flat role-tier check
 (`requireRole`/`isAtLeast`) — see `docs/PERMISSIONS.md` "Backend parity
 gap" before assuming a permission edit changes real backend behavior.
 
-**This schema is single-chapter-per-deployment, not multi-tenant.** There is
-no `Chapter` model; every table implicitly belongs to whichever chapter
-this database serves. See `schema.prisma` `ChapterSettings` doc comment.
+**Identity/membership/chapter data is multi-chapter-capable; most feature
+tables are not.** `Chapter` and `ChapterMembership` are real models — a
+`User` is an identity that can hold a membership (role/office/status/role
+number/Big-Little/pledge class/major/graduation year) in one or more
+chapters, resolved via `User.activeChapterId` (see `schema.prisma`'s
+`Chapter`/`ChapterMembership` doc comments and `backend/lib/userSerializer.ts`).
+`Event`/`Committee`/`Semester`/`DuesRecord`/`Message`/etc. are still **not**
+`chapterId`-scoped — those remain implicitly single-chapter, a deliberately
+separate, larger migration.
+
+**Account creation never auto-assigns a chapter.** A new `User` has
+`activeChapterId: null` and no `ChapterMembership` until they redeem an
+invite code/link or have a "Request to Join" approved (see
+`backend/routes/chapters.routes.ts`, `src/navigation/OnboardingNavigator.tsx`).

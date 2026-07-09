@@ -31,11 +31,11 @@ async function canReadChannel(channelId: string, req: AuthedRequest): Promise<bo
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel) return false;
 
-  const rank = ROLE_RANK[req.user!.role];
+  const isExecOrAbove = isAtLeast(req.user!.role, "EXEC");
 
   if (channel.type === "GENERAL") return true;
-  if (channel.type === "OFFICERS") return rank >= ROLE_RANK.EXEC;
-  if (rank >= ROLE_RANK.EXEC) return true; // Exec bypasses COMMITTEE + DM scoping
+  if (channel.type === "OFFICERS") return isExecOrAbove;
+  if (isExecOrAbove) return true; // Exec bypasses COMMITTEE + DM scoping
 
   const membership = await prisma.channelMembership.findUnique({
     where: { channelId_userId: { channelId, userId: req.user!.id } },
@@ -47,11 +47,11 @@ async function canPostToChannel(channelId: string, req: AuthedRequest): Promise<
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel) return false;
 
-  const rank = ROLE_RANK[req.user!.role];
+  const isExecOrAbove = isAtLeast(req.user!.role, "EXEC");
 
-  if (channel.type === "GENERAL") return rank >= ROLE_RANK.EXEC;
-  if (channel.type === "OFFICERS") return rank >= ROLE_RANK.EXEC;
-  if (rank >= ROLE_RANK.EXEC) return true;
+  if (channel.type === "GENERAL") return isExecOrAbove;
+  if (channel.type === "OFFICERS") return isExecOrAbove;
+  if (isExecOrAbove) return true;
 
   const membership = await prisma.channelMembership.findUnique({
     where: { channelId_userId: { channelId, userId: req.user!.id } },
@@ -71,7 +71,9 @@ function canPostToChannelSync(type: string, rank: number): boolean {
 router.get(
   "/channels",
   asyncHandler(async (req: AuthedRequest, res: Response) => {
-    const rank = ROLE_RANK[req.user!.role];
+    // -1 (below every real rank) when there's no role yet, so "no chapter
+    // membership" never satisfies an Exec+ check below.
+    const rank = req.user!.role ? ROLE_RANK[req.user!.role] : -1;
 
     // Collect accessible channel IDs based on type
     const accessibleChannels = await prisma.channel.findMany({

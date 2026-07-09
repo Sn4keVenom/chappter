@@ -1,18 +1,23 @@
 // prisma/seed.ts
 //
 // Creates the minimum data required to run ChapterHub locally.
-// Run with: npx ts-node prisma/seed.ts  (or: npm run db:seed)
+// Run with: npx tsx prisma/seed.ts  (or: npm run db:seed)
 //
 // IDEMPOTENT: uses upsert / skipDuplicates so re-running is safe.
 //
 // What this creates:
+//   · Default Chapter + ChapterSettings — every user, invite, and join
+//     request now hangs off a Chapter row (see schema.prisma Chapter/
+//     ChapterMembership doc comments); a fresh database needs at least one
+//     to exist before anyone can join it.
 //   · Current Semester row  — without this, leaderboard, dues, and the
 //     home dashboard all return empty/null because every query filters by
 //     a live semester.
 //   · GENERAL Channel       — required for the pinned announcement feature
 //     on the home dashboard and the Messaging tab's announcement section.
-//   · SUPER_ADMIN seed user — optional, commented out by default. Uncomment
-//     if you need a known admin account for the first local login.
+//   · SUPER_ADMIN seed user + ChapterMembership — optional, commented out
+//     by default. Uncomment if you need a known admin account for the
+//     first local login.
 
 import { PrismaClient } from "@prisma/client";
 
@@ -21,13 +26,38 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("🌱  Seeding ChapterHub database...\n");
 
-  // ── Current Semester ────────────────────────────────────────────────────
-  // Adjust startDate / endDate / label to match the real academic semester.
-  // "Fall 2026" is used here as a placeholder — update before each semester.
+  // ── Default Chapter + Settings ──────────────────────────────────────────
+  // Adjust name/letters/university to match the real chapter before going
+  // live — this is the one chapter every invite/join-request/membership in
+  // a single-chapter deployment attaches to.
   const now = new Date();
   const fallStart = new Date(`${now.getFullYear()}-08-25`);
   const fallEnd   = new Date(`${now.getFullYear()}-12-20`);
 
+  let chapter = await prisma.chapter.findFirst({ orderBy: { createdAt: "asc" } });
+  if (!chapter) {
+    chapter = await prisma.chapter.create({
+      data: { name: "Chapter", letters: "", university: "" },
+    });
+    console.log(`✅  Chapter created (${chapter.id}) — rename it via PATCH /chapters/:id`);
+  } else {
+    console.log(`⏭   Chapter already exists (${chapter.id})`);
+  }
+
+  await prisma.chapterSettings.upsert({
+    where: { chapterId: chapter.id },
+    update: {},
+    create: {
+      chapterId: chapter.id,
+      currentSemesterLabel: `Fall ${now.getFullYear()}`,
+      semesterStartDate: fallStart,
+      semesterEndDate: fallEnd,
+      defaultDuesAmount: 150,
+    },
+  });
+  console.log(`✅  ChapterSettings ready for chapter ${chapter.id}`);
+
+  // ── Current Semester ────────────────────────────────────────────────────
   const semester = await prisma.semester.upsert({
     where: { label: `Fall ${now.getFullYear()}` },
     update: { startDate: fallStart, endDate: fallEnd },
@@ -76,22 +106,27 @@ async function main() {
     console.log(`⏭   Officers channel already exists (${existingOfficers.id})`);
   }
 
-  // ── Optional: seed a SUPER_ADMIN user ───────────────────────────────────
+  // ── Optional: seed a SUPER_ADMIN user + membership ──────────────────────
   // Uncomment and replace <your-clerk-user-id> with the Clerk user ID from
   // the Clerk Dashboard after your first sign-in attempt (it will fail with
   // NEEDS_SYNC but you'll see the ID in server logs from the auth route).
   //
   // const adminUser = await prisma.user.upsert({
   //   where: { authProviderId: "<your-clerk-user-id>" },
-  //   update: { role: "SUPER_ADMIN" },
+  //   update: {},
   //   create: {
   //     authProviderId: "<your-clerk-user-id>",
   //     firstName: "Admin",
   //     lastName: "User",
   //     email: "admin@yourdomain.com",
-  //     role: "SUPER_ADMIN",
-  //     status: "ACTIVE",
+  //     username: "admin",
+  //     activeChapterId: chapter.id,
   //   },
+  // });
+  // await prisma.chapterMembership.upsert({
+  //   where: { chapterId_userId: { chapterId: chapter.id, userId: adminUser.id } },
+  //   update: { role: "SUPER_ADMIN", status: "ACTIVE" },
+  //   create: { userId: adminUser.id, chapterId: chapter.id, role: "SUPER_ADMIN", status: "ACTIVE" },
   // });
   // console.log(`✅  Admin user: ${adminUser.firstName} ${adminUser.lastName}`);
 

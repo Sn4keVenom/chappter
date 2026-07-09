@@ -1,15 +1,26 @@
 // src/store/useAuthStore.ts
 
 import { create } from "zustand";
-import type { ExecOffice, MemberStatus, UserRole } from "../types";
+import type { ChapterJoinRequest, ExecOffice, MemberStatus, UserRole } from "../types";
 
 export interface AppUser {
   id: string;
+  username: string;
   firstName: string;
   lastName: string;
-  role: UserRole;
+  // True once this user has joined a chapter (redeemed an invite or had a
+  // join request approved) — see spec §2/§3: never auto-assigned on
+  // creation. RootNavigator routes to OnboardingNavigator instead of the
+  // main app while this is false.
+  hasChapter: boolean;
+  chapterId?: string | null;
+  pendingJoinRequest?: ChapterJoinRequest | null;
+  role?: UserRole;
   office?: ExecOffice | null;
-  status: MemberStatus;
+  status?: MemberStatus;
+  roleNumber?: number | null;
+  major?: string | null;
+  graduationYear?: number | null;
   committeeChairOf: string[]; // committee IDs this user chairs, for scoped officer checks
   teamId?: string | null; // gamification team — not a committee, no leader
 }

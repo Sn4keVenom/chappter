@@ -36,27 +36,35 @@ router.get(
     const event = await prisma.event.findUnique({ where: { id: req.params.eventId } });
     if (!event) return res.status(404).json({ error: "Event not found" });
 
-    const members = await prisma.user.findMany({
-      where: { status: { in: ["ACTIVE", "PNM"] } },
+    // status/pledgeClassLabel live on ChapterMembership now, not User (see
+    // schema.prisma doc comment) — query memberships in the caller's own
+    // chapter, joining the User row for name/email.
+    const memberships = await prisma.chapterMembership.findMany({
+      where: { chapterId: req.user!.chapterId!, status: { in: ["ACTIVE", "PNM"] } },
       select: {
-        id: true, firstName: true, lastName: true, email: true, pledgeClassLabel: true,
-        rsvps: { where: { eventId: req.params.eventId }, select: { status: true } },
-        attendances: {
-          where: { eventId: req.params.eventId },
-          select: { id: true, checkInTime: true, method: true, late: true, pointsAwarded: true },
+        pledgeClassLabel: true,
+        user: {
+          select: {
+            id: true, firstName: true, lastName: true, email: true,
+            rsvps: { where: { eventId: req.params.eventId }, select: { status: true } },
+            attendances: {
+              where: { eventId: req.params.eventId },
+              select: { id: true, checkInTime: true, method: true, late: true, pointsAwarded: true },
+            },
+          },
         },
       },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+      orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
     });
 
-    const roster = members.map((m) => ({
-      userId: m.id,
-      firstName: m.firstName,
-      lastName: m.lastName,
-      email: m.email,
+    const roster = memberships.map((m) => ({
+      userId: m.user.id,
+      firstName: m.user.firstName,
+      lastName: m.user.lastName,
+      email: m.user.email,
       pledgeClassLabel: m.pledgeClassLabel,
-      rsvpStatus: m.rsvps[0]?.status ?? null,
-      attendance: m.attendances[0] ?? null,
+      rsvpStatus: m.user.rsvps[0]?.status ?? null,
+      attendance: m.user.attendances[0] ?? null,
     }));
 
     const checkedInCount = roster.filter((r) => r.attendance).length;
@@ -274,7 +282,10 @@ router.get(
 
     // Raw aggregation with rank via window function. Safe from SQL injection:
     // this is Prisma's tagged-template $queryRaw form, which parameterizes
-    // every ${...} interpolation — it is never string-concatenated.
+    // every ${...} interpolation — it is never string-concatenated. status
+    // lives on ChapterMembership now, not User (see schema.prisma doc
+    // comment), so the leaderboard is joined through it and scoped to the
+    // caller's own chapter.
     const rows = await prisma.$queryRaw<
       { userId: string; total: bigint; firstName: string; lastName: string; avatarUrl: string | null }[]
     >`
@@ -285,9 +296,11 @@ router.get(
         u."avatarUrl",
         COALESCE(SUM(pl.amount), 0)::int AS total
       FROM "User" u
+      INNER JOIN "ChapterMembership" cm
+        ON cm."userId" = u.id AND cm."chapterId" = ${req.user!.chapterId}
       LEFT JOIN "PointsLedger" pl
         ON pl."userId" = u.id AND pl."semesterId" = ${semesterId}
-      WHERE u.status IN ('ACTIVE', 'PNM')
+      WHERE cm.status IN ('ACTIVE', 'PNM')
       GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl"
       ORDER BY total DESC
     `;

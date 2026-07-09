@@ -16,6 +16,7 @@
 
 import { useAuthStore } from "../store/useAuthStore";
 import { usePermissionsStore } from "../store/usePermissionsStore";
+import { useOfficePermissionsStore } from "../store/useOfficePermissionsStore";
 import {
   hasPermission,
   isExecOrAbove as isExecOrAboveOf,
@@ -36,6 +37,7 @@ interface DelegatableEvent extends ScopedEvent {
 export function usePermissions() {
   const user = useAuthStore((s) => s.user);
   const presets = usePermissionsStore((s) => s.presets);
+  const officePresets = useOfficePermissionsStore((s) => s.presets);
 
   const role = user?.role ?? null;
   const office = user?.office ?? null;
@@ -61,7 +63,7 @@ export function usePermissions() {
 
   /** General-purpose granular permission check — use this for any new code. */
   function can(permission: Permission): boolean {
-    return hasPermission(role, presets, permission);
+    return hasPermission(role, presets, permission, office, officePresets);
   }
 
   /** Can this user manage (edit, check in attendees for) this specific event? */

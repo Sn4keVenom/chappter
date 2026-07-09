@@ -26,6 +26,7 @@ import { useAuth, useClerk } from "@clerk/clerk-expo";
 import { setAuthToken } from "../api/client";
 import { getMe } from "../api/users";
 import { useAuthStore } from "../store/useAuthStore";
+import { shouldRestoreSession } from "../auth/rememberMe";
 import { colors } from "../theme/colors";
 
 export default function SessionRestore({ children }: { children: React.ReactNode }) {
@@ -47,6 +48,17 @@ export default function SessionRestore({ children }: { children: React.ReactNode
 
     (async () => {
       try {
+        // Honor a previous "Remember Me" opt-out — see auth/rememberMe.ts.
+        // Clerk's own tokenCache still has the session at this point (that's
+        // why isSignedIn is true above); we deliberately sign out of it now
+        // rather than continue restoring, so the session doesn't survive
+        // this app restart.
+        if (!(await shouldRestoreSession())) {
+          await clerk.signOut();
+          if (!cancelled) setUser(null);
+          return;
+        }
+
         const jwt = await clerk.session?.getToken();
         if (!jwt) throw new Error("Clerk session has no token");
         setAuthToken(jwt);
@@ -56,11 +68,18 @@ export default function SessionRestore({ children }: { children: React.ReactNode
 
         setUser({
           id: me.id,
+          username: me.username,
           firstName: me.firstName,
           lastName: me.lastName,
+          hasChapter: me.hasChapter,
+          chapterId: me.chapterId,
+          pendingJoinRequest: me.pendingJoinRequest,
           role: me.role,
           office: me.office,
           status: me.status,
+          roleNumber: me.roleNumber,
+          major: me.major,
+          graduationYear: me.graduationYear,
           committeeChairOf: me.committeeChairOf,
           teamId: me.teamId,
         });

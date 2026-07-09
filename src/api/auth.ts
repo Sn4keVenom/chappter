@@ -10,9 +10,12 @@ export interface SyncPayload {
   firstName: string;
   lastName: string;
   email: string;
+  // Only present for email/password sign-up (SignUpScreen already collected
+  // it via Clerk). OAuth sign-ins (Google/Apple) omit it — the backend
+  // auto-suggests one from the email on first sync (see auth.routes.ts).
+  username?: string;
   phone?: string;
   avatarUrl?: string;
-  pledgeClassLabel?: string;
 }
 
 export async function syncUser(payload: SyncPayload): Promise<User> {
