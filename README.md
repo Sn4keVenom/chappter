@@ -43,7 +43,8 @@ See [BUILD.md](BUILD.md) for complete setup instructions.
 | Backend | Node.js 20+ · Express 4 · TypeScript 6 |
 | ORM | Prisma 6 |
 | Database | PostgreSQL 16 |
-| Payments | Stripe (optional) |
+| Payments | Stripe (optional) · Pyli (dues, self-service) |
+| Calendar | expo-calendar (device calendar) + Google/Outlook web links + ICS export |
 
 ## Project Structure
 
@@ -80,14 +81,29 @@ chapterhub/           ← repository root = Expo mobile app (phone only — no w
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
 | [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | Directory and file reference |
 
-## Roles
+## Roles, Offices & Permissions
 
-| Role | Permissions |
+Roles are permission *presets*, not the permissions themselves — a Super
+Admin can edit exactly what each role can do from the app's Permissions
+screen (Admin tab → Chapter Administration → Permissions). Defaults:
+
+| Role | Default access |
 |---|---|
-| MEMBER | RSVP, check-in (QR scan), view points/dues |
-| OFFICER | Everything above + manage own committee events, view check-in roster |
-| EXEC | Everything above + create chapter-wide events, manage dues, send reminders |
-| SUPER_ADMIN | Everything above + manage roles, view audit log |
+| PNM | View events, view documents, post messages — prospective-member view |
+| ALUMNI | View events, view documents, post messages — alumni view |
+| MEMBER | Everything above + take attendance (self check-in), full messaging |
+| EXEC | Everything above + create/edit/delete events, manage attendance, award/deduct points, manage committees/dues/teams/documents/feedback |
+| SUPER_ADMIN | Unrestricted — always bypasses the permission table, plus exclusive access to Chapter Settings, Modules, and Permissions themselves |
+
+**Exec Office** (Regent, Vice Regent, Treasurer, Scribe, Marshal,
+Corresponding Secretary, New Member Educator) is a separate, independent
+field from role — it's a label for who holds a named position, and never
+by itself grants access. Committee chairs are tracked via committee
+membership, independent of both role and office.
+
+See [docs/PERMISSIONS.md](docs/PERMISSIONS.md) for the full permission list
+and [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for how the
+system is implemented.
 
 ## License
 

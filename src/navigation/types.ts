@@ -10,6 +10,8 @@
 //   · AppNavigator.tsx  — uses MainTabParamList + AppStackParamList
 //   · All screen components import their specific param type from here
 
+import type { DocumentCategory } from "../types";
+
 export type AuthStackParamList = {
   Login: undefined;
 };
@@ -68,7 +70,7 @@ export type AppStackParamList = {
 
   // Documents & external links (spec §8)
   Documents: undefined;
-  DocumentCategory: { category: string; label: string };
+  DocumentCategory: { category: DocumentCategory; label: string };
 
   // Feedback & bug reports (spec §9)
   Feedback: undefined;

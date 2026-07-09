@@ -1,4 +1,4 @@
-// mobile/screens/MessagingScreen.tsx
+// src/screens/MessagingScreen.tsx
 //
 // Integration points:
 //   · useMessagesStore — fetchChannels, channels
@@ -25,7 +25,7 @@ const CHANNEL_TYPE_ORDER: ChannelType[] = ["GENERAL", "OFFICERS", "COMMITTEE", "
 
 export default function MessagingScreen() {
   const navigation = useNavigation<any>();
-  const { channels, loading, fetchChannels } = useMessagesStore();
+  const { channels, loading, error, fetchChannels } = useMessagesStore();
 
   useFocusEffect(useCallback(() => { fetchChannels(); }, [fetchChannels]));
 
@@ -49,6 +49,7 @@ export default function MessagingScreen() {
       contentContainerStyle={styles.list}
       data={CHANNEL_TYPE_ORDER.filter((t) => grouped[t]?.length)}
       keyExtractor={(t) => t}
+      ListHeaderComponent={error && !channels.length ? <Text style={styles.errorBanner}>{error}</Text> : null}
       renderItem={({ item: type }) => (
         <View key={type}>
           <Text style={styles.groupHeader}>
@@ -140,5 +141,6 @@ const styles = StyleSheet.create({
   preview: { fontSize: 13, color: colors.textSecondary },
   previewSender: { fontWeight: "600", color: colors.textSecondary },
   noMessages: { fontSize: 13, color: colors.textMuted, fontStyle: "italic" },
+  errorBanner: { color: colors.danger, fontSize: 13, textAlign: "center", padding: 16 },
   readOnly: { fontSize: 11, color: colors.textMuted, marginLeft: 8 },
 });

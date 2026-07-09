@@ -18,7 +18,14 @@ export interface AuthedRequest extends Request {
   };
 }
 
-const ROLE_RANK: Record<UserRole, number> = {
+// Single source of truth for role tiering — every route file that needs a
+// rank comparison (messages.routes.ts channel gating, events.routes.ts draft
+// visibility, etc.) imports `isAtLeast`/`ROLE_RANK` from here instead of
+// keeping its own copy. A previous audit found a route with a stale local
+// copy still keyed on the removed "OFFICER" role, which silently broke
+// (falls through to `undefined`, not a thrown error) for PNM/ALUMNI users —
+// exactly the failure mode a single shared table prevents.
+export const ROLE_RANK: Record<UserRole, number> = {
   PNM: 0,
   ALUMNI: 0,
   MEMBER: 0,
@@ -26,13 +33,18 @@ const ROLE_RANK: Record<UserRole, number> = {
   SUPER_ADMIN: 2,
 };
 
+/** True if `role` is at least `minRole` in the tier above. */
+export function isAtLeast(role: UserRole, minRole: UserRole): boolean {
+  return ROLE_RANK[role] >= ROLE_RANK[minRole];
+}
+
 /** Require at least this base role. Use for chapter-wide actions (Exec+). */
 export function requireRole(minRole: UserRole) {
   return (req: AuthedRequest, res: Response, next: NextFunction) => {
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }
-    if (ROLE_RANK[req.user.role] < ROLE_RANK[minRole]) {
+    if (!isAtLeast(req.user.role, minRole)) {
       // No detail on what was required — avoid leaking authorization internals.
       return res.status(403).json({ error: "Not permitted" });
     }
@@ -52,7 +64,7 @@ export function requireCommitteeScope(
     if (!req.user) {
       return res.status(401).json({ error: "Not authenticated" });
     }
-    if (ROLE_RANK[req.user.role] >= ROLE_RANK.EXEC) {
+    if (isAtLeast(req.user.role, "EXEC")) {
       return next();
     }
 

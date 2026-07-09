@@ -16,6 +16,8 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator } from "react-native";
 import { colors } from "../../theme/colors";
+import { usePermissions } from "../../hooks/usePermissions";
+import RequireAccess from "../../components/RequireAccess";
 import { usePermissionsStore } from "../../store/usePermissionsStore";
 import { PERMISSION_GROUPS, PERMISSION_LABELS, EDITABLE_PRESET_ROLES } from "../../permissions/permissions";
 import type { Permission, UserRole } from "../../types";
@@ -29,7 +31,8 @@ const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 export default function PermissionsScreen() {
-  const { presets, loaded, fetchPermissions, updateRolePermissions } = usePermissionsStore();
+  const { isSuperAdmin } = usePermissions();
+  const { presets, loaded, error, fetchPermissions, updateRolePermissions } = usePermissionsStore();
   const [selectedRole, setSelectedRole] = useState<UserRole>("EXEC");
   const [savingPermission, setSavingPermission] = useState<Permission | null>(null);
 
@@ -47,6 +50,21 @@ export default function PermissionsScreen() {
     } finally {
       setSavingPermission(null);
     }
+  }
+
+  if (!isSuperAdmin) {
+    return <RequireAccess message="Only the Super Admin can edit role permissions." />;
+  }
+
+  if (!loaded && error) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{error}</Text>
+        <Pressable style={styles.retryBtn} onPress={fetchPermissions}>
+          <Text style={styles.retryBtnText}>Try Again</Text>
+        </Pressable>
+      </View>
+    );
   }
 
   if (!loaded) {
@@ -104,7 +122,10 @@ export default function PermissionsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
+  centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 },
+  errorText: { color: colors.danger, fontSize: 14, textAlign: "center", marginBottom: 16 },
+  retryBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 24 },
+  retryBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 14 },
   roleTabRow: { flexDirection: "row", backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   roleTab: { flex: 1, paddingVertical: 12, alignItems: "center" },
   roleTabActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },

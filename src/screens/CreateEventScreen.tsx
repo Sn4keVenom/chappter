@@ -1,4 +1,4 @@
-// mobile/screens/CreateEventScreen.tsx
+// src/screens/CreateEventScreen.tsx
 //
 // Integration points:
 //   · POST /events via apiClient (same shape as createEventSchema in events.routes.ts)

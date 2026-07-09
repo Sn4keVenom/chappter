@@ -14,6 +14,7 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
+import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requireRole, requireCommitteeScope, writeAuditLog } from "../middleware/rbac";
 
 const router = Router();
@@ -34,40 +35,43 @@ const addMemberSchema = z.object({
 });
 
 // ── GET /committees ───────────────────────────────────────────────────────
-router.get("/committees", async (req: AuthedRequest, res: Response) => {
-  const committees = await prisma.committee.findMany({
-    orderBy: { name: "asc" },
-    include: {
-      memberships: {
-        include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
+router.get(
+  "/committees",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const committees = await prisma.committee.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        memberships: {
+          include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
+        },
+        channel: { select: { id: true } },
       },
-      channel: { select: { id: true } },
-    },
-  });
+    });
 
-  res.json({
-    committees: committees.map((c) => ({
-      id: c.id,
-      name: c.name,
-      description: c.description,
-      channelId: c.channel?.id ?? null,
-      memberCount: c.memberships.length,
-      members: c.memberships.map((m) => ({
-        userId: m.userId,
-        role: m.role,
-        firstName: m.user.firstName,
-        lastName: m.user.lastName,
-        avatarUrl: m.user.avatarUrl,
+    res.json({
+      committees: committees.map((c) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        channelId: c.channel?.id ?? null,
+        memberCount: c.memberships.length,
+        members: c.memberships.map((m) => ({
+          userId: m.userId,
+          role: m.role,
+          firstName: m.user.firstName,
+          lastName: m.user.lastName,
+          avatarUrl: m.user.avatarUrl,
+        })),
       })),
-    })),
-  });
-});
+    });
+  })
+);
 
 // ── POST /committees — Exec+ ──────────────────────────────────────────────
 router.post(
   "/committees",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = createCommitteeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -105,61 +109,64 @@ router.post(
     });
 
     res.status(201).json({ committee });
-  }
+  })
 );
 
 // ── GET /committees/:id ───────────────────────────────────────────────────
-router.get("/committees/:id", async (req: AuthedRequest, res: Response) => {
-  const committee = await prisma.committee.findUnique({
-    where: { id: req.params.id },
-    include: {
-      memberships: {
-        include: {
-          user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+router.get(
+  "/committees/:id",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const committee = await prisma.committee.findUnique({
+      where: { id: req.params.id },
+      include: {
+        memberships: {
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } },
+          },
+          orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
         },
-        orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
+        channel: { select: { id: true, name: true } },
+        events: {
+          where: { status: "PUBLISHED", startTime: { gte: new Date() } },
+          orderBy: { startTime: "asc" },
+          take: 5,
+          select: { id: true, title: true, startTime: true, category: true },
+        },
       },
-      channel: { select: { id: true, name: true } },
-      events: {
-        where: { status: "PUBLISHED", startTime: { gte: new Date() } },
-        orderBy: { startTime: "asc" },
-        take: 5,
-        select: { id: true, title: true, startTime: true, category: true },
+    });
+
+    if (!committee) return res.status(404).json({ error: "Committee not found" });
+
+    // Map to the same shape returned by GET /committees so the mobile
+    // Committee type is satisfied: members[] (not memberships[]), channelId at
+    // the top level. The previous version returned the raw Prisma object and
+    // CommitteeDetailScreen couldn't find committee.members or committee.channelId.
+    res.json({
+      committee: {
+        id: committee.id,
+        name: committee.name,
+        description: committee.description,
+        channelId: committee.channel?.id ?? null,
+        channelName: committee.channel?.name ?? null,
+        memberCount: committee.memberships.length,
+        members: committee.memberships.map((m) => ({
+          userId: m.userId,
+          firstName: m.user.firstName,
+          lastName: m.user.lastName,
+          avatarUrl: m.user.avatarUrl,
+          role: m.role,
+        })),
+        upcomingEvents: committee.events,
       },
-    },
-  });
-
-  if (!committee) return res.status(404).json({ error: "Committee not found" });
-
-  // Map to the same shape returned by GET /committees so the mobile
-  // Committee type is satisfied: members[] (not memberships[]), channelId at
-  // the top level. The previous version returned the raw Prisma object and
-  // CommitteeDetailScreen couldn't find committee.members or committee.channelId.
-  res.json({
-    committee: {
-      id: committee.id,
-      name: committee.name,
-      description: committee.description,
-      channelId: committee.channel?.id ?? null,
-      channelName: committee.channel?.name ?? null,
-      memberCount: committee.memberships.length,
-      members: committee.memberships.map((m) => ({
-        userId: m.userId,
-        firstName: m.user.firstName,
-        lastName: m.user.lastName,
-        avatarUrl: m.user.avatarUrl,
-        role: m.role,
-      })),
-      upcomingEvents: committee.events,
-    },
-  });
-});
+    });
+  })
+);
 
 // ── PATCH /committees/:id — Chair or Exec+ ────────────────────────────────
 router.patch(
   "/committees/:id",
   requireCommitteeScope(async (req) => req.params.id),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = updateCommitteeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -181,7 +188,7 @@ router.patch(
     });
 
     res.json({ committee: updated });
-  }
+  })
 );
 
 // ── POST /committees/:id/members ──────────────────────────────────────────
@@ -189,7 +196,7 @@ router.patch(
 router.post(
   "/committees/:id/members",
   requireCommitteeScope(async (req) => req.params.id),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = addMemberSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -228,14 +235,14 @@ router.post(
     });
 
     res.json({ membership: result });
-  }
+  })
 );
 
 // ── DELETE /committees/:id/members/:userId ────────────────────────────────
 router.delete(
   "/committees/:id/members/:userId",
   requireCommitteeScope(async (req) => req.params.id),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { id: committeeId, userId } = req.params;
 
     const committee = await prisma.committee.findUnique({
@@ -271,7 +278,7 @@ router.delete(
     });
 
     res.json({ removed: true });
-  }
+  })
 );
 
 export default router;

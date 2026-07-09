@@ -1,4 +1,4 @@
-// mobile/src/screens/EventDetailScreen.tsx
+// src/screens/EventDetailScreen.tsx
 //
 // Demonstrates: typed API client usage, Zustand for local UI state,
 // permission-conditional rendering (officer tools only render for

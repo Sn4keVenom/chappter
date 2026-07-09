@@ -5,6 +5,118 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [1.4.0] — 2026-07-09 — Production Readiness Audit
+
+Full-stack audit ahead of real-chapter deployment. See the audit report
+delivered alongside this release for the complete findings; highlights:
+
+### Fixed (critical)
+- **Every backend route handler is now wrapped in `asyncHandler`**
+  (`backend/lib/asyncHandler.ts`). Express 4 doesn't forward a rejected
+  Promise from an async route to the error middleware — any unexpected
+  error (bad Prisma input, a dropped connection) previously hung the
+  request and could crash the whole process via an unhandled rejection.
+  Now it cleanly 500s.
+- Removed a stale reference to the deleted `OFFICER` role in
+  `events.routes.ts` that silently let DRAFT events leak to PNM/Alumni
+  members (comparing against `undefined` always evaluated false).
+- Seven admin screens (Chapter Settings, Modules, Permissions, Points
+  Adjust, Dues Detail, Committee Budgets, Roster) had no internal
+  permission check — reachable by any authenticated user via direct
+  navigation, not just the button that was supposed to gate them. All now
+  self-gate with a shared `RequireAccess` component.
+- Real Clerk session restoration on cold start (`SessionRestore.tsx`) —
+  previously every force-quit/reopen forced a fresh login even with a
+  valid cached session.
+- Dead check-in counter in `CheckInScreen.tsx` (empty polling interval,
+  count permanently stuck at 0) now actually polls attendance count.
+
+### Added
+- `backend/lib/env.ts` — fails fast at boot with a clear message if
+  `DATABASE_URL`/`CLERK_SECRET_KEY` are missing, instead of a cryptic
+  runtime error on first request.
+- `helmet`, `morgan`, `express-rate-limit` on the backend — security
+  headers, request logging, and rate limiting (600 req/15min general,
+  30 req/15min on `/auth`).
+- `/health` now verifies DB connectivity (`SELECT 1`) instead of just
+  process liveness.
+- Graceful shutdown on SIGTERM/SIGINT — drains in-flight requests and
+  closes the Prisma pool before exiting.
+- `src/components/ErrorBoundary.tsx` — top-level React error boundary;
+  previously any uncaught render error blanked the whole app.
+- `src/components/RequireAccess.tsx` — shared screen-level access guard.
+- Automatic retry-once for idempotent GET requests on network error/5xx
+  (`src/api/client.ts`) — mobile networks drop packets constantly.
+- Real backend routes for five features that previously only existed in
+  the Demo Mode mock: `settings.routes.ts`, `modules.routes.ts`,
+  `documents.routes.ts`, `feedback.routes.ts`, `permissions.routes.ts`.
+- `docs/PERMISSIONS.md` — full reference for roles/offices/permissions/
+  modules, including the documented gap between what's editable and
+  what's enforced server-side.
+- New Prisma indexes (`Event(status, startTime)`, `DuesRecord(semesterId)`)
+  for the query patterns every list endpoint actually uses.
+
+### Changed
+- CORS now requires an explicit origin allowlist in production instead of
+  silently falling back to `*` (which is also incompatible with
+  `credentials: true` in every browser anyway).
+- `KeyboardAvoidingView` added to the three modals where the keyboard
+  could previously cover the Save button entirely (Dues payment/waive,
+  committee budget edit, attendance override reason).
+- Removed unused `expo-status-bar` dependency.
+
+### Known gaps (documented, not fixed this pass — see audit report)
+- The real backend's new Permissions routes persist edits, but no other
+  route reads them back for authorization yet — every route still checks
+  a flat role tier. Demo Mode is unaffected (its mocks always read live).
+- No multi-tenancy — this schema is one chapter per deployed database, not
+  many chapters sharing one backend (see `ChapterSettings` doc comment in
+  `schema.prisma`).
+- `prisma/migrations/` needs a fresh `prisma migrate dev` against a real
+  Postgres instance before deploying — the schema has changed substantially
+  since the committed `init` migration and this environment had no
+  database available to generate/verify one safely.
+- No automated tests exist at any level (unit/integration/E2E).
+- Zero accessibility props (`accessibilityLabel`/`accessibilityRole`)
+  anywhere in the mobile app.
+
+---
+
+## [1.3.0] — 2026-07-08 — Roles, Permissions, Modules & Chapter Settings
+
+Foundational pre-release architecture expansion.
+
+### Added
+- Granular permission system (`src/permissions/permissions.ts`) — roles
+  are mutable permission presets instead of hardcoded tier checks, editable
+  at runtime by a Super Admin (`admin/PermissionsScreen.tsx`).
+- Member statuses replaced with `ACTIVE`/`PNM`/`ALUMNI`/`INACTIVE`; roles
+  replaced with `SUPER_ADMIN`/`EXEC`/`MEMBER`/`PNM`/`ALUMNI` (the `OFFICER`
+  tier removed — committee chairs are tracked via committee membership,
+  independent of role).
+- Independent Exec Office field (Regent, Vice Regent, Treasurer, Scribe,
+  Marshal, Corresponding Secretary, New Member Educator) — decoupled from
+  both role and permissions.
+- Module/feature toggle system (`admin/ModulesScreen.tsx`) — disables
+  whole app sections chapter-wide.
+- Chapter Settings (`admin/ChapterSettingsScreen.tsx`) — centralized
+  chapter name/semester/dues/attendance/points configuration.
+- Documents & external links module, Feedback & bug report module.
+- Calendar integration — Google/Outlook web links, ICS export, and real
+  on-device Apple/Android calendar writes via `expo-calendar`.
+
+## [1.2.0] — 2026-07-08 — Points, Teams, Delegation, Dues & Budgets
+
+### Added
+- Individual point breakdowns and leaderboard, plus gamification Teams
+  (distinct from committees) with a team leaderboard.
+- Event attendance-code delegation — an organizer who can't attend can
+  delegate check-in-code generation for a single event.
+- Pyli self-service dues payment (Full/Monthly plans).
+- Committee budgets & expense reimbursement workflow (Treasurer/chair).
+
+---
+
 ## [1.1.0] — 2026-07-08 — Demo Mode
 
 The app now launches directly into a fully interactive Demo Mode by

@@ -30,6 +30,8 @@ import { ClerkProvider } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
 
 import RootNavigator from "./src/navigation/RootNavigator";
+import SessionRestore from "./src/navigation/SessionRestore";
+import ErrorBoundary from "./src/components/ErrorBoundary";
 import { DEMO_MODE } from "./src/config/demo";
 import { bootstrapDemoSession } from "./src/mocks/bootstrap";
 
@@ -97,15 +99,20 @@ export default function App() {
   );
 
   return (
-    <GestureHandlerRootView style={styles.root}>
-      {DEMO_MODE ? (
-        content
-      ) : (
-        <ClerkProvider publishableKey={PUBLISHABLE_KEY!} tokenCache={tokenCache}>
-          {content}
-        </ClerkProvider>
-      )}
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={styles.root}>
+        {DEMO_MODE ? (
+          content
+        ) : (
+          <ClerkProvider publishableKey={PUBLISHABLE_KEY!} tokenCache={tokenCache}>
+            {/* Restores an existing Clerk session on cold start — see
+                SessionRestore.tsx doc comment. Only ever rendered here,
+                inside ClerkProvider; Demo Mode never mounts it. */}
+            <SessionRestore>{content}</SessionRestore>
+          </ClerkProvider>
+        )}
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
 

@@ -272,6 +272,11 @@ model Event {
   @@index([startTime])
   @@index([category])
   @@index([committeeId])
+  // Every list endpoint filters status="PUBLISHED" first, then a startTime
+  // range — this compound index serves that combined filter directly
+  // instead of Postgres falling back to the single-column startTime index
+  // and re-checking status per row.
+  @@index([status, startTime])
 }
 
 model Rsvp {
@@ -354,6 +359,7 @@ model DuesRecord {
 
   @@unique([userId, semesterId])
   @@index([status])
+  @@index([semesterId])
 }
 
 model Payment {
@@ -462,8 +468,11 @@ model RolePermission {
   permission String
   createdAt  DateTime @default(now())
 
+  // No separate @@index([role]) — the unique constraint below already
+  // leads with `role`, so it serves role-only lookups too; a second index
+  // on the same leading column would be pure write-overhead with no read
+  // benefit.
   @@unique([role, permission])
-  @@index([role])
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -480,6 +489,21 @@ model Module {
 
 // ─────────────────────────────────────────────────────────────────────────
 // Chapter Settings — singleton row (id is always "default")
+//
+// This whole schema assumes ONE chapter per deployed database/backend
+// instance (matches "ChapterHub" being branded and seeded for a single
+// chapter). Nothing here is multi-tenant: there's no Chapter model, and
+// every table (User, Event, DuesRecord, ...) is implicitly scoped to
+// "whichever chapter this database belongs to." Scaling to MANY chapters
+// sharing one deployment would need a Chapter model and a chapterId
+// foreign key + index added to every tenant-scoped table — a real
+// architectural change, not a config tweak. If that's the actual target
+// deployment model (one shared backend for many chapters), plan it as its
+// own migration project rather than retrofitting incrementally.
+//
+// Application code must always upsert this row by id: "default" — never
+// create() with a different id, or the "one row per chapter" assumption
+// silently breaks (Prisma has no built-in "exactly one row" constraint).
 // ─────────────────────────────────────────────────────────────────────────
 
 model ChapterSettings {

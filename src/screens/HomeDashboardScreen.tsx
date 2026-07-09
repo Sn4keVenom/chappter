@@ -1,4 +1,4 @@
-// mobile/screens/HomeDashboardScreen.tsx
+// src/screens/HomeDashboardScreen.tsx
 //
 // Integration points:
 //   · getDashboard() from api/users.ts — single round-trip for all home data

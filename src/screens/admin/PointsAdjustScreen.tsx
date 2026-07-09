@@ -18,6 +18,8 @@ import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../../theme/colors";
+import { usePermissions } from "../../hooks/usePermissions";
+import RequireAccess from "../../components/RequireAccess";
 import { adjustPoints } from "../../api/users";
 import { getMyDues } from "../../api/dues";
 import type { AppStackParamList } from "../../navigation/types";
@@ -37,6 +39,7 @@ export default function PointsAdjustScreen() {
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { userId, userName } = route.params;
+  const { can } = usePermissions();
 
   const [semesterId, setSemesterId] = useState<string | null>(null);
   const [type, setType] = useState<AdjustType>("BONUS");
@@ -80,6 +83,10 @@ export default function PointsAdjustScreen() {
       setSaving(false);
     }
   };
+
+  if (!can("points.award") && !can("points.deduct")) {
+    return <RequireAccess message="Only Exec+ can adjust member points." />;
+  }
 
   if (loadingSemester) {
     return (

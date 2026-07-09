@@ -21,30 +21,34 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
+import { asyncHandler } from "../lib/asyncHandler";
 import { recalcDuesStatus } from "../lib/dues.helpers";
 import { AuthedRequest, requireRole, writeAuditLog } from "../middleware/rbac";
 
 const router = Router();
 
 // ── GET /dues/me ──────────────────────────────────────────────────────────
-router.get("/dues/me", async (req: AuthedRequest, res: Response) => {
-  const records = await prisma.duesRecord.findMany({
-    where: { userId: req.user!.id },
-    include: {
-      semester: { select: { id: true, label: true } },
-      payments: { orderBy: { paidAt: "desc" } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+router.get(
+  "/dues/me",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const records = await prisma.duesRecord.findMany({
+      where: { userId: req.user!.id },
+      include: {
+        semester: { select: { id: true, label: true } },
+        payments: { orderBy: { paidAt: "desc" } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-  res.json({ records });
-});
+    res.json({ records });
+  })
+);
 
 // ── GET /dues — all members, Exec+ ────────────────────────────────────────
 router.get(
   "/dues",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { semesterId, status } = req.query;
 
     const records = await prisma.duesRecord.findMany({
@@ -68,7 +72,7 @@ router.get(
     });
 
     res.json({ records, summary });
-  }
+  })
 );
 
 // ── POST /dues/initialize — bulk-create DuesRecords for a semester ────────
@@ -82,7 +86,7 @@ const initSchema = z.object({
 router.post(
   "/dues/initialize",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = initSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -93,7 +97,7 @@ router.post(
 
     const targets = userIds
       ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true } })
-      : await prisma.user.findMany({ where: { status: "ACTIVE" }, select: { id: true } });
+      : await prisma.user.findMany({ where: { status: { in: ["ACTIVE", "PNM"] } }, select: { id: true } });
 
     const result = await prisma.duesRecord.createMany({
       data: targets.map((u) => ({
@@ -115,7 +119,7 @@ router.post(
     });
 
     res.json({ created: result.count, total: targets.length });
-  }
+  })
 );
 
 // ── POST /dues/:userId/payment — manual payment record ───────────────────
@@ -129,7 +133,7 @@ const paymentSchema = z.object({
 router.post(
   "/dues/:userId/payment",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = paymentSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -171,14 +175,14 @@ router.post(
       include: { semester: { select: { id: true, label: true } } },
     });
     res.status(201).json({ payment, duesRecord: updated });
-  }
+  })
 );
 
 // ── POST /dues/:userId/waive ──────────────────────────────────────────────
 router.post(
   "/dues/:userId/waive",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { semesterId, reason } = req.body as { semesterId?: string; reason?: string };
     if (!semesterId) return res.status(400).json({ error: "semesterId required" });
 
@@ -202,14 +206,14 @@ router.post(
     });
 
     res.json({ duesRecord: updated });
-  }
+  })
 );
 
 // ── POST /dues/reminders/send — Exec+ ────────────────────────────────────
 router.post(
   "/dues/reminders/send",
   requireRole("EXEC"),
-  async (req: AuthedRequest, res: Response) => {
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { semesterId } = req.body as { semesterId?: string };
     if (!semesterId) return res.status(400).json({ error: "semesterId required" });
 
@@ -240,7 +244,7 @@ router.post(
         amountPaid: r.amountPaid,
       })),
     });
-  }
+  })
 );
 
 export default router;

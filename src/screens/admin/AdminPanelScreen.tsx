@@ -1,4 +1,4 @@
-// mobile/screens/admin/AdminPanelScreen.tsx
+// src/screens/admin/AdminPanelScreen.tsx
 //
 // Officer/Exec command center. Surfaced as the 6th tab for any user with
 // canViewAdminPanel = true (Officer+). Aggregates three quick-stat cards

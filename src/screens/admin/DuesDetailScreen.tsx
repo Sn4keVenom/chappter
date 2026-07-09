@@ -15,12 +15,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   View, Text, TextInput, FlatList, Pressable, StyleSheet,
-  ActivityIndicator, Modal, Alert,
+  ActivityIndicator, Modal, Alert, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 
 import { colors } from "../../theme/colors";
+import { usePermissions } from "../../hooks/usePermissions";
+import RequireAccess from "../../components/RequireAccess";
 import { getAllDues, recordPayment, waiveDues } from "../../api/dues";
 import { formatCurrency } from "../../types";
 import type { DuesRecord, DuesStatus } from "../../types";
@@ -79,7 +81,10 @@ function PaymentModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Record Payment</Text>
           <Text style={styles.modalSub}>{row.user.firstName} {row.user.lastName}</Text>
@@ -119,7 +124,7 @@ function PaymentModal({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -156,7 +161,10 @@ function WaiveModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <View style={styles.modalCard}>
           <Text style={styles.modalTitle}>Waive Dues</Text>
           <Text style={styles.modalSub}>{row.user.firstName} {row.user.lastName}</Text>
@@ -182,13 +190,14 @@ function WaiveModal({
             </Pressable>
           </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 export default function DuesDetailScreen() {
   const route = useRoute<RoutePropType>();
+  const { can } = usePermissions();
   const [query, setQuery] = useState(route.params?.userName ?? "");
   const [records, setRecords] = useState<Row[]>([]);
   const [summary, setSummary] = useState<{ status: string; _count: { _all: number }; _sum: { amountOwed: number; amountPaid: number } }[]>([]);
@@ -216,6 +225,10 @@ export default function DuesDetailScreen() {
     const q = query.toLowerCase();
     return `${r.user.firstName} ${r.user.lastName}`.toLowerCase().includes(q) || r.user.email.toLowerCase().includes(q);
   });
+
+  if (!can("dues.manage")) {
+    return <RequireAccess message="Only Exec+ can view chapter-wide dues." />;
+  }
 
   if (loading && !records.length) {
     return (
