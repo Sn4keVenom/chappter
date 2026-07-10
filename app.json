@@ -7,7 +7,9 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.thetatau.chapterhub",
@@ -24,7 +26,9 @@
         "backgroundColor": "#1B2A4A"
       },
       "package": "com.thetatau.chapterhub",
-      "permissions": ["android.permission.CAMERA"]
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "plugins": [
       "expo-apple-authentication",
@@ -46,6 +50,14 @@
         "expo-calendar",
         {
           "calendarPermission": "ChapterHub can add chapter events directly to your calendar."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
         }
       ]
     ],
