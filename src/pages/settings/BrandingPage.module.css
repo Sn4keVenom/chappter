@@ -1,0 +1,140 @@
+.previewRow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+
+.preview { border-radius: var(--radius-md); border: 1px solid; overflow: hidden; }
+
+.previewHeader { padding: var(--space-2) var(--space-3); }
+.previewHeaderText { font-size: var(--text-xs); font-weight: 800; }
+
+.previewCard { margin: var(--space-2); padding: var(--space-3); border-radius: var(--radius-sm); border: 1px solid; }
+.previewTitle { font-size: var(--text-sm); font-weight: 700; }
+.previewSub { font-size: var(--text-xs); margin-top: 2px; }
+
+.previewBadge {
+  display: inline-block;
+  margin-top: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.previewButton {
+  margin-top: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  font-size: var(--text-xs);
+  font-weight: 800;
+}
+
+.previewLink { display: block; margin-top: var(--space-2); font-size: var(--text-xs); font-weight: 600; }
+
+.previewNav {
+  display: flex;
+  justify-content: space-evenly;
+  padding: var(--space-2);
+  border-top: 1px solid;
+  font-size: var(--text-sm);
+}
+
+.previewLabel {
+  text-align: center;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.presetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-3);
+}
+
+.preset {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  min-height: 88px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.presetSelected { border-color: var(--color-primary-tint); border-width: 2px; }
+
+.presetSwatches { display: flex; gap: var(--space-1); }
+.presetSwatch { width: 20px; height: 20px; border-radius: var(--radius-sm); }
+.presetLabel { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-secondary); }
+.presetSelected .presetLabel { color: var(--color-primary-tint); }
+
+.colorRow { display: flex; align-items: flex-start; gap: var(--space-3); }
+.colorSwatch {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  margin-top: 26px;
+}
+.colorField { flex: 1; min-width: 0; }
+
+/* A native color picker alongside the hex field: the swatch is the fastest
+   way in, the hex field the precise one. Both write the same value. */
+.colorInput {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: none;
+  cursor: pointer;
+  flex: none;
+  margin-top: 26px;
+}
+
+.swatchGrid { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: calc(var(--space-2) * -1); margin-bottom: var(--space-4); }
+
+.swatchChip {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.swatchChipSelected { border-width: 3px; border-color: var(--color-text); }
+
+.markRow { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.mark {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: var(--text-lg);
+  display: grid;
+  place-items: center;
+}
+
+.markSelected { border-color: var(--color-primary-tint); border-width: 2px; background: var(--color-primary-soft); }
+
+.contrastRow { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.contrastScheme { width: 48px; font-size: var(--text-sm); font-weight: 700; }
+.contrastMetric { flex: 1; font-size: var(--text-xs); color: var(--color-text-secondary); }
+.contrastNote { font-size: var(--text-xs); color: var(--color-text-muted); line-height: 1.55; margin-top: var(--space-3); }
+
+.actions { display: grid; gap: var(--space-2); margin-top: var(--space-6); }
+
+.hint { font-size: var(--text-xs); color: var(--color-text-muted); line-height: 1.55; margin-top: var(--space-3); }
+
+@media (min-width: 700px) {
+  .previewRow { max-width: 560px; }
+  .actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

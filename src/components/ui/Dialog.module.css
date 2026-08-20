@@ -1,0 +1,125 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  background: var(--color-overlay);
+  /* Mobile: the sheet sits at the bottom, within thumb reach and clear of the
+     browser's own bottom chrome. Desktop: a centered dialog. */
+  align-items: end;
+  justify-items: stretch;
+  padding: 0;
+  animation: fade var(--transition-base);
+}
+
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: min(90dvh, 900px);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-bottom: none;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-lg);
+  /* Clears the home indicator / browser bar when the sheet is flush bottom. */
+  padding-bottom: env(safe-area-inset-bottom);
+  animation: slideUp var(--transition-base);
+}
+
+/* The drag affordance only makes sense for the bottom-sheet presentation. */
+.grabber {
+  width: 36px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--color-border);
+  margin: var(--space-2) auto 0;
+  flex: none;
+}
+
+.header {
+  padding: var(--space-4) var(--space-5) var(--space-2);
+  flex: none;
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: 800;
+}
+
+.subtitle {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.body {
+  padding: var(--space-2) var(--space-5) var(--space-4);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.footer {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface-elevated);
+  flex: none;
+}
+
+/* Equal widths, and flex-basis 0 so a long label can't make one button wider
+   than its siblings. */
+.footer > * { flex: 1 1 0; }
+
+/* Stack the actions when the viewport is very narrow or the user has scaled
+   text up — two words stop fitting side by side well before that point. */
+@media (max-width: 360px) {
+  .footer { flex-direction: column; }
+}
+
+.closeButton {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  color: var(--color-text-muted);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+@media (hover: hover) {
+  .closeButton:hover { background: var(--color-surface-alt); }
+}
+
+@media (min-width: 600px) {
+  .backdrop {
+    align-items: center;
+    justify-items: center;
+    padding: var(--space-6);
+  }
+
+  .panel {
+    width: min(560px, 100%);
+    border-radius: var(--radius-xl);
+    border-bottom: 1px solid var(--color-border);
+    padding-bottom: 0;
+    animation: pop var(--transition-base);
+  }
+
+  .grabber { display: none; }
+
+  .wide { width: min(860px, 100%); }
+}
+
+@keyframes fade { from { opacity: 0; } }
+@keyframes slideUp { from { transform: translateY(16px); opacity: 0; } }
+@keyframes pop { from { transform: scale(0.97); opacity: 0; } }

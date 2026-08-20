@@ -98,8 +98,12 @@ app.use(express.json({ limit: "2mb" }));
 // CORS_ORIGIN must be an explicit comma-separated allowlist in production —
 // `credentials: true` combined with a wildcard origin is rejected by
 // browsers anyway and is a real misconfiguration smell, not just unused
-// permissiveness. Mobile clients (this app) don't send cookies and aren't
-// subject to CORS at all, so this mainly guards a future admin web client.
+// permissiveness.
+//
+// This now matters directly: the client is a web app served from its own
+// origin (localhost:5173 in development), so every API call is cross-origin
+// and the browser enforces CORS — something the previous mobile client was
+// never subject to. Set CORS_ORIGIN to the web app's origin in backend/.env.
 const corsOrigin = process.env.CORS_ORIGIN?.split(",").map((o) => o.trim());
 if (isProduction && !corsOrigin) {
   throw new Error(

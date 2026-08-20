@@ -2,7 +2,10 @@
 
 **Theta Tau Chapter Operations Platform**
 
-A mobile-first fraternity management app built with Expo (React Native) and a Node.js/Express backend. Handles event management, QR check-in, points tracking, committee messaging, and dues collection.
+A mobile-first responsive **web app** for fraternity chapter management, with a
+Node.js/Express backend. Handles event management, check-in, points tracking,
+committee messaging, and dues collection. Nothing to install on a phone — it's
+a website.
 
 ## Quick Start — Demo Mode (default, no setup required)
 
@@ -10,20 +13,22 @@ A mobile-first fraternity management app built with Expo (React Native) and a No
 git clone https://github.com/your-org/chapterhub.git
 cd chapterhub
 npm install
-npm start                     # starts Expo; scan QR with Expo Go
+npm run dev                   # then open http://localhost:5173
 ```
 
-That's it — no `.env` file, no Clerk account, no database, no backend. The
-app launches straight into a fully interactive mock chapter with realistic
-members, events, dues, and messages. See [docs/DEMO_MODE.md](docs/DEMO_MODE.md).
+That's it — no `.env` file, no Clerk account, no database, no backend, and no
+server of any kind: the mock API runs in the page. The app opens straight into
+a fully interactive mock chapter with realistic members, events, dues, and
+messages. See [docs/DEMO_MODE.md](docs/DEMO_MODE.md) and
+[docs/WEB_MIGRATION.md](docs/WEB_MIGRATION.md).
 
 ## Running against the real backend
 
 ```bash
-# Mobile app
-cp .env.example .env          # set EXPO_PUBLIC_DEMO_MODE=false, fill in Clerk key + API URL
+# Web app
+cp .env.example .env          # set VITE_DEMO_MODE=false, fill in the API URL
 npm install
-npm start
+npm run dev
 
 # Backend (separate terminal)
 cp backend/.env.example backend/.env   # fill in DATABASE_URL + CLERK_SECRET_KEY
@@ -36,27 +41,31 @@ See [BUILD.md](BUILD.md) for complete setup instructions.
 
 | Layer | Technology |
 |---|---|
-| Mobile | Expo SDK 57 · React Native 0.86 · React 19.2 · TypeScript 6 |
-| Auth | Clerk (Google OAuth via SSO) |
+| Web | Vite 7 · React 19.2 · TypeScript 5.9 · CSS Modules |
+| Auth | Clerk (not yet wired for web — see docs/WEB_MIGRATION.md) |
 | State | Zustand 5 |
-| Navigation | React Navigation v7 |
+| Routing | React Router 7 |
 | Backend | Node.js 20+ · Express 4 · TypeScript 6 |
 | ORM | Prisma 6 |
 | Database | PostgreSQL 16 |
 | Payments | Stripe (optional) · Pyli (dues, self-service) |
-| Calendar | expo-calendar (device calendar) + Google/Outlook web links + ICS export |
+| Calendar | ICS download + Google/Outlook web links |
 
 ## Project Structure
 
 ```
-chapterhub/           ← repository root = Expo mobile app (phone only — no web/Electron)
-├── App.tsx           ← entry point
-├── src/              ← all mobile source
+chapterhub/           ← repository root = the web app
+├── index.html        ← document shell
+├── src/
+│   ├── main.tsx      ← entry point
 │   ├── config/       ← DEMO_MODE flag
 │   ├── mocks/        ← Demo Mode mock data + API layer (see docs/DEMO_MODE.md)
 │   ├── api/          ← HTTP client modules
-│   ├── navigation/   ← React Navigation setup
-│   ├── screens/      ← screen components
+│   ├── routes/       ← React Router route map + auth guards
+│   ├── layouts/      ← app shell, auth shell, settings shell
+│   ├── pages/        ← one component per route
+│   ├── components/   ← shared UI primitives
+│   ├── navigation/   ← role/module-aware navigation model
 │   ├── store/        ← Zustand state
 │   ├── hooks/        ← custom hooks
 │   ├── theme/        ← colors palette

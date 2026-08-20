@@ -1,32 +1,30 @@
 // src/theme/ThemeProvider.tsx
 //
-// Mounts once, directly under SafeAreaProvider in App.tsx. Three jobs:
+// Mounts once, at the top of the app. Three jobs:
 //
-//   1. Hydrate the persisted appearance mode before the first real paint, so
-//      a user pinned to Dark never sees a white flash on cold start.
-//   2. Keep useThemeStore in sync with the OS appearance switch while the app
-//      is running (Appearance.addChangeListener).
-//   3. Expose useTheme() — the hook every screen calls. Besides handing back
-//      the palette, calling it SUBSCRIBES the component to theme changes,
-//      which is what makes a Light→Dark switch repaint the tree without
-//      remounting the navigation stack (see runtime.ts for the full story).
+//   1. Push the resolved palette onto <html> as CSS custom properties, so
+//      every stylesheet in the app reads `var(--color-...)`.
+//   2. Follow the OS appearance setting while mode === "system", via a
+//      matchMedia listener.
+//   3. Fetch the chapter's branding once we know which chapter the signed-in
+//      user belongs to.
+//
+// Note what this component does NOT do: it doesn't provide colors through
+// React context. Because the palette lives in CSS variables, a theme change
+// repaints the whole document without re-rendering a single component. The
+// hooks below exist only for the handful of places that genuinely need a
+// color value in JavaScript (the branding previews, which render candidate
+// palettes that aren't the active one).
 
-import React, { useEffect, useMemo, useSyncExternalStore } from "react";
-import { Appearance, StatusBar, View } from "react-native";
-import {
-  DarkTheme as NavDarkTheme,
-  DefaultTheme as NavLightTheme,
-  type Theme as NavigationTheme,
-} from "@react-navigation/native";
+import { useEffect } from "react";
 
-import { getActivePalette, getThemeVersion, subscribeToTheme } from "./runtime";
-import { useThemeStore, type ThemeMode } from "./useThemeStore";
-import { luminance } from "./contrast";
+import { useThemeStore, DARK_QUERY, type ThemeMode } from "./useThemeStore";
+import { buildPalette, type ColorScheme, type Palette } from "./palette";
 import { useAuthStore } from "../store/useAuthStore";
-import type { ColorScheme, Palette } from "./palette";
 import type { ChapterBranding } from "../types";
 
-export interface ThemeContextValue {
+export interface ThemeValue {
+  /** The active palette as plain values. Prefer CSS variables in components. */
   colors: Palette;
   scheme: ColorScheme;
   isDark: boolean;
@@ -36,116 +34,53 @@ export interface ThemeContextValue {
 }
 
 /**
- * The hook screens use. Reading the palette through here (rather than the
- * `colors` proxy in theme/colors.ts) also subscribes the calling component to
- * theme changes — a component that only reads the proxy will show stale colors
- * until something else re-renders it.
+ * For components that need palette values in JS rather than CSS — currently
+ * only the Appearance and Chapter Branding previews, which draw miniatures of
+ * schemes other than the active one.
  */
-export function useTheme(): ThemeContextValue {
-  // useSyncExternalStore over the runtime version counter: the snapshot is a
-  // number, so React can compare it cheaply and skip re-rendering when the
-  // theme hasn't actually moved.
-  useSyncExternalStore(subscribeToTheme, getThemeVersion, getThemeVersion);
-
+export function useTheme(): ThemeValue {
   const mode = useThemeStore((s) => s.mode);
-  const setMode = useThemeStore((s) => s.setMode);
+  const sys = useThemeStore((s) => s.systemScheme);
   const branding = useThemeStore((s) => s.branding);
+  const setMode = useThemeStore((s) => s.setMode);
 
-  const colors = getActivePalette();
-  return useMemo(
-    () => ({
-      colors,
-      scheme: colors.scheme,
-      isDark: colors.scheme === "dark",
-      mode,
-      setMode,
-      branding,
-    }),
-    [colors, mode, setMode, branding]
-  );
-}
-
-/**
- * React Navigation's own theme, so the container background behind/between
- * screens (visible during push/pop transitions and behind a translucent
- * modal) matches instead of flashing white in dark mode.
- */
-export function useNavigationTheme(): NavigationTheme {
-  const { colors, isDark } = useTheme();
-  return useMemo(() => {
-    const base = isDark ? NavDarkTheme : NavLightTheme;
-    return {
-      ...base,
-      dark: isDark,
-      colors: {
-        ...base.colors,
-        primary: colors.primaryTint,
-        background: colors.background,
-        card: colors.surface,
-        text: colors.textPrimary,
-        border: colors.border,
-        notification: colors.accent,
-      },
-    };
-  }, [colors, isDark]);
-}
-
-/**
- * Status bar content color, chosen from the luminance of whatever is actually
- * behind it — the branded header on app screens, the plain background on
- * auth/onboarding screens. Derived rather than hard-coded so a chapter that
- * brands itself in a pale color still gets legible clock/battery glyphs.
- */
-export function ThemedStatusBar({ behind = "header" }: { behind?: "header" | "background" }) {
-  useTheme();
-  const colors = getActivePalette();
-  const surface = behind === "header" ? colors.headerBackground : colors.background;
-  return (
-    <StatusBar
-      barStyle={luminance(surface) < 0.5 ? "light-content" : "dark-content"}
-      backgroundColor={surface}
-      animated
-    />
-  );
+  const scheme: ColorScheme = mode === "system" ? sys : mode;
+  return {
+    colors: buildPalette(scheme, branding),
+    scheme,
+    isDark: scheme === "dark",
+    mode,
+    setMode,
+    branding,
+  };
 }
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const hydrate = useThemeStore((s) => s.hydrate);
-  const hydrated = useThemeStore((s) => s.hydrated);
+  const init = useThemeStore((s) => s.init);
   const setSystemScheme = useThemeStore((s) => s.setSystemScheme);
   const fetchBranding = useThemeStore((s) => s.fetchBranding);
   const chapterId = useAuthStore((s) => s.user?.chapterId);
 
+  // Paint the stored preference immediately on mount.
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+    init();
+  }, [init]);
+
+  // Follow the OS setting live. Fires whether or not mode === "system"; the
+  // store ignores it unless the resolved scheme actually changes.
+  useEffect(() => {
+    const query = window.matchMedia(DARK_QUERY);
+    const onChange = (e: MediaQueryListEvent) => setSystemScheme(e.matches ? "dark" : "light");
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, [setSystemScheme]);
 
   // Branding is chapter-scoped, so it can only be fetched once we know which
-  // chapter the signed-in user belongs to. Runs on sign-in and on any chapter
-  // change; before that the app renders in DEFAULT_BRANDING (which is exactly
-  // the stock ChapterHub palette, so login/onboarding look unchanged).
+  // chapter the signed-in user belongs to. Before that the app renders in
+  // DEFAULT_BRANDING, which is exactly the stock ChapterHub palette.
   useEffect(() => {
     if (chapterId) fetchBranding(chapterId);
   }, [chapterId, fetchBranding]);
 
-  useEffect(() => {
-    const sub = Appearance.addChangeListener(({ colorScheme }) => {
-      setSystemScheme((colorScheme ?? "light") as ColorScheme);
-    });
-    return () => sub.remove();
-  }, [setSystemScheme]);
-
-  // Reading the version here means the provider itself re-renders on a theme
-  // change, which repaints the root fill below.
-  useSyncExternalStore(subscribeToTheme, getThemeVersion, getThemeVersion);
-  const colors = getActivePalette();
-
-  // Hold the first frame until the persisted mode is known. This is a single
-  // SecureStore read (a few ms), and the fill is already the correct color, so
-  // there's nothing to see — it just prevents a light→dark flip on launch.
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {hydrated ? children : null}
-    </View>
-  );
+  return <>{children}</>;
 }

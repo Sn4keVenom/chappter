@@ -1,0 +1,25 @@
+.rank {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: var(--text-sm);
+  flex: none;
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+}
+
+.rankTop { color: #10141a; }
+
+.name { font-weight: 700; }
+.breakdown { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 2px; }
+
+.total { font-size: var(--text-lg); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.rowMe { background: var(--color-primary-soft); }
+
+.swatch { width: 14px; height: 14px; border-radius: var(--radius-sm); flex: none; }
+
+.nameCell { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }

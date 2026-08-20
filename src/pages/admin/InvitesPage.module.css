@@ -1,0 +1,59 @@
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.code {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.codeLarge { font-size: var(--text-xl); }
+
+.label { font-size: var(--text-sm); color: var(--color-text-secondary); font-weight: 600; }
+
+.meta { font-size: var(--text-xs); color: var(--color-text-muted); }
+
+.badgeRow { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+
+/* Mobile card — richer than a table row can be, with the QR inline. */
+.inviteCard { display: flex; gap: var(--space-4); align-items: flex-start; }
+.inviteBody { flex: 1; min-width: 0; }
+.inviteDetails { display: grid; gap: 2px; margin-top: var(--space-3); }
+
+.cardArchived { border-style: dashed; background: var(--color-surface-alt); }
+
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.actions > * { flex: 1 1 96px; }
+
+.cards { display: grid; gap: var(--space-3); }
+
+.archiveToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.qrPanel { display: grid; justify-items: center; gap: var(--space-3); }
+.qrCaption { font-size: var(--text-xs); color: var(--color-text-muted); text-align: center; }
+
+/* Below 720px the DataTable already switches to cards; above it, the invite
+   list keeps its own card layout rather than a table, because each row
+   carries a QR code and four actions that a table row cannot hold legibly. */
+@media (min-width: 720px) {
+  .cards { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+  .actions > * { flex: 0 1 auto; }
+}

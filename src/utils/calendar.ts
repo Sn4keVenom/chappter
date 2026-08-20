@@ -2,15 +2,14 @@
 //
 // Calendar integration (spec §7) — three independent export paths, all
 // client-side only (no backend endpoint, no schema change):
-//   · Google Calendar / Outlook Calendar — web "add event" URLs opened via
-//     Linking, no native permission needed.
-//   · Apple Calendar (and any other device calendar app) — a real, working
-//     integration using expo-calendar: requests calendar permission, then
-//     creates an actual event on-device. This is NOT a demo-mode stand-in;
-//     it works identically in Demo Mode and a real backend build, since it
-//     only touches the OS calendar, never the app's own data layer.
-//   · Universal ICS export — for anything else (email a .ics, etc.) via
-//     the OS share sheet.
+//   · Google Calendar / Outlook Calendar — "add event" URLs opened in a
+//     new tab.
+//   · Universal ICS download — a real .ics file. Opening it hands the event
+//     to whatever calendar app the operating system has registered (Apple
+//     Calendar, Outlook desktop, Thunderbird…), which is the web equivalent
+//     of the mobile build's direct expo-calendar write. This works
+//     identically in Demo Mode and against a real backend, since it never
+//     touches the app's own data layer.
 //
 // "Sync" in the product-spec sense (a live Google Calendar feed that stays
 // updated) is NOT implemented — see docs/DEMO_MODE.md for what a real
@@ -18,8 +17,6 @@
 // This module only covers one-shot "add this event" exports, which is what
 // the UI actually offers.
 
-import { Platform, Share } from "react-native";
-import * as Calendar from "expo-calendar";
 import type { EventDetail } from "../types";
 
 interface CalendarEventInput {
@@ -86,42 +83,69 @@ export function buildIcsContent(event: CalendarEventInput): string {
   return lines.join("\r\n");
 }
 
-/** Share the event as a universal .ics payload via the OS share sheet. */
-export async function shareIcs(event: CalendarEventInput): Promise<void> {
-  await Share.share({
-    title: event.title,
-    message: buildIcsContent(event),
+/**
+ * Download the event as a .ics file.
+ *
+ * Replaces the mobile build's two separate paths (OS share sheet + a direct
+ * expo-calendar write) with the one mechanism the web actually has. A blob
+ * URL avoids embedding the whole calendar body in a data: URI, and the object
+ * URL is revoked on the next tick so the blob does not leak for the lifetime
+ * of the document.
+ */
+export function downloadIcs(event: CalendarEventInput): void {
+  const blob = new Blob([buildIcsContent(event)], {
+    type: "text/calendar;charset=utf-8",
   });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugify(event.title) || "event"}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
 }
 
 /**
- * Add directly to the device's calendar app (Apple Calendar on iOS, the
- * default calendar app on Android) via expo-calendar. Requests permission
- * on first use; picks the device's default writable calendar.
+ * Share via the Web Share API where the browser supports it (most mobile
+ * browsers), falling back to copying the event details to the clipboard.
+ * Returns what actually happened so the caller can tell the user.
  */
-export async function addToDeviceCalendar(event: CalendarEventInput): Promise<void> {
-  const { status } = await Calendar.requestCalendarPermissionsAsync();
-  if (status !== "granted") {
-    throw new Error("Calendar permission was not granted.");
+export async function shareEvent(
+  event: CalendarEventInput
+): Promise<"shared" | "copied" | "unavailable"> {
+  const text = [
+    event.title,
+    new Date(event.startTime).toLocaleString(),
+    event.location ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: event.title, text });
+      return "shared";
+    } catch (err) {
+      // The user dismissing the share sheet throws AbortError — that is a
+      // cancellation, not a failure, so don't fall through to the clipboard.
+      if (err instanceof DOMException && err.name === "AbortError") return "shared";
+    }
   }
 
-  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-  const defaultCalendar =
-    calendars.find((c) => c.allowsModifications && c.source?.name === (Platform.OS === "ios" ? "Default" : undefined)) ??
-    calendars.find((c) => c.allowsModifications);
-
-  if (!defaultCalendar) {
-    throw new Error("No writable calendar was found on this device.");
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    return "copied";
   }
-
-  await Calendar.createEventAsync(defaultCalendar.id, {
-    title: event.title,
-    notes: event.description ?? undefined,
-    location: event.location ?? undefined,
-    startDate: new Date(event.startTime),
-    endDate: new Date(event.endTime),
-    timeZone: undefined,
-  });
+  return "unavailable";
 }
 
 export function eventToCalendarInput(event: EventDetail): CalendarEventInput {

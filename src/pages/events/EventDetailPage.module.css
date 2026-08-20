@@ -1,0 +1,68 @@
+.layout { display: grid; gap: var(--space-6); }
+
+.detailRow { display: flex; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-divider); }
+.detailRow:last-child { border-bottom: none; }
+.detailLabel { flex: none; width: 100px; font-size: var(--text-sm); font-weight: 700; color: var(--color-text-muted); }
+.detailValue { flex: 1; min-width: 0; font-size: var(--text-base); }
+
+.description { font-size: var(--text-base); line-height: 1.6; white-space: pre-wrap; }
+
+.rsvpGroup { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
+
+.rsvpOption {
+  min-height: var(--tap);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.rsvpSelected { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+
+.resultCard { display: grid; gap: var(--space-1); }
+.resultValue { font-size: var(--text-xl); font-weight: 800; }
+
+.delegateRow { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.delegateChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-accent-soft-border);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-tint);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.delegateRemove { font-size: var(--text-md); line-height: 1; color: inherit; }
+
+.actions { display: grid; gap: var(--space-2); }
+
+.searchResults { max-height: 260px; overflow-y: auto; }
+
+.searchRow {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  padding: var(--space-3) 0;
+  text-align: left;
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.searchName { font-weight: 600; }
+.searchMeta { font-size: var(--text-xs); color: var(--color-text-muted); }
+
+@media (min-width: 900px) {
+  /* Two columns: the narrative (description, details) beside the actions the
+     page exists to support — RSVP, check-in, organizer tools. */
+  .layout { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; }
+  .sideColumn { display: grid; gap: var(--space-4); position: sticky; top: var(--space-8); }
+  .mainColumn { display: grid; gap: var(--space-5); min-width: 0; }
+}

@@ -1,50 +1,35 @@
 {
   "name": "chapterhub",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Theta Tau chapter operations platform — mobile app",
-  "main": "node_modules/expo/AppEntry.js",
+  "type": "module",
+  "description": "Theta Tau chapter operations platform — responsive web app",
   "engines": {
-    "node": "^20.19.4 || ^22.13.0 || ^24.3.0 || >=25.0.0"
+    "node": "^20.19.0 || ^22.12.0 || >=24"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "backend": "npm --prefix backend run dev",
     "backend:seed": "npm --prefix backend run db:seed",
     "backend:migrate": "npm --prefix backend run db:migrate:dev"
   },
   "dependencies": {
-    "@clerk/clerk-expo": "^2.19.41",
-    "@react-native-community/datetimepicker": "9.1.0",
-    "@react-navigation/bottom-tabs": "^7.18.8",
-    "@react-navigation/native": "^7.3.8",
-    "@react-navigation/native-stack": "^7.17.10",
     "axios": "^1.18.1",
-    "expo": "~57.0.4",
-    "expo-apple-authentication": "~57.0.0",
-    "expo-auth-session": "~57.0.2",
-    "expo-build-properties": "~57.0.3",
-    "expo-calendar": "~57.0.0",
-    "expo-camera": "~57.0.1",
-    "expo-secure-store": "~57.0.0",
-    "expo-splash-screen": "~57.0.2",
-    "expo-web-browser": "~57.0.0",
+    "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-native": "0.86.0",
-    "react-native-gesture-handler": "~2.32.0",
-    "react-native-qrcode-svg": "^6.3.21",
-    "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "4.25.2",
-    "react-native-svg": "15.15.4",
+    "react-router-dom": "^7.9.1",
     "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@babel/core": "^7.28.0",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "~19.2.17",
-    "typescript": "~6.0.3"
+    "@types/react-dom": "~19.2.3",
+    "@vitejs/plugin-react": "^5.0.4",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.14"
   }
 }

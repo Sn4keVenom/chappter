@@ -1,0 +1,46 @@
+/* Auth screens keep the mobile app's brand-forward treatment: the chapter's
+   primary color fills the viewport with the form floating on top. On desktop
+   the form is centered in a fixed-width column rather than stretched. */
+
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-6) var(--space-5);
+  padding-top: calc(var(--space-8) + env(safe-area-inset-top));
+  padding-bottom: calc(var(--space-8) + env(safe-area-inset-bottom));
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.inner { width: min(420px, 100%); }
+
+.hero { text-align: center; margin-bottom: var(--space-8); }
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto var(--space-4);
+  border-radius: var(--radius-xl);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.appName { font-size: var(--text-3xl); font-weight: 800; letter-spacing: -0.02em; }
+
+.tagline {
+  margin-top: var(--space-2);
+  font-size: var(--text-base);
+  color: color-mix(in srgb, var(--color-on-primary) 68%, transparent);
+}
+
+.panel {
+  background: color-mix(in srgb, var(--color-on-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-on-primary) 14%, transparent);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+}

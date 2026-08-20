@@ -1,19 +1,15 @@
 // src/theme/semantic.ts
 //
-// Domain → color lookups, in one place. Each screen used to keep its own
-// module-scope `Record<Status, string>` literal, which had two problems:
+// Domain → color lookups, in one place. Each returns a CSS `var(--…)`
+// reference rather than a literal, so the value follows the active theme and
+// the chapter's branding without anything re-rendering.
 //
-//   · Frozen at import time. Once colors became theme-aware, those literals
-//     silently captured the light palette forever — a dark-mode dues badge
-//     would still be the light-mode green.
-//   · Duplicated. Dues status colors were declared identically in three
-//     separate screens, so any change had to be made three times.
-//
-// These are plain FUNCTIONS, not objects: the `colors` read happens on every
-// call, i.e. during render, so the value always matches the active theme.
+// These are FUNCTIONS rather than lookup objects on purpose: the mobile app
+// kept per-screen `Record<Status, string>` literals that froze the light
+// palette at import time, and the same class of bug would return here if the
+// map held resolved values.
 
-import { colors } from "./colors";
-import { withAlpha } from "./contrast";
+import { cssVar } from "./cssVars";
 import type {
   DuesStatus,
   EventCategory,
@@ -25,66 +21,68 @@ import type {
 
 export function eventCategoryColor(category: EventCategory | string): string {
   switch (category) {
-    case "BROTHERHOOD": return colors.categoryBrotherhood;
-    case "SERVICE": return colors.categoryService;
-    case "PROFESSIONAL": return colors.categoryProfessional;
-    case "RUSH": return colors.categoryRush;
-    case "ADMIN": return colors.categoryAdmin;
-    default: return colors.categoryAdmin;
+    case "BROTHERHOOD": return cssVar("categoryBrotherhood");
+    case "SERVICE": return cssVar("categoryService");
+    case "PROFESSIONAL": return cssVar("categoryProfessional");
+    case "RUSH": return cssVar("categoryRush");
+    case "ADMIN":
+    default: return cssVar("categoryAdmin");
   }
 }
 
-export function duesStatusColor(status: DuesStatus | string): string {
+/** Semantic tone shared by the Badge component and any inline colouring. */
+export type Tone = "neutral" | "success" | "warning" | "danger" | "primary" | "accent";
+
+export function duesStatusTone(status: DuesStatus | string): Tone {
   switch (status) {
-    case "PAID": return colors.success;
-    case "PARTIAL": return colors.warning;
-    case "UNPAID": return colors.danger;
-    case "WAIVED": return colors.textMuted;
-    default: return colors.textMuted;
+    case "PAID": return "success";
+    case "PARTIAL": return "warning";
+    case "UNPAID": return "danger";
+    case "WAIVED":
+    default: return "neutral";
   }
 }
 
-export function reimbursementStatusColor(status: ReimbursementStatus | string): string {
+export function reimbursementStatusTone(status: ReimbursementStatus | string): Tone {
   switch (status) {
-    case "SUBMITTED": return colors.warning;
-    case "APPROVED": return colors.primaryTint;
-    case "REIMBURSED": return colors.success;
-    case "REJECTED": return colors.danger;
-    default: return colors.textMuted;
+    case "SUBMITTED": return "warning";
+    case "APPROVED": return "primary";
+    case "REIMBURSED": return "success";
+    case "REJECTED": return "danger";
+    default: return "neutral";
   }
 }
 
-export function feedbackStatusColor(status: FeedbackStatus | string): string {
+export function feedbackStatusTone(status: FeedbackStatus | string): Tone {
   switch (status) {
-    case "OPEN": return colors.warning;
-    case "IN_REVIEW": return colors.primaryTint;
-    case "RESOLVED": return colors.success;
-    case "CLOSED": return colors.textMuted;
-    default: return colors.textMuted;
+    case "OPEN": return "warning";
+    case "IN_REVIEW": return "primary";
+    case "RESOLVED": return "success";
+    case "CLOSED":
+    default: return "neutral";
   }
 }
 
-export function userRoleColor(role: UserRole | string): string {
+export function userRoleTone(role: UserRole | string): Tone {
   switch (role) {
-    case "SUPER_ADMIN": return colors.primaryTint;
-    case "EXEC": return colors.accentTint;
-    case "PNM": return colors.categoryRush;
-    case "ALUMNI": return colors.categoryBrotherhood;
+    case "SUPER_ADMIN": return "primary";
+    case "EXEC": return "accent";
+    case "PNM": return "warning";
+    case "ALUMNI": return "neutral";
     case "MEMBER":
-    default:
-      return colors.textMuted;
+    default: return "neutral";
   }
 }
 
-export function inviteStateColor(state: InviteState): string {
+export function inviteStateTone(state: InviteState): Tone {
   switch (state) {
-    case "ACTIVE": return colors.success;
-    case "EXPIRING_SOON": return colors.warning;
-    case "PAUSED": return colors.warning;
-    case "EXPIRED": return colors.danger;
-    case "EXHAUSTED": return colors.danger;
-    case "ARCHIVED": return colors.textMuted;
-    default: return colors.textMuted;
+    case "ACTIVE": return "success";
+    case "EXPIRING_SOON":
+    case "PAUSED": return "warning";
+    case "EXPIRED":
+    case "EXHAUSTED": return "danger";
+    case "ARCHIVED":
+    default: return "neutral";
   }
 }
 
@@ -98,14 +96,4 @@ export function inviteStateLabel(state: InviteState): string {
     case "ARCHIVED": return "Archived";
     default: return state;
   }
-}
-
-/**
- * Tinted background for a status badge. Replaces the old
- * `STATUS_COLOR[x] + "22"` pattern, which produced an invalid color string
- * whenever the base was anything but a plain 6-digit hex, and was far too
- * faint to see against a dark background.
- */
-export function badgeBackground(color: string): string {
-  return withAlpha(color, colors.scheme === "dark" ? 0.22 : 0.13);
 }

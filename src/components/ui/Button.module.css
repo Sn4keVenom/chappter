@@ -1,0 +1,111 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: var(--text-base);
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.button:disabled,
+.button[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+/* Hover effects are pointer-only: on touch, :hover sticks after a tap and
+   leaves the control looking permanently pressed. */
+@media (hover: hover) {
+  .button:not(:disabled):hover {
+    filter: brightness(1.08);
+  }
+}
+
+.button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+/* Variants */
+.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.secondary {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+@media (hover: hover) {
+  .ghost:not(:disabled):hover {
+    background: var(--color-surface-alt);
+    filter: none;
+  }
+}
+
+.danger {
+  background: transparent;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.dangerSolid {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+
+/* Sizes — `sm` still clears 36px, which is acceptable for secondary controls
+   inside a dense row; anything a user reaches for first uses md or lg. */
+.sm {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.lg {
+  min-height: 52px;
+  font-size: var(--text-md);
+}
+
+.block {
+  width: 100%;
+}
+
+.iconOnly {
+  padding: 0;
+  width: var(--tap);
+  min-width: var(--tap);
+}
+
+.iconOnly.sm {
+  width: 36px;
+  min-width: 36px;
+}
+
+.spinner {
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

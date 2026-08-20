@@ -35,7 +35,7 @@ import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from "ax
 import { DEMO_MODE } from "../config/demo";
 import { demoAdapter } from "../mocks/router";
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000/api/v1";
 
 // Fallback token — survives component remounts but resets on full JS reload.
 let _authToken: string | null = null;
@@ -94,10 +94,10 @@ apiClient.interceptors.request.use(async (config) => {
 });
 
 // Retry once for GET requests only (idempotent — safe to repeat) on a
-// network error or a 5xx. Mobile networks drop packets on WiFi/cellular
-// handoff constantly; a single automatic retry with a short delay clears
-// most of those transparently instead of surfacing an error the user would
-// just retry manually anyway via pull-to-refresh. Never retries
+// network error or a 5xx. Connections drop on network changes and when a
+// backgrounded tab wakes up; a single automatic retry with a short delay
+// clears most of those transparently instead of surfacing an error the
+// user would just retry manually anyway. Never retries
 // POST/PATCH/DELETE — those aren't safe to silently repeat here (some, like
 // point adjustments, aren't naturally idempotent).
 type RetryableConfig = InternalAxiosRequestConfig & { _retried?: boolean };
