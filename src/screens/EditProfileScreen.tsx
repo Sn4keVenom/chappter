@@ -15,7 +15,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -26,8 +25,13 @@ import { useNavigation } from "@react-navigation/native";
 import { getMe, updateMyProfile } from "../api/users";
 import { useAuthStore } from "../store/useAuthStore";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 
 export default function EditProfileScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
@@ -159,7 +163,7 @@ export default function EditProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
@@ -173,4 +177,4 @@ const styles = StyleSheet.create({
   saveButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 28 },
   saveButtonText: { color: colors.primaryText, fontWeight: "700", fontSize: 16 },
   buttonDisabled: { opacity: 0.6 },
-});
+}));

@@ -12,12 +12,14 @@
 //   - Navigation: AppStackParamList → PointsAdjust { userId, userName }
 
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, Alert, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, Pressable, Alert, ActivityIndicator } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { adjustPoints } from "../../api/users";
@@ -36,6 +38,9 @@ const TYPES: { value: AdjustType; label: string; hint: string }[] = [
 ];
 
 export default function PointsAdjustScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { userId, userName } = route.params;
@@ -144,7 +149,7 @@ export default function PointsAdjustScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background, padding: 20 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   memberName: { fontSize: 18, fontWeight: "800", color: colors.textPrimary, marginBottom: 20, textAlign: "center" },
@@ -160,4 +165,4 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: "center", marginTop: 32 },
   submitDisabled: { opacity: 0.6 },
   submitText: { color: colors.primaryText, fontSize: 16, fontWeight: "700" },
-});
+}));

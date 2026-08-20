@@ -16,7 +16,6 @@ import {
   Text,
   FlatList,
   Pressable,
-  StyleSheet,
   ActivityIndicator,
   Alert,
   Modal,
@@ -30,6 +29,9 @@ import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { withAlpha } from "../../theme/contrast";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import { getEventRoster, manualMarkAttendance } from "../../api/attendance";
 import type { RosterEntry, RsvpStatus } from "../../types";
@@ -194,6 +196,9 @@ type PendingAction = {
 } | null;
 
 export default function AttendanceOverrideScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { eventId } = route.params;
@@ -368,7 +373,7 @@ export default function AttendanceOverrideScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
   permError: { color: colors.danger, fontSize: 16 },
 
@@ -381,8 +386,8 @@ const styles = StyleSheet.create({
   },
   stat: { flex: 1, alignItems: "center" },
   statValue: { color: colors.primaryText, fontSize: 20, fontWeight: "700" },
-  statLabel: { color: colors.primaryText + "99", fontSize: 11, marginTop: 2 },
-  statDivider: { width: 1, backgroundColor: colors.primaryText + "33" },
+  statLabel: { color: withAlpha(colors.headerText, 0.65), fontSize: 11, marginTop: 2 },
+  statDivider: { width: 1, backgroundColor: withAlpha(colors.headerText, 0.28) },
 
   // Search
   searchBar: {
@@ -467,8 +472,8 @@ const styles = StyleSheet.create({
     minWidth: 72,
     alignItems: "center",
   },
-  actionBtnPresent: { backgroundColor: colors.success + "22", borderWidth: 1, borderColor: colors.success },
-  actionBtnRemove: { backgroundColor: colors.danger + "11", borderWidth: 1, borderColor: colors.danger },
+  actionBtnPresent: { backgroundColor: colors.successSoft, borderWidth: 1, borderColor: colors.success },
+  actionBtnRemove: { backgroundColor: colors.dangerSoft, borderWidth: 1, borderColor: colors.danger },
   actionBtnText: { fontSize: 13, fontWeight: "600", color: colors.success },
   actionBtnRemoveText: { color: colors.danger },
   disabledBtn: { opacity: 0.4 },
@@ -514,4 +519,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   reasonConfirmText: { color: "#FFF", fontWeight: "700", fontSize: 15 },
-});
+}));

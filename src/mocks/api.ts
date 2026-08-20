@@ -57,6 +57,7 @@ import type {
   ModuleConfig,
   ModuleKey,
   ChapterSettings,
+  ChapterBranding,
   ChapterDocument,
   DocumentCategory,
   ExternalLink,
@@ -568,22 +569,92 @@ function requireChapterInviteAccess(): void {
   }
 }
 
-export function createInvite(
-  _chapterId: string,
-  payload: { role?: UserRole; status?: MemberStatus; maxUses?: number | null; expiresAt?: string | null }
-): db.MockChapterInvite {
+/**
+ * Human-friendly random code: no vowels (can't accidentally spell anything),
+ * no 0/O/1/I/L (can't be misread off a projector at an info night).
+ */
+const CODE_ALPHABET = "23456789BCDFGHJKMNPQRSTVWXYZ";
+
+function generateInviteCode(length = 8): string {
+  let code = "";
+  do {
+    code = Array.from(
+      { length },
+      () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
+    ).join("");
+  } while (db.findInviteByCode(code)); // collision guard, same as the server would
+  return code;
+}
+
+type InvitePayload = {
+  code?: string;
+  label?: string | null;
+  role?: UserRole;
+  status?: MemberStatus;
+  maxUses?: number | null;
+  expiresAt?: string | null;
+  active?: boolean;
+};
+
+/**
+ * Shared validation for create and update. Mirrors what the real route's zod
+ * schema would reject, so screens get the same error messages in both modes
+ * and a bug in the form surfaces in Demo Mode instead of only in production.
+ */
+function validateInvitePayload(payload: InvitePayload, existing?: db.MockChapterInvite): void {
+  if (payload.code !== undefined) {
+    const code = payload.code.trim().toUpperCase();
+    if (code.length < 4 || code.length > 24) {
+      throw new DemoApiError(400, "Code must be between 4 and 24 characters.");
+    }
+    if (!/^[A-Z0-9-]+$/.test(code)) {
+      throw new DemoApiError(400, "Code can only contain letters, numbers, and dashes.");
+    }
+    const clash = db.findInviteByCode(code);
+    if (clash && clash.id !== existing?.id) {
+      throw new DemoApiError(409, `Code "${code}" is already in use.`);
+    }
+  }
+  if (payload.maxUses != null) {
+    if (!Number.isInteger(payload.maxUses) || payload.maxUses < 1) {
+      throw new DemoApiError(400, "Max uses must be a whole number of 1 or more.");
+    }
+    const used = existing?.useCount ?? 0;
+    if (payload.maxUses < used) {
+      throw new DemoApiError(400, `This code has already been used ${used} times — max uses can't be lower.`);
+    }
+  }
+  if (payload.expiresAt) {
+    const when = new Date(payload.expiresAt);
+    if (Number.isNaN(when.getTime())) {
+      throw new DemoApiError(400, "Expiration date is not valid.");
+    }
+  }
+}
+
+function findInviteOr404(inviteId: string): db.MockChapterInvite {
+  const invite = db.chapterInvites.find((i) => i.id === inviteId);
+  if (!invite) throw new DemoApiError(404, "Invite not found");
+  return invite;
+}
+
+export function createInvite(_chapterId: string, payload: InvitePayload): db.MockChapterInvite {
   requireChapterInviteAccess();
-  const code = Math.random().toString(36).slice(2, 10).toUpperCase();
+  validateInvitePayload(payload);
   const invite: db.MockChapterInvite = {
     id: db.nextInviteId(),
     chapterId: db.DEMO_CHAPTER_ID,
-    code,
+    code: payload.code ? payload.code.trim().toUpperCase() : generateInviteCode(),
+    label: payload.label?.trim() || null,
     role: payload.role ?? "MEMBER",
     status: payload.status ?? "PNM",
     maxUses: payload.maxUses ?? null,
     useCount: 0,
     expiresAt: payload.expiresAt ?? null,
+    active: payload.active ?? true,
     revokedAt: null,
+    regeneratedAt: null,
+    lastUsedAt: null,
     createdById: getCurrentDemoUserId(),
     createdAt: new Date().toISOString(),
   };
@@ -596,12 +667,121 @@ export function getInvites(_chapterId: string): db.MockChapterInvite[] {
   return db.chapterInvites.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+export function updateInvite(
+  _chapterId: string,
+  inviteId: string,
+  payload: InvitePayload
+): db.MockChapterInvite {
+  requireChapterInviteAccess();
+  const invite = findInviteOr404(inviteId);
+  if (invite.revokedAt) {
+    throw new DemoApiError(409, "Archived invites can't be edited. Restore it first.");
+  }
+  validateInvitePayload(payload, invite);
+
+  if (payload.code !== undefined) invite.code = payload.code.trim().toUpperCase();
+  if (payload.label !== undefined) invite.label = payload.label?.trim() || null;
+  if (payload.role !== undefined) invite.role = payload.role;
+  if (payload.status !== undefined) invite.status = payload.status;
+  if (payload.maxUses !== undefined) invite.maxUses = payload.maxUses;
+  if (payload.expiresAt !== undefined) invite.expiresAt = payload.expiresAt;
+  if (payload.active !== undefined) invite.active = payload.active;
+  return invite;
+}
+
+/**
+ * Archive (the backend column is `revokedAt`). Kept as DELETE
+ * /chapters/:id/invites/:inviteId for wire compatibility with the existing
+ * backend route and the older revokeInvite() client function.
+ */
 export function revokeInvite(_chapterId: string, inviteId: string): db.MockChapterInvite {
   requireChapterInviteAccess();
-  const invite = db.chapterInvites.find((i) => i.id === inviteId);
-  if (!invite) throw new DemoApiError(404, "Invite not found");
+  const invite = findInviteOr404(inviteId);
   invite.revokedAt = new Date().toISOString();
   return invite;
+}
+
+export function restoreInvite(_chapterId: string, inviteId: string): db.MockChapterInvite {
+  requireChapterInviteAccess();
+  const invite = findInviteOr404(inviteId);
+  invite.revokedAt = null;
+  return invite;
+}
+
+/**
+ * Issue a brand-new code string for an existing invite. The old string stops
+ * working immediately — anyone holding a printed flyer or an old link is cut
+ * off, which is the entire point (and what the UI warns about before calling
+ * this). Configuration and use count are deliberately preserved.
+ */
+export function regenerateInvite(_chapterId: string, inviteId: string): db.MockChapterInvite {
+  requireChapterInviteAccess();
+  const invite = findInviteOr404(inviteId);
+  if (invite.revokedAt) {
+    throw new DemoApiError(409, "Archived invites can't be regenerated. Restore it first.");
+  }
+  invite.code = generateInviteCode();
+  invite.regeneratedAt = new Date().toISOString();
+  return invite;
+}
+
+// ── Chapter branding ─────────────────────────────────────────────────────
+// Backed by the same single mutable record the rest of the demo uses, so an
+// admin's edit is immediately visible to every screen for the session — the
+// same behavior a real PATCH + refetch would produce.
+
+const DEFAULT_DEMO_BRANDING: ChapterBranding = { ...db.chapterBranding };
+
+function requireBrandingAccess(): void {
+  if (!can(getCurrentDemoUserId(), "settings.manage")) {
+    throw new DemoApiError(403, "Not authorized to change chapter branding");
+  }
+}
+
+export function getChapterBranding(_chapterId: string): ChapterBranding {
+  // Readable by every member — branding is what the whole app is painted
+  // with, so gating the GET would leave non-admins on the default palette.
+  return { ...db.chapterBranding };
+}
+
+const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+export function updateChapterBranding(
+  _chapterId: string,
+  payload: Partial<ChapterBranding>
+): ChapterBranding {
+  requireBrandingAccess();
+
+  for (const key of ["primaryColor", "accentColor", "backgroundTintLight", "backgroundTintDark"] as const) {
+    const value = payload[key];
+    if (value != null && !HEX_RE.test(String(value))) {
+      throw new DemoApiError(400, `${key} must be a hex color like #1B2A4A.`);
+    }
+  }
+  if (payload.chapterName !== undefined && !payload.chapterName.trim()) {
+    throw new DemoApiError(400, "Chapter name can't be empty.");
+  }
+
+  const { chapterId: _ignored, updatedAt: _ignoredAt, ...assignable } = payload;
+  Object.assign(db.chapterBranding, assignable);
+  db.chapterBranding.updatedAt = new Date().toISOString();
+
+  // Chapter name is shown in two places that read from different records —
+  // keep the operational settings record in step so Chapter Settings and the
+  // branding editor never disagree about the chapter's name.
+  if (payload.chapterName !== undefined) db.chapterSettings.chapterName = payload.chapterName;
+  if (payload.chapterLetters !== undefined) db.chapterSettings.chapterLetters = payload.chapterLetters;
+  if (payload.logoUrl !== undefined) db.chapterSettings.logoUrl = payload.logoUrl;
+
+  return { ...db.chapterBranding };
+}
+
+export function resetChapterBranding(_chapterId: string): ChapterBranding {
+  requireBrandingAccess();
+  Object.assign(db.chapterBranding, DEFAULT_DEMO_BRANDING, {
+    updatedAt: new Date().toISOString(),
+  });
+  return { ...db.chapterBranding };
 }
 
 export function getJoinRequests(_chapterId: string, status: string): db.MockJoinRequest[] {

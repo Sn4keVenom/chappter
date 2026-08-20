@@ -9,7 +9,7 @@
 
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, TextInput, Pressable, ScrollView, StyleSheet,
+  View, Text, TextInput, Pressable, ScrollView,
   Switch, Alert, ActivityIndicator, Platform
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -17,11 +17,16 @@ import { useNavigation } from "@react-navigation/native";
 import { apiClient } from "../api/client";
 import { listCommittees } from "../api/committees";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import type { EventCategory, Committee } from "../types";
 
 const CATEGORIES: EventCategory[] = ["BROTHERHOOD", "SERVICE", "PROFESSIONAL", "RUSH", "ADMIN"];
 
 export default function CreateEventScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
 
   const [title, setTitle] = useState("");
@@ -232,7 +237,7 @@ function formatDT(d: Date): string {
   });
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 60 },
   error: { color: colors.danger, fontSize: 13, marginBottom: 16, textAlign: "center" },
@@ -251,4 +256,4 @@ const styles = StyleSheet.create({
   submitButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: "center", marginTop: 32 },
   submitDisabled: { opacity: 0.6 },
   submitText: { color: colors.primaryText, fontSize: 16, fontWeight: "700" },
-});
+}));

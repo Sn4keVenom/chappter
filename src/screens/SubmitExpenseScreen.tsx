@@ -17,7 +17,7 @@
 
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, TextInput, Pressable, ScrollView, StyleSheet,
+  View, Text, TextInput, Pressable, ScrollView,
   Alert, ActivityIndicator, Platform,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
@@ -26,6 +26,8 @@ import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import { submitExpense, getCommitteeBudget } from "../api/finance";
 import { formatCurrency } from "../types";
 import type { CommitteeBudget } from "../types";
@@ -35,6 +37,9 @@ type NavProp = NativeStackNavigationProp<AppStackParamList>;
 type RoutePropType = RouteProp<AppStackParamList, "SubmitExpense">;
 
 export default function SubmitExpenseScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { committeeId, committeeName } = route.params;
@@ -168,7 +173,7 @@ export default function SubmitExpenseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 60 },
   committeeName: { fontSize: 13, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 },
@@ -187,4 +192,4 @@ const styles = StyleSheet.create({
   submitButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: "center", marginTop: 32 },
   submitDisabled: { opacity: 0.6 },
   submitText: { color: colors.primaryText, fontSize: 16, fontWeight: "700" },
-});
+}));

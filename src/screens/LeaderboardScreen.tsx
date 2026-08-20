@@ -17,12 +17,14 @@
 
 import React, { useCallback, useState } from "react";
 import {
-  View, Text, FlatList, StyleSheet, ActivityIndicator, Pressable
+  View, Text, FlatList, ActivityIndicator, Pressable
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { usePointsStore } from "../store/usePointsStore";
 import { getTeamLeaderboard } from "../api/teams";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import type { LeaderboardEntry, TeamLeaderboardEntry } from "../types";
 
 const RANK_COLORS = ["#C8A24A", "#A8A8A8", "#A0634C"] as const; // gold, silver, bronze
@@ -30,6 +32,9 @@ const RANK_COLORS = ["#C8A24A", "#A8A8A8", "#A0634C"] as const; // gold, silver,
 type Tab = "individual" | "team";
 
 export default function LeaderboardScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
   const { leaderboard, leaderboardSemesterLabel, leaderboardLoading, fetchLeaderboard } =
     usePointsStore();
@@ -198,7 +203,7 @@ function TeamRow({ entry, onPress }: { entry: TeamLeaderboardEntry; onPress: () 
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   tabRow: {
     flexDirection: "row", margin: 16, marginBottom: 0, borderRadius: 10, overflow: "hidden",
@@ -242,5 +247,5 @@ const styles = StyleSheet.create({
   nameBlock: { flex: 1 },
   name: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   breakdown: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  points: { fontSize: 18, fontWeight: "800", color: colors.primary },
-});
+  points: { fontSize: 18, fontWeight: "800", color: colors.primaryTint },
+}));

@@ -18,7 +18,6 @@ import {
   Text,
   ScrollView,
   Pressable,
-  StyleSheet,
   ActivityIndicator,
   Alert,
   Modal,
@@ -27,10 +26,13 @@ import {
   RefreshControl,
 } from "react-native";
 import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import { useAuthStore } from "../store/useAuthStore";
 import { usePermissions } from "../hooks/usePermissions";
 import {
@@ -300,6 +302,9 @@ function EditModal({
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function CommitteeDetailScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { committeeId } = route.params;
@@ -333,7 +338,7 @@ export default function CommitteeDetailScreen() {
     }
   }, [committeeId, navigation]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(useCallback(({ silent }) => load(!silent), [load]));
 
   // Budget visibility (Feature 5) mirrors the mock's own authorization —
   // Treasurer/Exec+ always, the committee's own chair too. Fetched
@@ -534,7 +539,7 @@ export default function CommitteeDetailScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -580,7 +585,7 @@ const styles = StyleSheet.create({
   budgetStatValue: { fontSize: 18, fontWeight: "800", color: colors.textPrimary },
   budgetStatLabel: { fontSize: 10, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.3, marginTop: 2 },
   submitExpenseBtn: { backgroundColor: colors.accent, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
-  submitExpenseBtnText: { color: colors.primary, fontWeight: "700", fontSize: 13 },
+  submitExpenseBtnText: { color: colors.primaryTint, fontWeight: "700", fontSize: 13 },
 
   // Sections
   section: {
@@ -636,7 +641,7 @@ const styles = StyleSheet.create({
 
   // Badge
   badge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  badgeChair: { backgroundColor: colors.accent + "22" },
+  badgeChair: { backgroundColor: colors.accentSoft },
   badgeMember: { backgroundColor: colors.border },
   badgeText: { fontSize: 10, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" },
 
@@ -710,4 +715,4 @@ const styles = StyleSheet.create({
   roleToggleBtnActive: { backgroundColor: colors.primary },
   roleToggleText: { color: colors.textMuted, fontWeight: "600", fontSize: 14 },
   roleToggleTextActive: { color: colors.primaryText },
-});
+}));

@@ -14,16 +14,21 @@
 //   · AppStackParamList["CheckIn"] route params
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, Alert } from "react-native";
+import { View, Text, Pressable, ActivityIndicator, Alert } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from "expo-camera";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { getCheckInToken, selfCheckIn, getEventRoster } from "../api/attendance";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 
 type CheckInMode = "officer" | "member";
 
 export default function CheckInScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { eventId, mode } = route.params as { eventId: string; mode: CheckInMode };
@@ -203,13 +208,13 @@ function MemberView({ eventId }: { eventId: string }) {
 const CORNER_SIZE = 28;
 const CORNER_BORDER = 4;
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   modeLabel: { fontSize: 13, fontWeight: "700", color: colors.textMuted, textAlign: "center", marginTop: 24, textTransform: "uppercase", letterSpacing: 0.5 },
   qrContainer: { alignItems: "center", marginTop: 32, padding: 24, backgroundColor: colors.surface, borderRadius: 20, marginHorizontal: 32, borderWidth: 1, borderColor: colors.border },
   expiryText: { marginTop: 16, fontSize: 13, color: colors.textMuted },
-  checkedInCount: { marginTop: 24, fontSize: 18, fontWeight: "700", color: colors.primary, textAlign: "center" },
+  checkedInCount: { marginTop: 24, fontSize: 18, fontWeight: "700", color: colors.primaryTint, textAlign: "center" },
   camera: { flex: 1 },
   overlay: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.45)" },
   scanFrame: {
@@ -234,4 +239,4 @@ const styles = StyleSheet.create({
   permText: { fontSize: 15, color: colors.textPrimary, textAlign: "center", marginBottom: 16 },
   permButton: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 24 },
   permButtonText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
-});
+}));

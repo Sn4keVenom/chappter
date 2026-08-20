@@ -14,8 +14,13 @@
 // change.
 
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable } from "react-native";
+// No useTheme() subscription here: this is a class component (error
+// boundaries have no hook equivalent), and it renders only after a crash —
+// a one-shot fallback screen with nothing to repaint. `styles` still resolves
+// against whatever theme was active when the crash happened.
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
 
 interface Props {
   children: React.ReactNode;
@@ -64,7 +69,7 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   }
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: {
     flex: 1,
     alignItems: "center",
@@ -77,4 +82,4 @@ const styles = StyleSheet.create({
   body: { fontSize: 14, color: colors.textSecondary, textAlign: "center", lineHeight: 21, marginBottom: 24 },
   button: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14, paddingHorizontal: 32 },
   buttonText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
-});
+}));

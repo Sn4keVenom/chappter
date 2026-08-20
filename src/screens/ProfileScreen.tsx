@@ -18,13 +18,18 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
-  ActivityIndicator, Alert, RefreshControl, Modal
+  View, Text, ScrollView, Pressable,
+  ActivityIndicator, Alert, RefreshControl
 } from "react-native";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import { useAppAuth } from "../hooks/useAppAuth";
 
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
+import { Dialog, DialogActions, DialogButton } from "../components/Dialog";
+import { duesStatusColor } from "../theme/semantic";
 import { useAuthStore } from "../store/useAuthStore";
 import { useModulesStore } from "../store/useModulesStore";
 import { getMe, getLeaderboard, getPointsLedger } from "../api/users";
@@ -43,12 +48,6 @@ function officeLabel(office?: ExecOffice | null): string {
   return office.split("_").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ");
 }
 
-const DUES_COLOR: Record<DuesStatus, string> = {
-  PAID: colors.success,
-  PARTIAL: colors.warning,
-  UNPAID: colors.danger,
-  WAIVED: colors.textMuted,
-};
 
 const MONTHLY_INSTALLMENTS = 3;
 
@@ -91,12 +90,24 @@ function PyliPayModal({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Pay Dues with Pyli</Text>
-          <Text style={styles.modalSub}>{dues.semester.label} · {formatCurrency(remaining)} remaining</Text>
-
+    <Dialog
+      visible={visible}
+      onRequestClose={onClose}
+      title="Pay Dues with Pyli"
+      subtitle={`${dues.semester.label} · ${formatCurrency(remaining)} remaining`}
+      footer={
+        <DialogActions>
+          <DialogButton label="Cancel" onPress={onClose} disabled={paying} />
+          <DialogButton
+            label={`Pay ${formatCurrency(amount)}`}
+            variant="primary"
+            onPress={handlePay}
+            busy={paying}
+          />
+        </DialogActions>
+      }
+    >
+      <View style={styles.planWrap}>
           <View style={styles.planRow}>
             <Pressable
               style={[styles.planOption, plan === "FULL" && styles.planOptionSelected]}
@@ -123,22 +134,15 @@ function PyliPayModal({
               First installment charged now via Pyli — {MONTHLY_INSTALLMENTS} installments total.
             </Text>
           )}
-
-          <View style={styles.modalActions}>
-            <Pressable style={styles.modalCancelBtn} onPress={onClose} disabled={paying}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable style={[styles.modalPayBtn, paying && styles.disabledBtn]} onPress={handlePay} disabled={paying}>
-              {paying ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalPayText}>Pay {formatCurrency(amount)}</Text>}
-            </Pressable>
-          </View>
-        </View>
       </View>
-    </Modal>
+    </Dialog>
   );
 }
 
 export default function ProfileScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
   const userFromStore = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
@@ -157,8 +161,9 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [payModalVisible, setPayModalVisible] = useState(false);
 
-  const load = useCallback(async (isRefresh = false) => {
+  const load = useCallback(async (isRefresh = false, silent = false) => {
     if (isRefresh) setRefreshing(true);
+    else if (!silent) setLoading(true);
     try {
       const [me, duesRecords, histResult, board] = await Promise.all([
         getMe(),
@@ -201,10 +206,13 @@ export default function ProfileScreen() {
     }
   }, []);
 
-  // useFocusEffect, not a mount-only useEffect — returning here after editing
-  // your profile (EditProfileScreen) should show the new name/major/etc.
-  // immediately instead of the stale snapshot from tab mount.
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Refresh on focus — returning here after editing your profile
+  // (EditProfileScreen) should show the new name/major/etc. immediately
+  // instead of the stale snapshot from tab mount. useFocusRefresh, not a bare
+  // useFocusEffect: only the first load shows the full-screen spinner, so
+  // coming back from a pushed screen refreshes underneath the existing
+  // content rather than blanking the tab. See hooks/useFocusRefresh.ts.
+  useFocusRefresh(useCallback(({ silent }) => load(false, silent), [load]));
 
   const handleSignOut = () => {
     if (DEMO_MODE) {
@@ -357,10 +365,10 @@ export default function ProfileScreen() {
 
       {/* Dues card */}
       {dues && (
-        <View style={[styles.card, { borderLeftColor: DUES_COLOR[dues.status], borderLeftWidth: 4 }]}>
+        <View style={[styles.card, { borderLeftColor: duesStatusColor(dues.status), borderLeftWidth: 4 }]}>
           <Text style={styles.cardLabel}>Dues — {dues.semester.label}</Text>
           <View style={styles.duesRow}>
-            <Text style={[styles.duesStatus, { color: DUES_COLOR[dues.status] }]}>
+            <Text style={[styles.duesStatus, { color: duesStatusColor(dues.status) }]}>
               {dues.status}
             </Text>
             <Text style={styles.duesAmount}>
@@ -451,6 +459,10 @@ export default function ProfileScreen() {
           is disabled via Chapter Settings > Modules */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>More</Text>
+        <Pressable style={styles.moreRow} onPress={() => navigation.navigate("Settings")}>
+          <Text style={styles.moreRowText}>⚙️ Settings</Text>
+          <Text style={styles.moreRowChevron}>›</Text>
+        </Pressable>
         {isDocumentsEnabled && (
           <Pressable style={styles.moreRow} onPress={() => navigation.navigate("Documents")}>
             <Text style={styles.moreRowText}>📄 Documents</Text>
@@ -480,7 +492,7 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
@@ -488,7 +500,7 @@ const styles = StyleSheet.create({
   // Demo banner
   demoBanner: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: colors.accent + "1A", borderRadius: 10, borderWidth: 1, borderColor: colors.accent + "55",
+    backgroundColor: colors.accentSoft, borderRadius: 10, borderWidth: 1, borderColor: colors.accentSoftBorder,
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 20,
   },
   demoBannerText: { fontSize: 12, fontWeight: "600", color: colors.textPrimary, flex: 1, marginRight: 8 },
@@ -514,7 +526,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 8,
   },
   editProfileBtnText: { fontSize: 13, fontWeight: "700", color: colors.textPrimary },
-  familyLinkText: { fontSize: 15, fontWeight: "600", color: colors.primary },
+  familyLinkText: { fontSize: 15, fontWeight: "600", color: colors.link },
 
   // Cards
   card: {
@@ -532,7 +544,7 @@ const styles = StyleSheet.create({
   pointsRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   pointsTotal: { fontSize: 32, fontWeight: "800", color: colors.textPrimary },
   rankBadge: {
-    backgroundColor: colors.accent + "22", borderRadius: 8,
+    backgroundColor: colors.accentSoft, borderRadius: 8,
     paddingHorizontal: 10, paddingVertical: 4,
   },
   rankText: { color: colors.accent, fontWeight: "700", fontSize: 16 },
@@ -546,11 +558,8 @@ const styles = StyleSheet.create({
   payBtn: { marginTop: 12, backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
   payBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 13 },
 
-  // Pyli pay modal
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 },
-  modalCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 20 },
-  modalTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary },
-  modalSub: { fontSize: 13, color: colors.textSecondary, marginTop: 4, marginBottom: 16 },
+  // Pyli pay dialog — chrome comes from components/Dialog.tsx
+  planWrap: { marginTop: 16 },
   planRow: { flexDirection: "row", gap: 10 },
   planOption: { flex: 1, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 14, alignItems: "center", backgroundColor: colors.background },
   planOptionSelected: { borderColor: colors.primary, backgroundColor: colors.primary },
@@ -558,12 +567,6 @@ const styles = StyleSheet.create({
   planLabelSelected: { color: colors.primaryText },
   planAmount: { fontSize: 15, fontWeight: "800", color: colors.textPrimary, marginTop: 4 },
   planHint: { fontSize: 12, color: colors.textMuted, marginTop: 10, lineHeight: 17 },
-  modalActions: { flexDirection: "row", gap: 10, marginTop: 20 },
-  modalCancelBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.border },
-  modalCancelText: { color: colors.textPrimary, fontWeight: "600" },
-  modalPayBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.primary },
-  modalPayText: { color: "#FFF", fontWeight: "700" },
-  disabledBtn: { opacity: 0.5 },
 
   // Section
   section: { marginBottom: 24 },
@@ -617,4 +620,4 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, borderRadius: 10,
   },
   signOutText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
-});
+}));

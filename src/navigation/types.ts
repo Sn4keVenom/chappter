@@ -94,6 +94,13 @@ export type AppStackParamList = {
   // Feedback & bug reports (spec §9)
   Feedback: undefined;
   FeedbackList: undefined;
+
+  // Settings hub and its submenus. On the shared app stack rather than a tab,
+  // so Settings → submenu → back is a plain push/pop that preserves the
+  // Settings screen instance instead of remounting it.
+  Settings: undefined;
+  Appearance: undefined;
+  ChapterBranding: undefined;
 };
 
 export type RootStackParamList = {

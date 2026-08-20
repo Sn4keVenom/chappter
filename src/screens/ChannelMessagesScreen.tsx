@@ -5,22 +5,46 @@
 //   · route params: channelId, channelName (from AppStackParamList)
 //   · useAuthStore — current user ID for bubble alignment and long-press guard
 //   · usePermissions — isOfficerOrAbove for pin access
-//   · KeyboardAvoidingView for compose bar
+//
+// ── Keyboard handling ─────────────────────────────────────────────────────
+// The composer used to sit under the keyboard on some devices because the
+// KeyboardAvoidingView offset was the literal constant 88 — a guess at the
+// header height that's only correct for a standard header on a notched
+// phone. It is wrong on an iPhone SE (no notch, shorter header), wrong in
+// landscape, and wrong whenever the header height changes, and being wrong
+// by even a few points either hides the send button or leaves a visible gap
+// under the composer.
+//
+// The offset now comes from useHeaderHeight(), which reports the real
+// measured height of the header this screen is actually rendered under, so
+// the composer lands flush above the keyboard on every device.
+//
+// The bar's bottom inset is applied to the composer itself rather than the
+// container, so it clears the home indicator when the keyboard is closed and
+// collapses to nothing when the keyboard is up (where the inset would
+// otherwise become dead space between the composer and the keyboard).
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View, Text, FlatList, TextInput, Pressable, StyleSheet,
+  View, Text, FlatList, TextInput, Pressable,
   KeyboardAvoidingView, Platform, ActivityIndicator,
-  Alert, ScrollView
+  Alert, ScrollView, Keyboard
 } from "react-native";
 import { useRoute, useFocusEffect } from "@react-navigation/native";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useMessagesStore } from "../store/useMessagesStore";
 import { useAuthStore } from "../store/useAuthStore";
 import { usePermissions } from "../hooks/usePermissions";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import type { Message, Channel } from "../types";
 
 export default function ChannelMessagesScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute<any>();
   const { channelId, channelName } = route.params as { channelId: string; channelName: string };
 
@@ -39,6 +63,25 @@ export default function ChannelMessagesScreen() {
   const [composing, setComposing] = useState("");
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList>(null);
+
+  // Measured, not guessed — see the keyboard note in this file's header.
+  const headerHeight = useHeaderHeight();
+  const insets = useSafeAreaInsets();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardWillShow", () => setKeyboardVisible(true));
+    const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardVisible(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  // Only pad for the home indicator when the keyboard is down. With the
+  // keyboard up, KeyboardAvoidingView has already lifted the bar to the
+  // keyboard's top edge and this inset would just be a dead gap.
+  const composerBottomInset = keyboardVisible ? 0 : insets.bottom;
 
   const cache = channelData[channelId];
   const messages = cache?.messages ?? [];
@@ -99,7 +142,7 @@ export default function ChannelMessagesScreen() {
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={88}
+      keyboardVerticalOffset={headerHeight}
     >
       {/* Pinned messages sticky banner */}
       {pinned.length > 0 && (
@@ -108,7 +151,10 @@ export default function ChannelMessagesScreen() {
         </View>
       )}
 
-      {/* Messages list (newest at bottom via inverted) */}
+      {/* Messages list (newest at bottom via inverted). `inverted` is what
+          keeps the most recent messages pinned just above the composer as the
+          keyboard opens and the list shrinks — the bottom of the list is its
+          scroll origin, so nothing has to be scrolled back into view. */}
       <FlatList
         ref={listRef}
         data={messages}
@@ -117,6 +163,10 @@ export default function ChannelMessagesScreen() {
         contentContainerStyle={styles.messageList}
         onEndReached={() => loadMoreMessages(channelId)}
         onEndReachedThreshold={0.2}
+        // Let a drag on the transcript dismiss the keyboard, and keep taps on
+        // message bubbles working on the first tap while it's open.
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
         ListFooterComponent={cache?.hasMore ? <ActivityIndicator color={colors.primary} /> : null}
         renderItem={({ item }) => (
           <MessageBubble
@@ -129,13 +179,14 @@ export default function ChannelMessagesScreen() {
 
       {/* Compose bar */}
       {canPost ? (
-        <View style={styles.compose}>
+        <View style={[styles.compose, { paddingBottom: 10 + composerBottomInset }]}>
           <TextInput
             style={styles.input}
             value={composing}
             onChangeText={setComposing}
             placeholder="Message..."
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={colors.inputPlaceholder}
+            keyboardAppearance={colors.keyboardAppearance}
             multiline
             maxLength={4000}
           />
@@ -143,12 +194,18 @@ export default function ChannelMessagesScreen() {
             style={[styles.sendButton, (!composing.trim() || sending) && styles.sendButtonDisabled]}
             onPress={handleSend}
             disabled={!composing.trim() || sending}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
           >
-            <Text style={styles.sendButtonText}>→</Text>
+            {sending ? (
+              <ActivityIndicator color={colors.primaryText} size="small" />
+            ) : (
+              <Text style={styles.sendButtonText}>→</Text>
+            )}
           </Pressable>
         </View>
       ) : (
-        <View style={styles.readOnlyBar}>
+        <View style={[styles.readOnlyBar, { paddingBottom: 14 + composerBottomInset }]}>
           <Text style={styles.readOnlyText}>This channel is read-only for your role.</Text>
         </View>
       )}
@@ -191,12 +248,12 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   pinnedBanner: {
-    backgroundColor: colors.accent + "22",
+    backgroundColor: colors.accentSoft,
     borderBottomWidth: 1,
-    borderBottomColor: colors.accent + "44",
+    borderBottomColor: colors.accentSoftBorder,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
@@ -226,7 +283,10 @@ const styles = StyleSheet.create({
   compose: {
     flexDirection: "row",
     alignItems: "flex-end",
-    padding: 10,
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    // paddingBottom is applied inline — it carries the home-indicator inset
+    // only while the keyboard is down.
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
@@ -234,18 +294,22 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
+    // Grows with the message up to ~5 lines, then scrolls internally, so a
+    // long draft can never push the send button off screen.
+    minHeight: 44,
     maxHeight: 120,
-    backgroundColor: colors.background,
+    backgroundColor: colors.inputBackground,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.inputBorder,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingTop: 11,
+    paddingBottom: 11,
     fontSize: 15,
-    color: colors.textPrimary,
+    color: colors.inputText,
   },
   sendButton: {
-    width: 40, height: 40, borderRadius: 20,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: colors.primary,
     alignItems: "center", justifyContent: "center",
   },
@@ -255,8 +319,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingTop: 14,
     alignItems: "center",
   },
   readOnlyText: { fontSize: 13, color: colors.textMuted },
-});
+}));

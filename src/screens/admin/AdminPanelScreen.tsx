@@ -34,15 +34,17 @@ import {
   Text,
   ScrollView,
   Pressable,
-  StyleSheet,
   ActivityIndicator,
   RefreshControl,
   Alert,
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
+import { useFocusRefresh } from "../../hooks/useFocusRefresh";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useModulesStore } from "../../store/useModulesStore";
 import { getRoster, getLeaderboard } from "../../api/users";
@@ -139,6 +141,9 @@ interface AdminStats {
 }
 
 export default function AdminPanelScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const { isExecOrAbove, isTreasurerOrAdmin, isSuperAdmin, can } = usePermissions();
   const isEventsEnabled = useModulesStore((s) => s.isEnabled("events"));
@@ -153,9 +158,9 @@ export default function AdminPanelScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [sendingReminders, setSendingReminders] = useState(false);
 
-  const load = useCallback(async (isRefresh = false) => {
+  const load = useCallback(async (isRefresh = false, silent = false) => {
     if (isRefresh) setRefreshing(true);
-    else setLoading(true);
+    else if (!silent) setLoading(true);
 
     try {
       // Always available to Officer+
@@ -223,7 +228,7 @@ export default function AdminPanelScreen() {
     }
   }, [isExecOrAbove, isTreasurerOrAdmin]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(useCallback(({ silent }) => load(false, silent), [load]));
 
   async function handleSendReminders() {
     if (!stats?.currentSemesterId) {
@@ -524,7 +529,7 @@ export default function AdminPanelScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 48 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -596,12 +601,12 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 10,
-    backgroundColor: colors.primary + "18",
+    backgroundColor: colors.primarySoft,
     alignItems: "center",
     justifyContent: "center",
   },
   actionIconDestructive: {
-    backgroundColor: colors.danger + "18",
+    backgroundColor: colors.dangerSoft,
   },
   actionIconText: { fontSize: 18 },
   actionBody: { flex: 1 },
@@ -620,4 +625,4 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontWeight: "300",
   },
-});
+}));

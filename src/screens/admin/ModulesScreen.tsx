@@ -12,13 +12,18 @@
 //   - Navigation: AppStackParamList → Modules (no params)
 
 import React, { useEffect } from "react";
-import { View, Text, ScrollView, Switch, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Switch, Pressable, ActivityIndicator } from "react-native";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { useModulesStore } from "../../store/useModulesStore";
 
 export default function ModulesScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { isSuperAdmin } = usePermissions();
   const { modules, loaded, error, fetchModules, setModuleEnabled } = useModulesStore();
 
@@ -71,7 +76,7 @@ export default function ModulesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 },
@@ -88,4 +93,4 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   rowDescription: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   comingSoon: { fontSize: 11, color: colors.warning, marginTop: 4, fontWeight: "600" },
-});
+}));

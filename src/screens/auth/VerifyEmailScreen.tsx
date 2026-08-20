@@ -12,7 +12,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -24,12 +23,17 @@ import type { RouteProp } from "@react-navigation/native";
 import { useSignUp } from "@clerk/clerk-expo";
 import { useCompleteAuth } from "../../hooks/useCompleteAuth";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import type { AuthStackParamList } from "../../navigation/types";
 
 type NavProp = NativeStackNavigationProp<AuthStackParamList>;
 type RoutePropType = RouteProp<AuthStackParamList, "VerifyEmail">;
 
 export default function VerifyEmailScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { email, phone } = route.params;
@@ -105,7 +109,7 @@ export default function VerifyEmailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, padding: 24, paddingTop: 48, alignItems: "center" },
   title: { fontSize: 24, fontWeight: "800", color: colors.textPrimary, marginBottom: 10 },
@@ -132,5 +136,5 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
 
   resendRow: { marginTop: 20 },
-  resendText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
-});
+  resendText: { color: colors.primaryTint, fontSize: 14, fontWeight: "600" },
+}));

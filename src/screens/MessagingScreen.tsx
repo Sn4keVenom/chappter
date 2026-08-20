@@ -7,11 +7,13 @@
 
 import React, { useCallback } from "react";
 import {
-  View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator
+  View, Text, FlatList, Pressable, ActivityIndicator
 } from "react-native";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useMessagesStore } from "../store/useMessagesStore";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import type { Channel, ChannelType } from "../types";
 
 const CHANNEL_ICON: Record<ChannelType, string> = {
@@ -24,6 +26,9 @@ const CHANNEL_ICON: Record<ChannelType, string> = {
 const CHANNEL_TYPE_ORDER: ChannelType[] = ["GENERAL", "OFFICERS", "COMMITTEE", "DM"];
 
 export default function MessagingScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
   const { channels, loading, error, fetchChannels } = useMessagesStore();
 
@@ -113,7 +118,7 @@ function formatRelative(iso: string): string {
   return `${Math.floor(diff / 86400000)}d`;
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   list: { paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
@@ -143,4 +148,4 @@ const styles = StyleSheet.create({
   noMessages: { fontSize: 13, color: colors.textMuted, fontStyle: "italic" },
   errorBanner: { color: colors.danger, fontSize: 13, textAlign: "center", padding: 16 },
   readOnly: { fontSize: 11, color: colors.textMuted, marginLeft: 8 },
-});
+}));

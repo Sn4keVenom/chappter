@@ -9,15 +9,20 @@
 // Integration: Navigation → AppStackParamList → MapView { event }
 
 import React from "react";
-import { View, Text, StyleSheet, Linking, Pressable } from "react-native";
+import { View, Text, Linking, Pressable } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import type { AppStackParamList } from "../navigation/types";
 
 type RoutePropType = RouteProp<AppStackParamList, "MapView">;
 
 export default function MapViewScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute<RoutePropType>();
   const { event } = route.params;
   const hasCoords = event.latitude != null && event.longitude != null;
@@ -47,7 +52,7 @@ export default function MapViewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", padding: 32 },
   icon: { fontSize: 40, marginBottom: 12 },
   location: { fontSize: 18, fontWeight: "700", color: colors.textPrimary, textAlign: "center" },
@@ -55,4 +60,4 @@ const styles = StyleSheet.create({
   note: { fontSize: 13, color: colors.textSecondary, textAlign: "center", lineHeight: 20, marginTop: 16, marginBottom: 20 },
   button: { backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 13 },
   buttonText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
-});
+}));

@@ -9,30 +9,22 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, ScrollView, Pressable, StyleSheet,
+  View, Text, ScrollView, Pressable,
   ActivityIndicator, RefreshControl
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { getDashboard } from "../api/users";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
+import { duesStatusColor, eventCategoryColor } from "../theme/semantic";
 import type { DashboardData, EventSummary } from "../types";
 
-const CATEGORY_COLOR: Record<string, string> = {
-  BROTHERHOOD: colors.categoryBrotherhood,
-  SERVICE: colors.categoryService,
-  PROFESSIONAL: colors.categoryProfessional,
-  RUSH: colors.categoryRush,
-  ADMIN: colors.categoryAdmin,
-};
-
-const DUES_STATUS_COLOR: Record<string, string> = {
-  PAID: colors.success,
-  PARTIAL: colors.warning,
-  UNPAID: colors.danger,
-  WAIVED: colors.textMuted,
-};
 
 export default function HomeDashboardScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,7 +101,7 @@ export default function HomeDashboardScreen() {
           {data?.duesRecord ? (
             <>
               <Text
-                style={[styles.statValue, { color: DUES_STATUS_COLOR[data.duesRecord.status] }]}
+                style={[styles.statValue, { color: duesStatusColor(data.duesRecord.status) }]}
               >
                 {data.duesRecord.status}
               </Text>
@@ -146,7 +138,7 @@ export default function HomeDashboardScreen() {
 
 function EventCard({ event, onPress }: { event: EventSummary; onPress: () => void }) {
   const isRequired = event.attendanceRequired;
-  const catColor = CATEGORY_COLOR[event.category] ?? colors.categoryAdmin;
+  const catColor = eventCategoryColor(event.category);
 
   return (
     <Pressable style={styles.eventCard} onPress={onPress}>
@@ -194,7 +186,7 @@ function formatRelative(iso: string): string {
   return `${days}d ago`;
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
@@ -238,8 +230,8 @@ const styles = StyleSheet.create({
   requiredBadge: { backgroundColor: colors.danger, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
   requiredBadgeText: { color: "#fff", fontSize: 10, fontWeight: "700" },
   pointsBadge: { backgroundColor: colors.accent, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  pointsBadgeText: { color: colors.primary, fontSize: 10, fontWeight: "700" },
+  pointsBadgeText: { color: colors.primaryTint, fontSize: 10, fontWeight: "700" },
   eventTime: { fontSize: 13, color: colors.textSecondary, marginBottom: 2 },
   eventLocation: { fontSize: 13, color: colors.textSecondary },
-  eventRsvp: { fontSize: 12, color: colors.primary, marginTop: 4, fontWeight: "600" },
-});
+  eventRsvp: { fontSize: 12, color: colors.primaryTint, marginTop: 4, fontWeight: "600" },
+}));

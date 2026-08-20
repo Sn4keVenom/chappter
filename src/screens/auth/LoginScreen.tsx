@@ -27,7 +27,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -41,11 +40,17 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import { useCompleteAuth } from "../../hooks/useCompleteAuth";
 import { setAuthToken } from "../../api/client";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { withAlpha } from "../../theme/contrast";
+import { useTheme } from "../../theme/ThemeProvider";
 import type { AuthStackParamList } from "../../navigation/types";
 
 type NavProp = NativeStackNavigationProp<AuthStackParamList>;
 
 export default function LoginScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const { isLoaded, signIn } = useSignIn();
   const { startSSOFlow } = useSSO();
@@ -155,7 +160,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder="Email or username"
-            placeholderTextColor="rgba(255,255,255,0.45)"
+            placeholderTextColor={withAlpha(colors.primaryText, 0.45)}
             autoCapitalize="none"
             autoCorrect={false}
             value={identifier}
@@ -164,7 +169,7 @@ export default function LoginScreen() {
           <TextInput
             style={styles.input}
             placeholder="Password"
-            placeholderTextColor="rgba(255,255,255,0.45)"
+            placeholderTextColor={withAlpha(colors.primaryText, 0.45)}
             secureTextEntry
             value={password}
             onChangeText={setPassword}
@@ -249,7 +254,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.primary },
   content: { flexGrow: 1, paddingHorizontal: 28, paddingTop: 72, paddingBottom: 40 },
   hero: { alignItems: "center", marginBottom: 36 },
@@ -257,13 +262,13 @@ const styles = StyleSheet.create({
     width: 80, height: 80, borderRadius: 20, backgroundColor: colors.accent,
     alignItems: "center", justifyContent: "center", marginBottom: 16,
   },
-  logoMark: { fontSize: 32, fontWeight: "700", color: colors.primary, letterSpacing: 1 },
+  logoMark: { fontSize: 32, fontWeight: "700", color: colors.accentText, letterSpacing: 1 },
   appName: { fontSize: 30, fontWeight: "800", color: colors.primaryText, letterSpacing: -0.5, marginBottom: 6 },
-  tagline: { fontSize: 14, color: "rgba(255,255,255,0.65)", letterSpacing: 0.2 },
+  tagline: { fontSize: 14, color: withAlpha(colors.primaryText, 0.65), letterSpacing: 0.2 },
 
   form: { marginBottom: 24 },
   input: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: withAlpha(colors.primaryText, 0.1),
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -271,25 +276,25 @@ const styles = StyleSheet.create({
     color: colors.primaryText,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: withAlpha(colors.primaryText, 0.15),
   },
   rememberRow: { flexDirection: "row", alignItems: "center", marginBottom: 18 },
   checkbox: {
-    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.4)",
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: withAlpha(colors.primaryText, 0.4),
     marginRight: 10, alignItems: "center", justifyContent: "center",
   },
   checkboxChecked: { backgroundColor: colors.accent, borderColor: colors.accent },
-  checkboxMark: { color: colors.primary, fontSize: 13, fontWeight: "800" },
-  rememberText: { color: "rgba(255,255,255,0.8)", fontSize: 14 },
+  checkboxMark: { color: colors.accentText, fontSize: 13, fontWeight: "800" },
+  rememberText: { color: withAlpha(colors.primaryText, 0.8), fontSize: 14 },
 
   primaryButton: { backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 15, alignItems: "center", marginBottom: 16 },
-  primaryButtonText: { color: colors.primary, fontWeight: "700", fontSize: 16 },
+  primaryButtonText: { color: colors.accentText, fontWeight: "700", fontSize: 16 },
   buttonDisabled: { opacity: 0.6 },
   linkText: { color: colors.primaryText, fontSize: 13, textAlign: "center", textDecorationLine: "underline" },
 
   dividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 24 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.15)" },
-  dividerText: { color: "rgba(255,255,255,0.5)", fontSize: 12, marginHorizontal: 12 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: withAlpha(colors.primaryText, 0.15) },
+  dividerText: { color: withAlpha(colors.primaryText, 0.5), fontSize: 12, marginHorizontal: 12 },
 
   ssoRow: { flexDirection: "row", gap: 12, alignItems: "center" },
   ssoButton: {
@@ -302,6 +307,6 @@ const styles = StyleSheet.create({
   appleNativeButton: { height: 48, paddingVertical: 0 },
 
   createAccountRow: { marginTop: 28, alignItems: "center" },
-  createAccountText: { color: "rgba(255,255,255,0.75)", fontSize: 14 },
+  createAccountText: { color: withAlpha(colors.primaryText, 0.75), fontSize: 14 },
   createAccountLink: { color: colors.accent, fontWeight: "700" },
-});
+}));

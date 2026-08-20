@@ -12,11 +12,14 @@
 //   · useAuthStore — resolves "self" when no userId param is given
 
 import React, { useCallback, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, FlatList } from "react-native";
-import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import { View, Text, Pressable, ActivityIndicator, FlatList } from "react-native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import { useAuthStore } from "../store/useAuthStore";
 import { getFamily } from "../api/membership";
 import type { AppStackParamList } from "../navigation/types";
@@ -41,6 +44,9 @@ function FamilyRow({ member, onPress }: { member: FamilyMemberSummary; onPress: 
 }
 
 export default function MyFamilyScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const currentUser = useAuthStore((s) => s.user);
@@ -51,12 +57,12 @@ export default function MyFamilyScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent }: { silent: boolean } = { silent: false }) => {
     if (!userId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const family = await getFamily(userId);
@@ -69,7 +75,7 @@ export default function MyFamilyScreen() {
     }
   }, [userId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(load);
 
   if (loading) {
     return (
@@ -113,7 +119,7 @@ export default function MyFamilyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background, padding: 16 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   errorText: { color: colors.textSecondary, fontSize: 14 },
@@ -131,4 +137,4 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
   rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
   chevron: { fontSize: 20, color: colors.textMuted, fontWeight: "300" },
-});
+}));

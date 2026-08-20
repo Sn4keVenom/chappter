@@ -11,11 +11,13 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator,
+  View, Text, FlatList, Pressable, ActivityIndicator,
   Modal, TextInput, Alert, KeyboardAvoidingView, Platform,
 } from "react-native";
 
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { listCommitteeBudgets, setCommitteeBudget } from "../../api/finance";
@@ -89,6 +91,9 @@ function EditBudgetModal({
 }
 
 export default function CommitteeBudgetsScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { isTreasurerOrAdmin } = usePermissions();
   const [budgets, setBudgets] = useState<CommitteeBudget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,7 +166,7 @@ export default function CommitteeBudgetsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   list: { padding: 16, gap: 10, paddingBottom: 40 },
@@ -186,4 +191,4 @@ const styles = StyleSheet.create({
   modalSaveBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.primary },
   modalSaveText: { color: "#FFF", fontWeight: "700" },
   disabledBtn: { opacity: 0.5 },
-});
+}));

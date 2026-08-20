@@ -10,19 +10,22 @@
 //   - Navigation: AppStackParamList → FeedbackList (no params)
 
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, Text, FlatList, Pressable, ActivityIndicator, Alert } from "react-native";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
+import { badgeBackground, feedbackStatusColor } from "../../theme/semantic";
 import { usePermissions } from "../../hooks/usePermissions";
 import { listFeedback, updateFeedbackStatus } from "../../api/feedback";
 import type { FeedbackReport, FeedbackStatus, FeedbackType } from "../../types";
 
 const TYPE_ICON: Record<FeedbackType, string> = { BUG: "🐛", FEATURE_REQUEST: "💡", GENERAL: "💬" };
-const STATUS_COLOR: Record<FeedbackStatus, string> = {
-  OPEN: colors.warning, IN_REVIEW: colors.primary, RESOLVED: colors.success, CLOSED: colors.textMuted,
-};
 const STATUSES: FeedbackStatus[] = ["OPEN", "IN_REVIEW", "RESOLVED", "CLOSED"];
 
 export default function FeedbackListScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { can } = usePermissions();
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | null>(null);
   const [reports, setReports] = useState<FeedbackReport[]>([]);
@@ -93,8 +96,8 @@ export default function FeedbackListScreen() {
                   {new Date(item.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                 </Text>
               </View>
-              <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[item.status] + "22" }]}>
-                <Text style={[styles.statusBadgeText, { color: STATUS_COLOR[item.status] }]}>{item.status}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: badgeBackground(feedbackStatusColor(item.status)) }]}>
+                <Text style={[styles.statusBadgeText, { color: feedbackStatusColor(item.status) }]}>{item.status}</Text>
               </View>
             </Pressable>
           )}
@@ -104,7 +107,7 @@ export default function FeedbackListScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, padding: 16, paddingBottom: 8 },
@@ -121,4 +124,4 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   statusBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start" },
   statusBadgeText: { fontSize: 10, fontWeight: "800" },
-});
+}));

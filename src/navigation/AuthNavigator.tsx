@@ -11,7 +11,7 @@
 
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { colors } from "../theme/colors";
+import { useTheme, ThemedStatusBar } from "../theme/ThemeProvider";
 import LoginScreen from "../screens/auth/LoginScreen";
 import SignUpScreen from "../screens/auth/SignUpScreen";
 import VerifyEmailScreen from "../screens/auth/VerifyEmailScreen";
@@ -22,13 +22,20 @@ import type { AuthStackParamList } from "./types";
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 export default function AuthNavigator() {
+  const { colors } = useTheme();
+
   return (
+    <>
+      {/* Auth screens have no branded header bar — the status bar sits on the
+          plain background, so its contrast is derived from that instead. */}
+      <ThemedStatusBar behind="background" />
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.textPrimary,
         headerShadowVisible: false,
+        contentStyle: { backgroundColor: colors.background },
       }}
     >
       <Stack.Screen name="Login" component={LoginScreen} />
@@ -37,5 +44,6 @@ export default function AuthNavigator() {
       <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ headerShown: true, title: "" }} />
       <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ headerShown: true, title: "" }} />
     </Stack.Navigator>
+    </>
   );
 }

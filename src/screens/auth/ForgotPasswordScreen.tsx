@@ -9,7 +9,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -19,11 +18,16 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSignIn } from "@clerk/clerk-expo";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import type { AuthStackParamList } from "../../navigation/types";
 
 type NavProp = NativeStackNavigationProp<AuthStackParamList>;
 
 export default function ForgotPasswordScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const { isLoaded, signIn } = useSignIn();
   const [email, setEmail] = useState("");
@@ -76,7 +80,7 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { flex: 1, padding: 24, paddingTop: 48 },
   title: { fontSize: 24, fontWeight: "800", color: colors.textPrimary, marginBottom: 10 },
@@ -99,5 +103,5 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
 
   backRow: { marginTop: 20, alignItems: "center" },
-  backText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
-});
+  backText: { color: colors.primaryTint, fontSize: 14, fontWeight: "600" },
+}));

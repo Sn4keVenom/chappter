@@ -6,7 +6,9 @@
 //
 // Integration points:
 //   · usePermissions.ts — canViewAdminPanel gates the AdminPanel tab
-//   · colors.ts         — primary/accent for header/tab styling
+//   · theme/ThemeProvider — useTheme() drives header/tab colors, so switching
+//     Light/Dark or changing chapter branding repaints the chrome without
+//     remounting the navigator (route state and scroll position survive).
 //   · AppStackParamList + MainTabParamList from navigation/types.ts
 //   · All screen imports — see imports below. Thread still uses
 //     NotImplementedScreen — no backend endpoint exists for it yet
@@ -18,7 +20,8 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { usePermissions } from "../hooks/usePermissions";
 import { useModulesStore } from "../store/useModulesStore";
-import { colors } from "../theme/colors";
+import { useTheme, ThemedStatusBar } from "../theme/ThemeProvider";
+import type { Palette } from "../theme/palette";
 import type { AppStackParamList, MainTabParamList } from "./types";
 
 // ── Screen imports ────────────────────────────────────────────────────────
@@ -56,46 +59,71 @@ import MyFamilyScreen from "../screens/MyFamilyScreen";
 import ChapterInviteManagerScreen from "../screens/admin/ChapterInviteManagerScreen";
 import JoinRequestsScreen from "../screens/admin/JoinRequestsScreen";
 import AuditLogScreen from "../screens/admin/AuditLogScreen";
+import SettingsScreen from "../screens/SettingsScreen";
+import AppearanceScreen from "../screens/settings/AppearanceScreen";
+import ChapterBrandingScreen from "../screens/settings/ChapterBrandingScreen";
 
 const Stack = createNativeStackNavigator<AppStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 // ── Tab bar icons (text fallback; swap for an icon library) ──────────────
-function TabIcon({ label, focused }: { label: string; focused: boolean }) {
-  const icons: Record<string, string> = {
-    HomeDashboard: "⌂",
-    EventsFeed: "◷",
-    Messaging: "✉",
-    Leaderboard: "★",
-    Profile: "○",
-    AdminPanel: "⚙",
-  };
-  return (
-    <Text style={{ fontSize: 20, color: focused ? colors.accent : colors.textMuted }}>
-      {icons[label] ?? "•"}
-    </Text>
-  );
+const TAB_ICONS: Record<string, string> = {
+  HomeDashboard: "⌂",
+  EventsFeed: "◷",
+  Messaging: "✉",
+  Leaderboard: "★",
+  Profile: "○",
+  AdminPanel: "⚙",
+};
+
+function TabIcon({ name, color }: { name: string; color: string }) {
+  return <Text style={{ fontSize: 20, color }}>{TAB_ICONS[name] ?? "•"}</Text>;
+}
+
+/**
+ * Options that take a tab OUT of the layout entirely.
+ *
+ * `tabBarButton: () => null` on its own is not enough, and that was the cause
+ * of the misaligned bottom bar: BottomTabItem wraps every route's button in a
+ * `<View style={[{ flex: 1 }, tabBarItemStyle]}>` that renders whether or not
+ * the button itself returns anything. A hidden tab therefore still claimed an
+ * equal share of the bar, leaving a blank gap and pushing the visible icons
+ * off-center — most obviously for Members and PNMs, who don't get the Admin
+ * tab. Adding `display: "none"` to that wrapper removes the flex slot too, so
+ * the remaining tabs redistribute evenly at any tab count and screen width.
+ *
+ * The screens stay DECLARED rather than conditionally rendered, so routes
+ * like navigation.navigate("Tabs", { screen: "Leaderboard" }) never target a
+ * missing route — each screen still gates its own content.
+ */
+const HIDDEN_TAB = {
+  tabBarButton: () => null,
+  tabBarItemStyle: { display: "none" as const },
+};
+
+function tabScreenOptions(colors: Palette) {
+  return ({ route }: { route: { name: string } }) => ({
+    tabBarIcon: ({ color }: { color: string }) => <TabIcon name={route.name} color={color} />,
+    tabBarActiveTintColor: colors.tabBarActive,
+    tabBarInactiveTintColor: colors.tabBarInactive,
+    tabBarStyle: {
+      backgroundColor: colors.tabBarBackground,
+      borderTopColor: colors.tabBarBorder,
+    },
+    headerStyle: { backgroundColor: colors.headerBackground },
+    headerTintColor: colors.headerText,
+    headerTitleStyle: { fontWeight: "700" as const, color: colors.headerText },
+  });
 }
 
 function MainTabs() {
+  const { colors } = useTheme();
   const { canViewAdminPanel } = usePermissions();
   const isMessagingEnabled = useModulesStore((s) => s.isEnabled("messaging"));
   const isPointsEnabled = useModulesStore((s) => s.isEnabled("points"));
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused }) => (
-          <TabIcon label={route.name} focused={focused} />
-        ),
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-        headerStyle: { backgroundColor: colors.primary },
-        headerTintColor: colors.primaryText,
-        headerTitleStyle: { fontWeight: "700" },
-      })}
-    >
+    <Tab.Navigator screenOptions={tabScreenOptions(colors)}>
       <Tab.Screen
         name="HomeDashboard"
         component={HomeDashboardScreen}
@@ -106,17 +134,14 @@ function MainTabs() {
         component={EventsFeedScreen}
         options={{ title: "Events" }}
       />
-      {/*
-        Messaging/Leaderboard tabs are always declared (same fixed-tab-count
-        rationale as AdminPanel below) but hide their button when their
-        module is disabled via Chapter Settings > Modules.
-      */}
+      {/* Messaging/Leaderboard drop out of the bar when their module is
+          disabled via Chapter Settings › Modules. */}
       <Tab.Screen
         name="Messaging"
         component={MessagingScreen}
         options={{
           title: "Messages",
-          tabBarButton: isMessagingEnabled ? undefined : () => null,
+          ...(isMessagingEnabled ? null : HIDDEN_TAB),
         }}
       />
       <Tab.Screen
@@ -124,7 +149,7 @@ function MainTabs() {
         component={LeaderboardScreen}
         options={{
           title: "Points",
-          tabBarButton: isPointsEnabled ? undefined : () => null,
+          ...(isPointsEnabled ? null : HIDDEN_TAB),
         }}
       />
       <Tab.Screen
@@ -132,24 +157,13 @@ function MainTabs() {
         component={ProfileScreen}
         options={{ title: "Profile" }}
       />
-      {/*
-        AdminPanel is always declared so the tab list length never changes
-        at runtime (changing tab count mid-session causes React Navigation
-        warnings and index corruption). We hide the tab bar button for
-        non-Officers instead of conditionally rendering the screen.
-      */}
+      {/* Admin is Officer+ only — Members, PNMs and Alumni never see it. */}
       <Tab.Screen
         name="AdminPanel"
         component={AdminPanelScreen}
         options={{
           title: "Admin",
-          // Hide the button entirely for non-officers — the screen is still
-          // accessible via navigation.navigate("AdminPanel") if somehow
-          // reached, but AdminPanelScreen itself gates its own content.
-          tabBarButton: canViewAdminPanel ? undefined : () => null,
-          tabBarStyle: canViewAdminPanel
-            ? { backgroundColor: colors.surface, borderTopColor: colors.border }
-            : { display: "none" },
+          ...(canViewAdminPanel ? null : HIDDEN_TAB),
         }}
       />
     </Tab.Navigator>
@@ -158,13 +172,20 @@ function MainTabs() {
 
 // ── App stack — shared screens accessible from any tab ───────────────────
 export default function AppNavigator() {
+  const { colors } = useTheme();
+
   return (
+    <>
+      {/* Status bar contrast is derived from the header color, so a chapter
+          branded in a pale primary still gets legible clock/battery glyphs. */}
+      <ThemedStatusBar behind="header" />
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: colors.primary },
-        headerTintColor: colors.primaryText,
-        headerTitleStyle: { fontWeight: "700" },
+        headerStyle: { backgroundColor: colors.headerBackground },
+        headerTintColor: colors.headerText,
+        headerTitleStyle: { fontWeight: "700", color: colors.headerText },
         headerBackTitle: "",
+        contentStyle: { backgroundColor: colors.background },
       }}
     >
       <Stack.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
@@ -227,6 +248,15 @@ export default function AppNavigator() {
       {/* Feedback & bug reports */}
       <Stack.Screen name="Feedback" component={FeedbackScreen} options={{ title: "Send Feedback" }} />
       <Stack.Screen name="FeedbackList" component={FeedbackListScreen} options={{ title: "Feedback" }} />
+
+      {/* Settings hub + its submenus. Registered on the shared app stack (not
+          as a tab) so opening a submenu pushes onto the stack and popping
+          back returns to the exact Settings screen instance — no remount, no
+          refetch. See SettingsScreen's doc comment. */}
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: "Settings" }} />
+      <Stack.Screen name="Appearance" component={AppearanceScreen} options={{ title: "Appearance" }} />
+      <Stack.Screen name="ChapterBranding" component={ChapterBrandingScreen} options={{ title: "Chapter Branding" }} />
     </Stack.Navigator>
+    </>
   );
 }

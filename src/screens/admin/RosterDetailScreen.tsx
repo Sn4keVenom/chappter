@@ -10,11 +10,14 @@
 //   - Navigates to MemberProfile on row tap
 
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, TextInput, FlatList, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, TextInput, FlatList, Pressable, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
+import { userRoleColor } from "../../theme/semantic";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { getRoster } from "../../api/users";
@@ -26,15 +29,11 @@ type NavProp = NativeStackNavigationProp<AppStackParamList>;
 const ROLES: UserRole[] = ["MEMBER", "EXEC", "SUPER_ADMIN", "PNM", "ALUMNI"];
 const STATUSES: MemberStatus[] = ["ACTIVE", "PNM", "ALUMNI", "INACTIVE"];
 
-const ROLE_COLOR: Record<UserRole, string> = {
-  MEMBER: colors.textMuted,
-  EXEC: colors.accent,
-  SUPER_ADMIN: colors.primary,
-  PNM: colors.categoryRush,
-  ALUMNI: colors.categoryBrotherhood,
-};
 
 export default function RosterDetailScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const { isOfficerOrAbove } = usePermissions();
   const [query, setQuery] = useState("");
@@ -129,8 +128,8 @@ export default function RosterDetailScreen() {
                 <Text style={styles.rowName}>{item.firstName} {item.lastName}</Text>
                 <Text style={styles.rowMeta}>{item.email}{item.pledgeClassLabel ? ` · ${item.pledgeClassLabel}` : ""}</Text>
               </View>
-              <View style={[styles.roleBadge, { borderColor: ROLE_COLOR[item.role ?? "MEMBER"] }]}>
-                <Text style={[styles.roleBadgeText, { color: ROLE_COLOR[item.role ?? "MEMBER"] }]}>{item.role}</Text>
+              <View style={[styles.roleBadge, { borderColor: userRoleColor(item.role ?? "MEMBER") }]}>
+                <Text style={[styles.roleBadgeText, { color: userRoleColor(item.role ?? "MEMBER") }]}>{item.role}</Text>
               </View>
             </Pressable>
           )}
@@ -140,7 +139,7 @@ export default function RosterDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   searchInput: { margin: 16, marginBottom: 8, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: colors.textPrimary },
   filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 16, marginBottom: 8 },
@@ -160,4 +159,4 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   roleBadge: { borderRadius: 6, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 3, marginLeft: 8 },
   roleBadgeText: { fontSize: 10, fontWeight: "800" },
-});
+}));

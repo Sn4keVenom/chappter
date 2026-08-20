@@ -17,14 +17,19 @@
 // is authorized.
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 
 export default function RequireAccess({
   message = "You don't have permission to view this screen.",
 }: {
   message?: string;
 }) {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   return (
     <View style={styles.screen}>
       <Text style={styles.icon}>🔒</Text>
@@ -34,7 +39,7 @@ export default function RequireAccess({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: {
     flex: 1,
     alignItems: "center",
@@ -45,4 +50,4 @@ const styles = StyleSheet.create({
   icon: { fontSize: 40, marginBottom: 16 },
   title: { fontSize: 18, fontWeight: "700", color: colors.textPrimary, marginBottom: 10, textAlign: "center" },
   body: { fontSize: 14, color: colors.textSecondary, textAlign: "center", lineHeight: 21 },
-});
+}));

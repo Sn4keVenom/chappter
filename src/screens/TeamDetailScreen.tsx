@@ -14,14 +14,17 @@
 
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator,
+  View, Text, ScrollView, Pressable, ActivityIndicator,
   Alert, Modal, TextInput, FlatList, RefreshControl,
 } from "react-native";
-import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import { usePermissions } from "../hooks/usePermissions";
 import { getTeam, addTeamMember, removeTeamMember } from "../api/teams";
 import { getRoster } from "../api/users";
@@ -167,6 +170,9 @@ function MemberRow({
 }
 
 export default function TeamDetailScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { teamId } = route.params;
@@ -191,7 +197,7 @@ export default function TeamDetailScreen() {
     }
   }, [teamId, navigation]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(useCallback(({ silent }) => load(!silent), []));
 
   async function handleAddMember(userId: string) {
     await addTeamMember(teamId, userId);
@@ -290,7 +296,7 @@ export default function TeamDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 40 },
   centered: { flex: 1, justifyContent: "center", alignItems: "center" },
@@ -333,4 +339,4 @@ const styles = StyleSheet.create({
   selectedUser: { backgroundColor: colors.surface, borderRadius: 10, padding: 16, borderWidth: 1, borderColor: colors.accent, marginBottom: 12 },
   selectedUserName: { color: colors.textPrimary, fontWeight: "600", fontSize: 16 },
   selectedUserHint: { color: colors.textMuted, fontSize: 12, marginTop: 6, lineHeight: 17 },
-});
+}));

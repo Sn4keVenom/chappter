@@ -22,14 +22,18 @@
 
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
-  View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert,
-  Modal, TextInput, FlatList,
+  View, Text, ScrollView, Pressable, ActivityIndicator, Alert,
+  TextInput, FlatList,
 } from "react-native";
-import { useNavigation, useRoute, useFocusEffect } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
+import { Dialog, DialogActions, DialogButton } from "../components/Dialog";
 import { usePermissions } from "../hooks/usePermissions";
 import { getMemberProfile, getPointsLedger, updateUserFields, getRoster } from "../api/users";
 import { getMemberAttendanceHistory } from "../api/attendance";
@@ -51,8 +55,8 @@ function officeLabel(office?: ExecOffice | null): string {
   return office.split("_").map((w) => w[0] + w.slice(1).toLowerCase()).join(" ");
 }
 
-// ── Role Number modal ────────────────────────────────────────────────────
-function RoleNumberModal({
+// ── Role Number dialog ───────────────────────────────────────────────────
+function RoleNumberDialog({
   visible, current, onClose, onSave,
 }: {
   visible: boolean;
@@ -60,6 +64,7 @@ function RoleNumberModal({
   onClose: () => void;
   onSave: (value: number | null) => Promise<void>;
 }) {
+  const { colors } = useTheme();
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -80,55 +85,73 @@ function RoleNumberModal({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>Role Number</Text>
-          <TextInput
-            style={styles.modalInput}
-            keyboardType="number-pad"
-            placeholder="e.g. 214"
-            placeholderTextColor={colors.textMuted}
-            value={value}
-            onChangeText={setValue}
-            autoFocus
+    <Dialog
+      visible={visible}
+      onRequestClose={onClose}
+      title="Role Number"
+      subtitle="The member's number within the chapter's initiation order."
+      footer={
+        <DialogActions>
+          <DialogButton label="Cancel" onPress={onClose} disabled={saving} />
+          {current != null ? (
+            <DialogButton
+              label="Clear"
+              variant="destructive"
+              onPress={() => handleSave(null)}
+              disabled={saving}
+            />
+          ) : null}
+          <DialogButton
+            label="Save"
+            variant="primary"
+            onPress={() => handleSave(Number(value.trim()))}
+            disabled={!value.trim()}
+            busy={saving}
           />
-          <View style={styles.modalActions}>
-            <Pressable style={styles.modalCancelBtn} onPress={onClose} disabled={saving}>
-              <Text style={styles.modalCancelText}>Cancel</Text>
-            </Pressable>
-            {current != null && (
-              <Pressable style={styles.modalClearBtn} onPress={() => handleSave(null)} disabled={saving}>
-                <Text style={styles.modalClearText}>Clear</Text>
-              </Pressable>
-            )}
-            <Pressable
-              style={[styles.modalSaveBtn, (!value.trim() || saving) && styles.disabledBtn]}
-              onPress={() => handleSave(Number(value.trim()))}
-              disabled={!value.trim() || saving}
-            >
-              {saving ? <ActivityIndicator color={colors.primaryText} /> : <Text style={styles.modalSaveText}>Save</Text>}
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+        </DialogActions>
+      }
+    >
+      <TextInput
+        style={styles.modalInput}
+        keyboardType="number-pad"
+        placeholder="e.g. 214"
+        placeholderTextColor={colors.inputPlaceholder}
+        keyboardAppearance={colors.keyboardAppearance}
+        value={value}
+        onChangeText={setValue}
+        autoFocus
+      />
+    </Dialog>
   );
 }
 
-// ── Big picker modal ─────────────────────────────────────────────────────
-function BigPickerModal({
-  visible, currentBigId, onClose, onSelect,
+// ── Assign Big dialog ────────────────────────────────────────────────────
+//
+// Two steps, so the destructive-ish action always gets a confirmation:
+//   1. "search"  — find a member.               Actions: Cancel
+//   2. "confirm" — verify who was picked.       Actions: Back · Confirm
+//
+// Splitting it this way is also what gives the dialog its three named
+// buttons (Cancel / Back / Confirm); previously it had a single "Close" that
+// was styled with `flex: 1` inside a column, so it stretched vertically to
+// swallow whatever space the results list left over.
+type BigStep = { kind: "search" } | { kind: "confirm"; target: UserSummary | null };
+
+function AssignBigDialog({
+  visible, memberName, currentBig, onClose, onSelect,
 }: {
   visible: boolean;
-  currentBigId?: string | null;
+  memberName: string;
+  currentBig?: FamilyMemberSummary | null;
   onClose: () => void;
   onSelect: (userId: string | null) => Promise<void>;
 }) {
+  const { colors } = useTheme();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<UserSummary[]>([]);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [step, setStep] = useState<BigStep>({ kind: "search" });
   // Tracks the most recently typed query so a slower, earlier request that
   // resolves after a newer one can detect it's stale and skip overwriting
   // fresher results — the debounce timer only cancels un-fired timers, not
@@ -139,10 +162,11 @@ function BigPickerModal({
     if (!visible) return;
     setQuery("");
     setResults([]);
+    setStep({ kind: "search" });
   }, [visible]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || step.kind !== "search") return;
     latestQueryRef.current = query;
     const handle = setTimeout(async () => {
       setSearching(true);
@@ -157,9 +181,9 @@ function BigPickerModal({
       }
     }, 300);
     return () => clearTimeout(handle);
-  }, [query, visible]);
+  }, [query, visible, step.kind]);
 
-  async function handlePick(userId: string | null) {
+  async function commit(userId: string | null) {
     setSaving(true);
     try {
       await onSelect(userId);
@@ -171,50 +195,114 @@ function BigPickerModal({
     }
   }
 
+  if (step.kind === "confirm") {
+    const target = step.target;
+    return (
+      <Dialog
+        visible={visible}
+        onRequestClose={onClose}
+        title={target ? "Assign Big" : "Remove Big"}
+        subtitle={
+          target
+            ? `${target.firstName} ${target.lastName} will become ${memberName}'s Big.`
+            : `${memberName} will no longer have a Big assigned.`
+        }
+        footer={
+          <DialogActions>
+            <DialogButton
+              label="Back"
+              onPress={() => setStep({ kind: "search" })}
+              disabled={saving}
+            />
+            <DialogButton
+              label="Confirm"
+              variant={target ? "primary" : "destructive"}
+              onPress={() => commit(target?.id ?? null)}
+              busy={saving}
+            />
+          </DialogActions>
+        }
+      >
+        {currentBig && target ? (
+          <Text style={styles.confirmNote}>
+            This replaces {currentBig.firstName} {currentBig.lastName} as {memberName}'s
+            current Big.
+          </Text>
+        ) : null}
+      </Dialog>
+    );
+  }
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={[styles.modalCard, { maxHeight: "70%" }]}>
-          <Text style={styles.modalTitle}>Assign Big</Text>
-          <TextInput
-            style={styles.modalInput}
-            placeholder="Search by name or email"
-            placeholderTextColor={colors.textMuted}
-            value={query}
-            onChangeText={setQuery}
-            autoFocus
-          />
-          {currentBigId && (
-            <Pressable style={styles.modalClearRow} onPress={() => handlePick(null)} disabled={saving}>
-              <Text style={styles.modalClearText}>Remove current Big</Text>
+    <Dialog
+      visible={visible}
+      onRequestClose={onClose}
+      title="Assign Big"
+      subtitle={`Choose a Big for ${memberName}.`}
+      maxHeight="76%"
+      footer={
+        <DialogActions>
+          <DialogButton label="Cancel" onPress={onClose} disabled={saving} />
+        </DialogActions>
+      }
+    >
+      <TextInput
+        style={styles.modalInput}
+        placeholder="Search by name or email"
+        placeholderTextColor={colors.inputPlaceholder}
+        keyboardAppearance={colors.keyboardAppearance}
+        value={query}
+        onChangeText={setQuery}
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoFocus
+      />
+
+      {currentBig ? (
+        <Pressable
+          style={styles.removeBigRow}
+          onPress={() => setStep({ kind: "confirm", target: null })}
+          disabled={saving}
+          accessibilityRole="button"
+        >
+          <Text style={styles.removeBigText}>
+            Remove {currentBig.firstName} {currentBig.lastName} as Big
+          </Text>
+        </Pressable>
+      ) : null}
+
+      {searching ? (
+        <ActivityIndicator color={colors.accentTint} style={{ marginTop: 16 }} />
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={(u) => u.id}
+          style={styles.pickerList}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item }) => (
+            <Pressable
+              style={({ pressed }) => [styles.pickerRow, pressed && styles.pickerRowPressed]}
+              onPress={() => setStep({ kind: "confirm", target: item })}
+              disabled={saving}
+              accessibilityRole="button"
+            >
+              <Text style={styles.pickerRowName}>{item.firstName} {item.lastName}</Text>
+              <Text style={styles.pickerRowMeta}>{item.email}</Text>
             </Pressable>
           )}
-          {searching ? (
-            <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
-          ) : (
-            <FlatList
-              data={results}
-              keyExtractor={(u) => u.id}
-              style={{ marginTop: 8 }}
-              renderItem={({ item }) => (
-                <Pressable style={styles.pickerRow} onPress={() => handlePick(item.id)} disabled={saving}>
-                  <Text style={styles.pickerRowName}>{item.firstName} {item.lastName}</Text>
-                  <Text style={styles.pickerRowMeta}>{item.email}</Text>
-                </Pressable>
-              )}
-              ListEmptyComponent={query.trim().length > 0 ? <Text style={styles.emptyText}>No matches.</Text> : null}
-            />
-          )}
-          <Pressable style={styles.modalCancelBtn} onPress={onClose} disabled={saving}>
-            <Text style={styles.modalCancelText}>Close</Text>
-          </Pressable>
-        </View>
-      </View>
-    </Modal>
+          ListEmptyComponent={
+            query.trim().length > 0 ? <Text style={styles.emptyText}>No matches.</Text> : null
+          }
+        />
+      )}
+    </Dialog>
   );
 }
 
 export default function MemberProfileScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { userId } = route.params;
@@ -229,8 +317,8 @@ export default function MemberProfileScreen() {
   const [roleNumberModalVisible, setRoleNumberModalVisible] = useState(false);
   const [bigModalVisible, setBigModalVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent }: { silent: boolean } = { silent: false }) => {
+    if (!silent) setLoading(true);
     try {
       const [me, hist, ledger, familyResult] = await Promise.all([
         getMemberProfile(userId),
@@ -253,7 +341,7 @@ export default function MemberProfileScreen() {
   // useFocusEffect, not a mount-only useEffect — returning here after an Exec
   // adjusts this member's points (PointsAdjustScreen) or edits Big/Little
   // should refresh the total instead of showing the pre-navigation snapshot.
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(load);
 
   async function handleSaveRoleNumber(value: number | null) {
     await apiSetRoleNumber(userId, value);
@@ -489,15 +577,16 @@ export default function MemberProfileScreen() {
         <Text style={styles.emptyText}>No attendance recorded yet this semester.</Text>
       )}
 
-      <RoleNumberModal
+      <RoleNumberDialog
         visible={roleNumberModalVisible}
         current={profile.roleNumber}
         onClose={() => setRoleNumberModalVisible(false)}
         onSave={handleSaveRoleNumber}
       />
-      <BigPickerModal
+      <AssignBigDialog
         visible={bigModalVisible}
-        currentBigId={family?.big?.userId}
+        memberName={profile.firstName}
+        currentBig={family?.big ?? null}
         onClose={() => setBigModalVisible(false)}
         onSelect={handleSelectBig}
       />
@@ -505,7 +594,7 @@ export default function MemberProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
@@ -523,26 +612,25 @@ const styles = StyleSheet.create({
   pointsTotal: { fontSize: 30, fontWeight: "800", color: colors.textPrimary },
   familyText: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
 
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 24 },
-  modalCard: { backgroundColor: colors.surface, borderRadius: 14, padding: 20 },
-  modalTitle: { fontSize: 18, fontWeight: "700", color: colors.textPrimary, marginBottom: 14 },
+  // Dialog chrome (scrim, card, action buttons) now lives in
+  // components/Dialog.tsx — only the dialogs' own content is styled here.
   modalInput: {
-    backgroundColor: colors.background, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.textPrimary,
+    backgroundColor: colors.inputBackground, borderRadius: 10, borderWidth: 1, borderColor: colors.inputBorder,
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: colors.inputText,
+    minHeight: 46, marginTop: 14,
   },
-  modalActions: { flexDirection: "row", gap: 10, marginTop: 16 },
-  modalCancelBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.border, marginTop: 12 },
-  modalCancelText: { color: colors.textPrimary, fontWeight: "600" },
-  modalClearBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", borderWidth: 1, borderColor: colors.danger },
-  modalClearRow: { paddingVertical: 10, alignItems: "center", marginTop: 10 },
-  modalClearText: { color: colors.danger, fontWeight: "700", fontSize: 13 },
-  modalSaveBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.primary },
-  modalSaveText: { color: colors.primaryText, fontWeight: "700" },
-  disabledBtn: { opacity: 0.5 },
+  confirmNote: { fontSize: 13, color: colors.textMuted, lineHeight: 18, marginTop: 12 },
+  removeBigRow: {
+    marginTop: 12, minHeight: 44, justifyContent: "center", alignItems: "center",
+    borderRadius: 10, borderWidth: 1, borderColor: colors.danger, paddingHorizontal: 12,
+  },
+  removeBigText: { color: colors.danger, fontWeight: "700", fontSize: 13, textAlign: "center" },
 
-  pickerRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
-  pickerRowName: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
-  pickerRowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 1 },
+  pickerList: { marginTop: 12 },
+  pickerRow: { paddingVertical: 12, minHeight: 52, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: colors.divider },
+  pickerRowPressed: { backgroundColor: colors.surfaceAlt },
+  pickerRowName: { fontSize: 15, fontWeight: "600", color: colors.textPrimary },
+  pickerRowMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
 
   adjustBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13, alignItems: "center", marginBottom: 20 },
   adjustBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
@@ -553,4 +641,4 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, fontSize: 14, fontWeight: "600", color: colors.textPrimary, marginRight: 8 },
   rowMeta: { fontSize: 12, color: colors.textMuted, fontWeight: "600" },
   emptyText: { color: colors.textMuted, fontSize: 14, textAlign: "center", marginTop: 20 },
-});
+}));

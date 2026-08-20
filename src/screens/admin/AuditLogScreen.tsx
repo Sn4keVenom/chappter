@@ -13,9 +13,11 @@
 //     navigation.navigate())
 
 import React, { useCallback, useState } from "react";
-import { View, Text, FlatList, StyleSheet, ActivityIndicator, Pressable } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { View, Text, FlatList, ActivityIndicator, Pressable } from "react-native";
+import { useFocusRefresh } from "../../hooks/useFocusRefresh";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { getAuditLog } from "../../api/auditlog";
@@ -29,6 +31,9 @@ function actionLabel(action: string): string {
 }
 
 export default function AuditLogScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { isSuperAdmin } = usePermissions();
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [page, setPage] = useState(1);
@@ -39,8 +44,8 @@ export default function AuditLogScreen() {
 
   const LIMIT = 50;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent }: { silent: boolean } = { silent: false }) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const result = await getAuditLog({ page: 1, limit: LIMIT });
@@ -54,7 +59,7 @@ export default function AuditLogScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(load);
 
   async function loadMore() {
     if (loadingMore || entries.length >= total) return;
@@ -87,7 +92,7 @@ export default function AuditLogScreen() {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{error}</Text>
-        <Pressable style={styles.retryBtn} onPress={load}>
+        <Pressable style={styles.retryBtn} onPress={() => load()}>
           <Text style={styles.retryBtnText}>Try Again</Text>
         </Pressable>
       </View>
@@ -119,7 +124,7 @@ export default function AuditLogScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 },
   errorText: { color: colors.textSecondary, fontSize: 14, textAlign: "center", marginBottom: 16 },
@@ -134,4 +139,4 @@ const styles = StyleSheet.create({
   action: { fontSize: 14, fontWeight: "700", color: colors.textPrimary, flex: 1 },
   time: { fontSize: 11, color: colors.textMuted },
   meta: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-});
+}));

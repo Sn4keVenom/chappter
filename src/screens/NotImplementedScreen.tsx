@@ -9,9 +9,11 @@
 // screen once the corresponding backend endpoint exists.
 
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 
 const COPY: Record<string, { icon: string; title: string; body: string }> = {
   Thread: {
@@ -22,6 +24,9 @@ const COPY: Record<string, { icon: string; title: string; body: string }> = {
 };
 
 export default function NotImplementedScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute();
   const copy = COPY[route.name] ?? {
     icon: "🚧",
@@ -38,9 +43,9 @@ export default function NotImplementedScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", padding: 32 },
   icon: { fontSize: 40, marginBottom: 16 },
   title: { fontSize: 18, fontWeight: "700", color: colors.textPrimary, marginBottom: 10, textAlign: "center" },
   body: { fontSize: 14, color: colors.textSecondary, textAlign: "center", lineHeight: 21 },
-});
+}));

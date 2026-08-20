@@ -154,7 +154,18 @@ route("patch", "/permissions/offices/:office", (p, _q, body) => ({ office: api.u
 route("get", "/chapters", () => ({ chapters: api.listChapters() }));
 route("post", "/chapters/:id/invites", (p, _q, body) => ({ invite: api.createInvite(p.id, body) }));
 route("get", "/chapters/:id/invites", (p) => ({ invites: api.getInvites(p.id) }));
+route("patch", "/chapters/:id/invites/:inviteId", (p, _q, body) => ({ invite: api.updateInvite(p.id, p.inviteId, body) }));
+// Archive keeps the existing DELETE verb the backend already exposes; the
+// restore/regenerate siblings are new (see src/api/branding.ts's note about
+// routes the real server hasn't shipped yet).
 route("delete", "/chapters/:id/invites/:inviteId", (p) => ({ invite: api.revokeInvite(p.id, p.inviteId) }));
+route("post", "/chapters/:id/invites/:inviteId/restore", (p) => ({ invite: api.restoreInvite(p.id, p.inviteId) }));
+route("post", "/chapters/:id/invites/:inviteId/regenerate", (p) => ({ invite: api.regenerateInvite(p.id, p.inviteId) }));
+
+// Chapter branding (visual identity — see src/theme/palette.ts)
+route("get", "/chapters/:id/branding", (p) => ({ branding: api.getChapterBranding(p.id) }));
+route("patch", "/chapters/:id/branding", (p, _q, body) => ({ branding: api.updateChapterBranding(p.id, body) }));
+route("post", "/chapters/:id/branding/reset", (p) => ({ branding: api.resetChapterBranding(p.id) }));
 route("get", "/chapters/:id/join-requests", (p, q) => ({ joinRequests: api.getJoinRequests(p.id, q.status ?? "PENDING") }));
 route("patch", "/chapters/join-requests/:id", (p, _q, body) => ({ joinRequest: api.reviewJoinRequest(p.id, body.approve) }));
 

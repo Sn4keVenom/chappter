@@ -166,6 +166,44 @@ export interface ChapterSettings {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// Chapter branding — the chapter's visual identity (colors, name, logo).
+//
+// Deliberately a separate resource from both ChapterSettings (operational
+// config: dues amounts, semester dates) and from the individual user's
+// appearance preference (System/Light/Dark, stored on-device only). Branding
+// is chapter-wide and admin-controlled; appearance is personal. The theme
+// engine combines them: buildPalette(resolvedScheme, branding).
+//
+// Served by GET/PATCH /chapters/:id/branding — see src/api/branding.ts. The
+// mock implementation lives in src/mocks/api.ts; the real backend does not
+// expose these routes yet (see docs note in api/branding.ts).
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface ChapterBranding {
+  chapterId: string;
+  /** Display name used in headers and the branding preview. */
+  chapterName: string;
+  chapterLetters: string;
+  /** Remote logo image URL. Null when the chapter uses the monogram instead. */
+  logoUrl?: string | null;
+  /**
+   * Emoji/character monogram shown when there's no uploaded logo. Demo Mode
+   * has no file storage, so this is the honest stand-in — and it stays useful
+   * in production as the fallback before a logo is uploaded.
+   */
+  logoEmoji?: string | null;
+  /** Hex. Solid fills: buttons, headers, avatars, selected states. */
+  primaryColor: string;
+  /** Hex. Highlights: active tab, rank badges, required-event tags. */
+  accentColor: string;
+  /** Optional hex wash applied to backgrounds in light mode. */
+  backgroundTintLight?: string | null;
+  /** Optional hex wash applied to backgrounds in dark mode. */
+  backgroundTintDark?: string | null;
+  updatedAt: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Documents & file management (spec §8)
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -302,13 +340,65 @@ export interface ChapterInvite {
   id: string;
   chapterId: string;
   code: string;
+  /** Admin-facing name, e.g. "Fall 2026 Rush". Optional; falls back to code. */
+  label?: string | null;
+  /** Role granted to whoever redeems this code. */
   role: UserRole;
+  /** Membership status granted on redemption. */
   status: MemberStatus;
   maxUses?: number | null;
   useCount: number;
   expiresAt?: string | null;
+  /**
+   * Admin "paused" switch — independent of archiving. A paused code can be
+   * re-enabled with one tap; an archived one is retired for good.
+   */
+  active: boolean;
+  /**
+   * Set when the code is archived. Archived codes can never be redeemed and
+   * move to the archived section of the invite manager. (The backend column
+   * is `revokedAt`; "archive" is the same operation with clearer wording.)
+   */
   revokedAt?: string | null;
+  /** Set when the code string was last regenerated, invalidating the old one. */
+  regeneratedAt?: string | null;
+  lastUsedAt?: string | null;
+  createdBy?: { id: string; firstName: string; lastName: string } | null;
   createdAt: string;
+}
+
+/**
+ * Derived lifecycle state for an invite — the single place this logic lives,
+ * so the list, the badges, and the redemption check can never disagree.
+ * Order matters: archived beats expired beats exhausted beats paused.
+ */
+export type InviteState =
+  | "ARCHIVED"
+  | "EXPIRED"
+  | "EXHAUSTED"
+  | "PAUSED"
+  | "EXPIRING_SOON"
+  | "ACTIVE";
+
+/** An invite is "expiring soon" within this many days of its expiry. */
+export const INVITE_EXPIRING_SOON_DAYS = 7;
+
+export function inviteState(invite: ChapterInvite, now: Date = new Date()): InviteState {
+  if (invite.revokedAt) return "ARCHIVED";
+  if (invite.expiresAt && new Date(invite.expiresAt) <= now) return "EXPIRED";
+  if (invite.maxUses != null && invite.useCount >= invite.maxUses) return "EXHAUSTED";
+  if (!invite.active) return "PAUSED";
+  if (invite.expiresAt) {
+    const daysLeft = (new Date(invite.expiresAt).getTime() - now.getTime()) / 86_400_000;
+    if (daysLeft <= INVITE_EXPIRING_SOON_DAYS) return "EXPIRING_SOON";
+  }
+  return "ACTIVE";
+}
+
+/** True when a code can still be redeemed right now. */
+export function isInviteRedeemable(invite: ChapterInvite, now: Date = new Date()): boolean {
+  const state = inviteState(invite, now);
+  return state === "ACTIVE" || state === "EXPIRING_SOON";
 }
 
 export interface ChapterJoinRequest {

@@ -12,10 +12,13 @@
 //   - Navigation: AppStackParamList → Documents (no params), navigates to DocumentCategory
 
 import React, { useCallback, useState } from "react";
-import { View, Text, ScrollView, Pressable, StyleSheet, ActivityIndicator, Alert, Modal, TextInput, Linking } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert, Modal, TextInput, Linking } from "react-native";
+import { useNavigation } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import { usePermissions } from "../hooks/usePermissions";
 import { listDocuments, listExternalLinks, createExternalLink, deleteExternalLink } from "../api/documents";
 import type { ChapterDocument, DocumentCategory, ExternalLink } from "../types";
@@ -72,6 +75,9 @@ function AddLinkModal({ visible, onClose, onAdd }: { visible: boolean; onClose: 
 }
 
 export default function DocumentsScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const { can } = usePermissions();
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -79,8 +85,8 @@ export default function DocumentsScreen() {
   const [loading, setLoading] = useState(true);
   const [addLinkVisible, setAddLinkVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent }: { silent: boolean } = { silent: false }) => {
+    if (!silent) setLoading(true);
     try {
       const [docs, extLinks] = await Promise.all([listDocuments({}), listExternalLinks()]);
       const byCategory: Record<string, number> = {};
@@ -94,7 +100,7 @@ export default function DocumentsScreen() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(load);
 
   function confirmRemoveLink(link: ExternalLink) {
     Alert.alert("Remove Link", `Remove "${link.label}"?`, [
@@ -169,7 +175,7 @@ export default function DocumentsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
@@ -192,4 +198,4 @@ const styles = StyleSheet.create({
   modalDone: { color: colors.accent, fontSize: 16, fontWeight: "600" },
   fieldLabel: { color: colors.textMuted, fontSize: 12, fontWeight: "600", textTransform: "uppercase", marginBottom: 6, marginTop: 16 },
   field: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, color: colors.textPrimary, fontSize: 15 },
-});
+}));

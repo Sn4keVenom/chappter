@@ -14,13 +14,16 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, TextInput, FlatList, Pressable, StyleSheet,
+  View, Text, TextInput, FlatList, Pressable,
   ActivityIndicator, Modal, Alert, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
+import { badgeBackground, duesStatusColor } from "../../theme/semantic";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { getAllDues, recordPayment, waiveDues } from "../../api/dues";
@@ -31,12 +34,6 @@ import type { AppStackParamList } from "../../navigation/types";
 type RoutePropType = RouteProp<AppStackParamList, "DuesDetail">;
 type Row = DuesRecord & { user: { id: string; firstName: string; lastName: string; email: string } };
 
-const STATUS_COLOR: Record<DuesStatus, string> = {
-  PAID: colors.success,
-  PARTIAL: colors.warning,
-  UNPAID: colors.danger,
-  WAIVED: colors.textMuted,
-};
 
 const PAYMENT_METHODS: { value: "CASH" | "VENMO" | "CHECK" | "OTHER"; label: string }[] = [
   { value: "CASH", label: "Cash" },
@@ -196,6 +193,9 @@ function WaiveModal({
 }
 
 export default function DuesDetailScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute<RoutePropType>();
   const { can } = usePermissions();
   const [query, setQuery] = useState(route.params?.userName ?? "");
@@ -243,7 +243,7 @@ export default function DuesDetailScreen() {
       <View style={styles.summaryRow}>
         {summary.map((s) => (
           <View key={s.status} style={styles.summaryCard}>
-            <Text style={[styles.summaryValue, { color: STATUS_COLOR[s.status as DuesStatus] }]}>{s._count._all}</Text>
+            <Text style={[styles.summaryValue, { color: duesStatusColor(s.status as DuesStatus) }]}>{s._count._all}</Text>
             <Text style={styles.summaryLabel}>{s.status}</Text>
           </View>
         ))}
@@ -271,8 +271,8 @@ export default function DuesDetailScreen() {
                 {formatCurrency(item.amountPaid)} / {formatCurrency(item.amountOwed)}
               </Text>
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[item.status] + "22" }]}>
-              <Text style={[styles.statusBadgeText, { color: STATUS_COLOR[item.status] }]}>{item.status}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: badgeBackground(duesStatusColor(item.status)) }]}>
+              <Text style={[styles.statusBadgeText, { color: duesStatusColor(item.status) }]}>{item.status}</Text>
             </View>
             {(item.status === "UNPAID" || item.status === "PARTIAL") && (
               <View style={styles.rowActions}>
@@ -294,7 +294,7 @@ export default function DuesDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
 
@@ -337,4 +337,4 @@ const styles = StyleSheet.create({
   modalSaveBtn: { flex: 1, borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: colors.primary },
   modalSaveText: { color: "#FFF", fontWeight: "700" },
   disabledBtn: { opacity: 0.5 },
-});
+}));

@@ -10,7 +10,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -22,11 +21,16 @@ import type { RouteProp } from "@react-navigation/native";
 import { useSignIn } from "@clerk/clerk-expo";
 import { useCompleteAuth } from "../../hooks/useCompleteAuth";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import type { AuthStackParamList } from "../../navigation/types";
 
 type RoutePropType = RouteProp<AuthStackParamList, "ResetPassword">;
 
 export default function ResetPasswordScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute<RoutePropType>();
   const { email } = route.params;
   const { isLoaded, signIn } = useSignIn();
@@ -109,7 +113,7 @@ export default function ResetPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { flexGrow: 1, padding: 24, paddingTop: 48 },
   title: { fontSize: 24, fontWeight: "800", color: colors.textPrimary, marginBottom: 10 },
@@ -132,4 +136,4 @@ const styles = StyleSheet.create({
   primaryButton: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 15, alignItems: "center", marginTop: 8 },
   primaryButtonText: { color: colors.primaryText, fontWeight: "700", fontSize: 16 },
   buttonDisabled: { opacity: 0.5 },
-});
+}));

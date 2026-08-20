@@ -6,9 +6,11 @@
 // /chapters/join-requests/:id) — nothing else to do here but reflect the result.
 
 import React, { useCallback, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator, FlatList, Alert } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { View, Text, Pressable, ActivityIndicator, FlatList, Alert } from "react-native";
+import { useFocusRefresh } from "../../hooks/useFocusRefresh";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useAuthStore } from "../../store/useAuthStore";
 import RequireAccess from "../../components/RequireAccess";
@@ -16,18 +18,21 @@ import { getJoinRequests, reviewJoinRequest } from "../../api/chapters";
 import type { ChapterJoinRequest } from "../../types";
 
 export default function JoinRequestsScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { can } = usePermissions();
   const chapterId = useAuthStore((s) => s.user?.chapterId);
   const [requests, setRequests] = useState<ChapterJoinRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ silent }: { silent: boolean } = { silent: false }) => {
     if (!chapterId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       setRequests(await getJoinRequests(chapterId, "PENDING"));
     } catch {
@@ -37,7 +42,7 @@ export default function JoinRequestsScreen() {
     }
   }, [chapterId]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(load);
 
   if (!can("chapters.manageInvites")) {
     return <RequireAccess />;
@@ -101,7 +106,7 @@ export default function JoinRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   list: { padding: 16, paddingBottom: 40 },
@@ -118,4 +123,4 @@ const styles = StyleSheet.create({
   approveBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 13 },
   denyBtn: { borderWidth: 1, borderColor: colors.danger },
   denyBtnText: { color: colors.danger, fontWeight: "700", fontSize: 13 },
-});
+}));

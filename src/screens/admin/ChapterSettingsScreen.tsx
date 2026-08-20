@@ -10,8 +10,10 @@
 //   - Navigation: AppStackParamList → ChapterSettings (no params)
 
 import React, { useCallback, useEffect, useState } from "react";
-import { View, Text, ScrollView, TextInput, Pressable, StyleSheet, ActivityIndicator, Alert } from "react-native";
+import { View, Text, ScrollView, TextInput, Pressable, ActivityIndicator, Alert } from "react-native";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { getChapterSettings, updateChapterSettings } from "../../api/settings";
@@ -35,6 +37,9 @@ function Field({ label, value, onChangeText, keyboardType }: {
 }
 
 export default function ChapterSettingsScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { isSuperAdmin } = usePermissions();
   const [settings, setSettings] = useState<ChapterSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,7 +141,7 @@ export default function ChapterSettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
@@ -152,4 +157,4 @@ const styles = StyleSheet.create({
   saveBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 24 },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
-});
+}));

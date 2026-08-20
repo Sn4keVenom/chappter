@@ -18,11 +18,13 @@
 //   · RootStackParamList from navigation/types.ts
 
 import React from "react";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator } from "react-native";
 import { NavigationContainer, LinkingOptions } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useAuthStore } from "../store/useAuthStore";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme, useNavigationTheme } from "../theme/ThemeProvider";
 import AuthNavigator from "./AuthNavigator";
 import OnboardingNavigator from "./OnboardingNavigator";
 import AppNavigator from "./AppNavigator";
@@ -44,6 +46,10 @@ const linking: LinkingOptions<RootStackParamList> = {
 };
 
 export default function RootNavigator() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
+  const navigationTheme = useNavigationTheme();
   const { user, isLoading } = useAuthStore();
 
   if (isLoading) {
@@ -55,7 +61,10 @@ export default function RootNavigator() {
   }
 
   return (
-    <NavigationContainer linking={linking}>
+    // The navigation theme keeps the container background (visible during
+    // push/pop transitions and behind translucent modals) in step with the
+    // app theme — without it, dark mode flashes white between screens.
+    <NavigationContainer linking={linking} theme={navigationTheme}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!user ? (
           <Stack.Screen name="Auth" component={AuthNavigator} />
@@ -69,11 +78,11 @@ export default function RootNavigator() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   loader: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.background,
   },
-});
+}));

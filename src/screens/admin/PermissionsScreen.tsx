@@ -14,8 +14,10 @@
 //   - Navigation: AppStackParamList → Permissions (no params)
 
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, Pressable, Switch, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Pressable, Switch, ActivityIndicator } from "react-native";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
 import { usePermissionsStore } from "../../store/usePermissionsStore";
@@ -31,6 +33,9 @@ const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 export default function PermissionsScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { isSuperAdmin } = usePermissions();
   const { presets, loaded, error, fetchPermissions, updateRolePermissions } = usePermissionsStore();
   const [selectedRole, setSelectedRole] = useState<UserRole>("EXEC");
@@ -120,7 +125,7 @@ export default function PermissionsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background, padding: 24 },
   errorText: { color: colors.danger, fontSize: 14, textAlign: "center", marginBottom: 16 },
@@ -130,7 +135,7 @@ const styles = StyleSheet.create({
   roleTab: { flex: 1, paddingVertical: 12, alignItems: "center" },
   roleTabActive: { borderBottomWidth: 2, borderBottomColor: colors.primary },
   roleTabText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
-  roleTabTextActive: { color: colors.primary },
+  roleTabTextActive: { color: colors.primaryTint },
   content: { padding: 16, paddingBottom: 48 },
   hint: { fontSize: 12, color: colors.textMuted, marginBottom: 16, lineHeight: 17 },
   group: { backgroundColor: colors.surface, borderRadius: 12, borderWidth: 1, borderColor: colors.border, marginBottom: 14, overflow: "hidden" },
@@ -140,4 +145,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border,
   },
   rowLabel: { flex: 1, fontSize: 14, color: colors.textPrimary, marginRight: 8 },
-});
+}));

@@ -12,12 +12,15 @@
 //   - Navigation: AppStackParamList → DocumentCategory { category, label }
 
 import React, { useCallback, useState } from "react";
-import { View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, Alert, Modal, TextInput } from "react-native";
-import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import { View, Text, FlatList, Pressable, ActivityIndicator, Alert, Modal, TextInput } from "react-native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import { usePermissions } from "../hooks/usePermissions";
 import { listDocuments, uploadDocument, deleteDocument } from "../api/documents";
 import type { ChapterDocument } from "../types";
@@ -69,6 +72,9 @@ function UploadModal({ visible, onClose, onUpload }: { visible: boolean; onClose
 }
 
 export default function DocumentCategoryScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const route = useRoute<RoutePropType>();
   const { category, label } = route.params;
@@ -79,8 +85,8 @@ export default function DocumentCategoryScreen() {
   const [loading, setLoading] = useState(true);
   const [uploadVisible, setUploadVisible] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent }: { silent: boolean } = { silent: false }) => {
+    if (!silent) setLoading(true);
     try {
       setDocuments(await listDocuments({ category }));
       navigation.setOptions({ title: label });
@@ -91,7 +97,7 @@ export default function DocumentCategoryScreen() {
     }
   }, [category, label, navigation]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusRefresh(load);
 
   function confirmDelete(doc: ChapterDocument) {
     Alert.alert("Delete Document", `Delete "${doc.name}"?`, [
@@ -146,7 +152,7 @@ export default function DocumentCategoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   list: { padding: 16, paddingBottom: 80 },
   emptyText: { color: colors.textMuted, textAlign: "center", marginTop: 40, fontSize: 14 },
@@ -170,4 +176,4 @@ const styles = StyleSheet.create({
   modalHint: { fontSize: 12, color: colors.textMuted, marginTop: 12, lineHeight: 17 },
   fieldLabel: { color: colors.textMuted, fontSize: 12, fontWeight: "600", textTransform: "uppercase", marginBottom: 6, marginTop: 16 },
   field: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, color: colors.textPrimary, fontSize: 15 },
-});
+}));

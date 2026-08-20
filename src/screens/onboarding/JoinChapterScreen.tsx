@@ -16,7 +16,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   ActivityIndicator,
   FlatList,
@@ -29,12 +28,17 @@ import { useAppAuth } from "../../hooks/useAppAuth";
 import { useAuthStore } from "../../store/useAuthStore";
 import { listChapters, redeemInviteCode, requestToJoinChapter } from "../../api/chapters";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import type { ChapterSummary } from "../../types";
 import type { OnboardingStackParamList } from "../../navigation/types";
 
 type RoutePropType = RouteProp<OnboardingStackParamList, "JoinChapter">;
 
 export default function JoinChapterScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute<RoutePropType>();
   const setUser = useAuthStore((s) => s.setUser);
   const currentUser = useAuthStore((s) => s.user);
@@ -178,7 +182,7 @@ export default function JoinChapterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background, padding: 24, paddingTop: 56 },
   header: { marginBottom: 24 },
   title: { fontSize: 26, fontWeight: "800", color: colors.textPrimary, marginBottom: 6 },
@@ -208,9 +212,9 @@ const styles = StyleSheet.create({
   chapterName: { fontSize: 15, fontWeight: "700", color: colors.textPrimary },
   chapterMeta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   requestButton: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 9 },
-  requestButtonText: { color: colors.primary, fontWeight: "700", fontSize: 13 },
+  requestButtonText: { color: colors.primaryTint, fontWeight: "700", fontSize: 13 },
   emptyText: { color: colors.textMuted, textAlign: "center", marginTop: 30 },
 
   signOutRow: { alignItems: "center", paddingVertical: 16 },
   signOutText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-});
+}));

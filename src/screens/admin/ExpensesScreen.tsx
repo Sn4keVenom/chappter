@@ -12,22 +12,19 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator,
+  View, Text, FlatList, Pressable, ActivityIndicator,
   Modal, TextInput, Alert,
 } from "react-native";
 
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
+import { badgeBackground, reimbursementStatusColor } from "../../theme/semantic";
 import { usePermissions } from "../../hooks/usePermissions";
 import { listExpenses, updateExpenseStatus } from "../../api/finance";
 import { formatCurrency } from "../../types";
 import type { Expense, ReimbursementStatus, PaymentMethod } from "../../types";
 
-const STATUS_COLOR: Record<ReimbursementStatus, string> = {
-  SUBMITTED: colors.warning,
-  APPROVED: colors.primary,
-  REIMBURSED: colors.success,
-  REJECTED: colors.danger,
-};
 
 const STATUSES: ReimbursementStatus[] = ["SUBMITTED", "APPROVED", "REIMBURSED", "REJECTED"];
 
@@ -113,7 +110,7 @@ function ReviewModal({
             )}
             {expense.status === "SUBMITTED" && (
               <Pressable style={[styles.reviewBtn, styles.approveBtn]} onPress={() => setStatus("APPROVED")} disabled={!!saving}>
-                {saving === "APPROVED" ? <ActivityIndicator color={colors.primary} /> : <Text style={[styles.reviewBtnText, { color: colors.primary }]}>Approve</Text>}
+                {saving === "APPROVED" ? <ActivityIndicator color={colors.primaryTint} /> : <Text style={[styles.reviewBtnText, { color: colors.primaryTint }]}>Approve</Text>}
               </Pressable>
             )}
             {(expense.status === "SUBMITTED" || expense.status === "APPROVED") && (
@@ -132,6 +129,9 @@ function ReviewModal({
 }
 
 export default function ExpensesScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { isTreasurerOrAdmin } = usePermissions();
   const [statusFilter, setStatusFilter] = useState<ReimbursementStatus | null>(null);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -196,8 +196,8 @@ export default function ExpensesScreen() {
               </View>
               <View style={styles.rowRight}>
                 <Text style={styles.rowAmount}>{formatCurrency(item.amount)}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: STATUS_COLOR[item.status] + "22" }]}>
-                  <Text style={[styles.statusBadgeText, { color: STATUS_COLOR[item.status] }]}>{item.status}</Text>
+                <View style={[styles.statusBadge, { backgroundColor: badgeBackground(reimbursementStatusColor(item.status)) }]}>
+                  <Text style={[styles.statusBadgeText, { color: reimbursementStatusColor(item.status) }]}>{item.status}</Text>
                 </View>
               </View>
             </Pressable>
@@ -210,7 +210,7 @@ export default function ExpensesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   filterRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, padding: 16, paddingBottom: 8 },
@@ -242,11 +242,11 @@ const styles = StyleSheet.create({
   noteInput: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 12, color: colors.textPrimary, fontSize: 14, marginTop: 12, minHeight: 60, textAlignVertical: "top" },
   reviewActions: { flexDirection: "row", gap: 8, marginTop: 18, flexWrap: "wrap" },
   reviewBtn: { flex: 1, minWidth: 90, borderRadius: 8, paddingVertical: 11, alignItems: "center", borderWidth: 1 },
-  rejectBtn: { borderColor: colors.danger, backgroundColor: colors.danger + "11" },
-  approveBtn: { borderColor: colors.primary, backgroundColor: colors.primary + "11" },
+  rejectBtn: { borderColor: colors.danger, backgroundColor: colors.dangerSoft },
+  approveBtn: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   reimburseBtn: { borderColor: colors.success, backgroundColor: colors.success },
   reviewBtnText: { fontSize: 13, fontWeight: "700" },
   reimburseBtnText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   closeBtn: { marginTop: 12, alignItems: "center", paddingVertical: 8 },
   closeBtnText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-});
+}));

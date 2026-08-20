@@ -34,6 +34,7 @@ import type {
   Permission,
   ModuleConfig,
   ChapterSettings,
+  ChapterBranding,
   DocumentCategory,
   ChapterDocument,
   ExternalLink,
@@ -691,6 +692,27 @@ export const chapterSettings: ChapterSettings = {
   defaultEventPointValue: 5,
 };
 
+// ── Chapter branding (mutable single record) ────────────────────────────
+// The chapter's visual identity, separate from both operational settings
+// above and from each user's personal Light/Dark preference (which is
+// device-local and never stored server-side). Seeded with a realistic
+// non-default palette so the branding feature is visibly doing something on
+// first launch — a chapter that has actually been branded, not the stock
+// ChapterHub colors. See src/theme/palette.ts for how these become tokens.
+
+export const chapterBranding: ChapterBranding = {
+  chapterId: "chapter_demo",
+  chapterName: "Theta Tau — Beta Chapter",
+  chapterLetters: "ΘΤ",
+  logoUrl: null,
+  logoEmoji: "⚜️",
+  primaryColor: "#25405E",
+  accentColor: "#C8952F",
+  backgroundTintLight: null,
+  backgroundTintDark: null,
+  updatedAt: daysFromNow(-45),
+};
+
 // ── Documents & external links ──────────────────────────────────────────
 
 export const documents: ChapterDocument[] = [
@@ -753,26 +775,68 @@ export interface MockChapterInvite {
   id: string;
   chapterId: string;
   code: string;
+  label: string | null;
   role: UserRole;
   status: MemberStatus;
   maxUses: number | null;
   useCount: number;
   expiresAt: string | null;
+  /** Admin pause switch — see ChapterInvite.active in types/index.ts. */
+  active: boolean;
+  /** Archive timestamp (the backend column is named revokedAt). */
   revokedAt: string | null;
+  regeneratedAt: string | null;
+  lastUsedAt: string | null;
   createdById: string;
   createdAt: string;
 }
 
+// Seeded to cover every lifecycle state the invite manager renders, so all
+// of them are reachable in Demo Mode without having to wait for a code to
+// age out: active, expiring soon, expired, archived, high usage, unused,
+// and paused.
 export const chapterInvites: MockChapterInvite[] = [
   {
-    id: "inv1", chapterId: DEMO_CHAPTER_ID, code: "RUSH2026", role: "PNM", status: "PNM",
-    maxUses: null, useCount: 6, expiresAt: daysFromNow(30), revokedAt: null,
-    createdById: "u4", createdAt: daysFromNow(-9),
+    id: "inv1", chapterId: DEMO_CHAPTER_ID, code: "RUSH2026", label: "Fall Rush — open link",
+    role: "PNM", status: "PNM",
+    maxUses: null, useCount: 34, expiresAt: daysFromNow(30), active: true, revokedAt: null,
+    regeneratedAt: null, lastUsedAt: daysFromNow(-1), createdById: "u4", createdAt: daysFromNow(-9),
   },
   {
-    id: "inv2", chapterId: DEMO_CHAPTER_ID, code: "TRANSFER8Q", role: "MEMBER", status: "ACTIVE",
-    maxUses: 1, useCount: 0, expiresAt: null, revokedAt: null,
-    createdById: "u1", createdAt: daysFromNow(-2),
+    id: "inv2", chapterId: DEMO_CHAPTER_ID, code: "TRANSFER8Q", label: "Transfer student — single use",
+    role: "MEMBER", status: "ACTIVE",
+    maxUses: 1, useCount: 0, expiresAt: null, active: true, revokedAt: null,
+    regeneratedAt: null, lastUsedAt: null, createdById: "u1", createdAt: daysFromNow(-2),
+  },
+  {
+    id: "inv3", chapterId: DEMO_CHAPTER_ID, code: "INFONIGHT", label: "Info Night table signup",
+    role: "PNM", status: "PNM",
+    maxUses: 40, useCount: 12, expiresAt: daysFromNow(4), active: true, revokedAt: null,
+    regeneratedAt: null, lastUsedAt: daysFromNow(-0.5), createdById: "u4", createdAt: daysFromNow(-14),
+  },
+  {
+    id: "inv4", chapterId: DEMO_CHAPTER_ID, code: "SPRING25", label: "Spring 2025 Rush",
+    role: "PNM", status: "PNM",
+    maxUses: null, useCount: 21, expiresAt: daysFromNow(-120), active: true, revokedAt: null,
+    regeneratedAt: null, lastUsedAt: daysFromNow(-130), createdById: "u1", createdAt: daysFromNow(-320),
+  },
+  {
+    id: "inv5", chapterId: DEMO_CHAPTER_ID, code: "OLDBOARD", label: "Exec onboarding (retired)",
+    role: "EXEC", status: "ACTIVE",
+    maxUses: 8, useCount: 5, expiresAt: null, active: true, revokedAt: daysFromNow(-40),
+    regeneratedAt: null, lastUsedAt: daysFromNow(-60), createdById: "u1", createdAt: daysFromNow(-200),
+  },
+  {
+    id: "inv6", chapterId: DEMO_CHAPTER_ID, code: "ALUMNI50", label: "Alumni association re-join",
+    role: "ALUMNI", status: "ALUMNI",
+    maxUses: 50, useCount: 50, expiresAt: null, active: true, revokedAt: null,
+    regeneratedAt: daysFromNow(-75), lastUsedAt: daysFromNow(-6), createdById: "u3", createdAt: daysFromNow(-150),
+  },
+  {
+    id: "inv7", chapterId: DEMO_CHAPTER_ID, code: "PAUSEDINV", label: "Late pledge add — on hold",
+    role: "PNM", status: "PNM",
+    maxUses: 5, useCount: 1, expiresAt: daysFromNow(60), active: false, revokedAt: null,
+    regeneratedAt: null, lastUsedAt: daysFromNow(-20), createdById: "u15", createdAt: daysFromNow(-25),
   },
 ];
 let inviteIdCounter = chapterInvites.length + 1;

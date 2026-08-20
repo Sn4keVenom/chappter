@@ -11,10 +11,12 @@
 //   - Navigation: AppStackParamList → Feedback (no params)
 
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable, TextInput, StyleSheet, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import Constants from "expo-constants";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 import { submitFeedback } from "../api/feedback";
 import type { FeedbackType } from "../types";
 
@@ -25,6 +27,9 @@ const TYPES: { value: FeedbackType; label: string; icon: string }[] = [
 ];
 
 export default function FeedbackScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
   const [type, setType] = useState<FeedbackType>("BUG");
   const [message, setMessage] = useState("");
@@ -89,16 +94,16 @@ export default function FeedbackScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 48 },
   sectionTitle: { fontSize: 12, fontWeight: "700", color: colors.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10, marginTop: 8 },
   typeRow: { gap: 8, marginBottom: 8 },
   typeChip: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border, padding: 14 },
-  typeChipSelected: { borderColor: colors.primary, backgroundColor: colors.primary + "0D" },
+  typeChipSelected: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   typeIcon: { fontSize: 18 },
   typeLabel: { fontSize: 14, fontWeight: "600", color: colors.textPrimary },
-  typeLabelSelected: { color: colors.primary },
+  typeLabelSelected: { color: colors.primaryTint },
   messageInput: {
     backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 10,
     padding: 14, color: colors.textPrimary, fontSize: 15, minHeight: 140,
@@ -107,4 +112,4 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 24 },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
-});
+}));

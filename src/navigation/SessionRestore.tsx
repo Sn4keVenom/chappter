@@ -21,15 +21,20 @@
 //   · store/useAuthStore.ts setUser()
 
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator, StyleSheet } from "react-native";
+import { View, ActivityIndicator } from "react-native";
 import { useAuth, useClerk } from "@clerk/clerk-expo";
 import { setAuthToken, ApiError } from "../api/client";
 import { getMe } from "../api/users";
 import { useAuthStore } from "../store/useAuthStore";
 import { shouldRestoreSession } from "../auth/rememberMe";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
 
 export default function SessionRestore({ children }: { children: React.ReactNode }) {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const { isLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
   const setUser = useAuthStore((s) => s.setUser);
@@ -123,11 +128,11 @@ export default function SessionRestore({ children }: { children: React.ReactNode
   return <>{children}</>;
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   loader: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.background,
   },
-});
+}));

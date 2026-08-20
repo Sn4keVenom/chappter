@@ -18,7 +18,6 @@ import {
   Text,
   ScrollView,
   Pressable,
-  StyleSheet,
   ActivityIndicator,
   Alert,
   Modal,
@@ -28,6 +27,9 @@ import {
 } from "react-native";
 import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
+import { eventCategoryColor } from "../theme/semantic";
 import { usePermissions } from "../hooks/usePermissions";
 import { useAuthStore } from "../store/useAuthStore";
 import { useModulesStore } from "../store/useModulesStore";
@@ -41,13 +43,6 @@ import {
   buildGoogleCalendarUrl, buildOutlookCalendarUrl, addToDeviceCalendar, shareIcs, eventToCalendarInput,
 } from "../utils/calendar";
 
-const CATEGORY_COLOR: Record<string, string> = {
-  BROTHERHOOD: colors.categoryBrotherhood,
-  SERVICE: colors.categoryService,
-  PROFESSIONAL: colors.categoryProfessional,
-  RUSH: colors.categoryRush,
-  ADMIN: colors.categoryAdmin,
-};
 
 const RSVP_OPTIONS: { label: string; value: RsvpStatus }[] = [
   { label: "Going", value: "GOING" },
@@ -161,6 +156,9 @@ function DelegateModal({
 }
 
 export default function EventDetailScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { eventId } = route.params as { eventId: string };
@@ -287,7 +285,7 @@ export default function EventDetailScreen() {
         <View
           style={[
             styles.categoryTag,
-            { backgroundColor: CATEGORY_COLOR[event.category] ?? colors.categoryAdmin },
+            { backgroundColor: eventCategoryColor(event.category) },
           ]}
         >
           <Text style={styles.categoryTagText}>{event.category}</Text>
@@ -453,7 +451,7 @@ function formatDateRange(start: string, end: string) {
   return `${dateStr} · ${startTime} – ${endTime}`;
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { padding: 20, paddingBottom: 48 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
@@ -470,7 +468,7 @@ const styles = StyleSheet.create({
   requiredTagText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
   title: { fontSize: 24, fontWeight: "700", color: colors.textPrimary, marginBottom: 6 },
   dateTime: { fontSize: 15, color: colors.textSecondary, marginBottom: 2 },
-  location: { fontSize: 15, color: colors.primary, marginBottom: 14, textDecorationLine: "underline" },
+  location: { fontSize: 15, color: colors.link, marginBottom: 14, textDecorationLine: "underline" },
   description: { fontSize: 15, lineHeight: 22, color: colors.textPrimary, marginBottom: 24 },
   calendarBtn: {
     alignSelf: "flex-start", borderRadius: 8, borderWidth: 1, borderColor: colors.border,
@@ -507,17 +505,17 @@ const styles = StyleSheet.create({
   primaryButton: { backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 8, alignItems: "center", marginBottom: 10 },
   primaryButtonText: { color: colors.primaryText, fontSize: 15, fontWeight: "700" },
   secondaryButton: { paddingVertical: 8, alignItems: "center" },
-  secondaryButtonText: { color: colors.primary, fontSize: 14, fontWeight: "600" },
+  secondaryButtonText: { color: colors.primaryTint, fontSize: 14, fontWeight: "600" },
 
   // Delegate block
   delegateBlock: { marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border },
   delegateLabel: { fontSize: 13, fontWeight: "700", color: colors.textPrimary, marginBottom: 4 },
   delegateHint: { fontSize: 12, color: colors.textMuted, lineHeight: 17, marginBottom: 10 },
   delegateChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
-  delegateChip: { backgroundColor: colors.accent + "22", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.accent + "55" },
+  delegateChip: { backgroundColor: colors.accentSoft, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: colors.accentSoftBorder },
   delegateChipText: { fontSize: 12, fontWeight: "600", color: colors.textPrimary },
   delegateAddBtn: { alignSelf: "flex-start" },
-  delegateAddBtnText: { color: colors.primary, fontSize: 13, fontWeight: "700" },
+  delegateAddBtnText: { color: colors.primaryTint, fontSize: 13, fontWeight: "700" },
 
   // Delegate modal
   modalContainer: { flex: 1, backgroundColor: colors.background, padding: 16 },
@@ -530,4 +528,4 @@ const styles = StyleSheet.create({
   resultName: { color: colors.textPrimary, fontWeight: "500", fontSize: 15 },
   resultMeta: { color: colors.textMuted, fontSize: 13, marginTop: 2 },
   emptyText: { color: colors.textMuted, textAlign: "center", padding: 20, fontSize: 14 },
-});
+}));

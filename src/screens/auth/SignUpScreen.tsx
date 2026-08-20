@@ -19,7 +19,6 @@ import {
   Text,
   TextInput,
   Pressable,
-  StyleSheet,
   Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -30,6 +29,8 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSignUp } from "@clerk/clerk-expo";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 import type { AuthStackParamList } from "../../navigation/types";
 
 type NavProp = NativeStackNavigationProp<AuthStackParamList>;
@@ -37,6 +38,9 @@ type NavProp = NativeStackNavigationProp<AuthStackParamList>;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.]{3,30}$/;
 
 export default function SignUpScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<NavProp>();
   const { isLoaded, signUp } = useSignUp();
 
@@ -170,7 +174,7 @@ export default function SignUpScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { flexGrow: 1, padding: 24, paddingTop: 32, paddingBottom: 48 },
   title: { fontSize: 26, fontWeight: "800", color: colors.textPrimary, marginBottom: 6 },
@@ -197,5 +201,5 @@ const styles = StyleSheet.create({
 
   backRow: { marginTop: 20, alignItems: "center" },
   backText: { color: colors.textSecondary, fontSize: 14 },
-  backLink: { color: colors.primary, fontWeight: "700" },
-});
+  backLink: { color: colors.primaryTint, fontWeight: "700" },
+}));

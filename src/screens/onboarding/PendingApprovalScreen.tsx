@@ -8,15 +8,20 @@
 // so a focus-triggered check is enough; no polling loop needed.
 
 import React, { useCallback, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, ActivityIndicator } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAppAuth } from "../../hooks/useAppAuth";
 import { useAuthStore } from "../../store/useAuthStore";
 import { getMyPendingJoinRequest } from "../../api/chapters";
 import { getMe } from "../../api/users";
 import { colors } from "../../theme/colors";
+import { makeStyles } from "../../theme/makeStyles";
+import { useTheme } from "../../theme/ThemeProvider";
 
 export default function PendingApprovalScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const { signOut } = useAppAuth();
@@ -71,7 +76,7 @@ export default function PendingApprovalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", padding: 32 },
   icon: { fontSize: 48, marginBottom: 16 },
   title: { fontSize: 22, fontWeight: "800", color: colors.textPrimary, marginBottom: 10 },
@@ -80,4 +85,4 @@ const styles = StyleSheet.create({
   checkButtonText: { color: colors.primaryText, fontWeight: "700", fontSize: 15 },
   signOutRow: { marginTop: 24 },
   signOutText: { color: colors.textMuted, fontSize: 13, fontWeight: "600" },
-});
+}));

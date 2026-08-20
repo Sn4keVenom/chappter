@@ -8,26 +8,26 @@
 
 import React, { useCallback, useState } from "react";
 import {
-  View, Text, FlatList, Pressable, StyleSheet,
+  View, Text, FlatList, Pressable,
   ActivityIndicator, Switch, RefreshControl
 } from "react-native";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
+import { useFocusRefresh } from "../hooks/useFocusRefresh";
 import { useEventsStore } from "../store/useEventsStore";
 import { usePermissions } from "../hooks/usePermissions";
 import { colors } from "../theme/colors";
+import { makeStyles } from "../theme/makeStyles";
+import { useTheme } from "../theme/ThemeProvider";
+import { eventCategoryColor } from "../theme/semantic";
 import type { EventSummary, EventCategory } from "../types";
 
 const CATEGORIES: EventCategory[] = ["BROTHERHOOD", "SERVICE", "PROFESSIONAL", "RUSH", "ADMIN"];
 
-const CATEGORY_COLOR: Record<string, string> = {
-  BROTHERHOOD: colors.categoryBrotherhood,
-  SERVICE: colors.categoryService,
-  PROFESSIONAL: colors.categoryProfessional,
-  RUSH: colors.categoryRush,
-  ADMIN: colors.categoryAdmin,
-};
 
 export default function EventsFeedScreen() {
+  // Repaints this screen when the appearance mode or chapter branding
+  // changes — `styles` and `colors` resolve against the active theme.
+  useTheme();
   const navigation = useNavigation<any>();
   const { events, loading, error, fetchEvents } = useEventsStore();
   const { isOfficerOrAbove } = usePermissions();
@@ -47,7 +47,10 @@ export default function EventsFeedScreen() {
     if (isRefresh) setRefreshing(false);
   }, [tab, activeCategory, fetchEvents]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // The events list renders from the store, which keeps its previous contents
+  // while a refetch is in flight — so refocusing never blanks the feed, and
+  // the pull-to-refresh spinner is reserved for an explicit pull.
+  useFocusRefresh(useCallback(() => load(false), [load]));
 
   const filtered = events.filter((e) => {
     const isPast = new Date(e.endTime) < new Date();
@@ -82,7 +85,7 @@ export default function EventsFeedScreen() {
             onPress={() => setActiveCategory(activeCategory === cat ? null : cat)}
             style={[
               styles.chip,
-              activeCategory === cat && { backgroundColor: CATEGORY_COLOR[cat] },
+              activeCategory === cat && { backgroundColor: eventCategoryColor(cat) },
             ]}
           >
             <Text
@@ -137,7 +140,7 @@ export default function EventsFeedScreen() {
               <View
                 style={[
                   styles.categoryBar,
-                  { backgroundColor: CATEGORY_COLOR[item.category] ?? colors.textMuted },
+                  { backgroundColor: eventCategoryColor(item.category) },
                 ]}
               />
               <View style={styles.cardBody}>
@@ -189,7 +192,7 @@ function formatEventTime(start: string, end: string): string {
   return `${date} · ${st}–${et}`;
 }
 
-const styles = StyleSheet.create({
+const styles = makeStyles((colors) => ({
   screen: { flex: 1, backgroundColor: colors.background },
   tabRow: { flexDirection: "row", margin: 16, marginBottom: 0, borderRadius: 10, overflow: "hidden", backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   tab: { flex: 1, paddingVertical: 10, alignItems: "center" },
@@ -225,4 +228,4 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 8, elevation: 6,
   },
   fabText: { fontSize: 28, color: colors.primaryText, lineHeight: 32 },
-});
+}));

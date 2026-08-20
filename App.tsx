@@ -30,6 +30,7 @@ import { ClerkProvider } from "@clerk/clerk-expo";
 import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 
+import ThemeProvider from "./src/theme/ThemeProvider";
 import RootNavigator from "./src/navigation/RootNavigator";
 import SessionRestore from "./src/navigation/SessionRestore";
 import ClerkTokenBridge from "./src/navigation/ClerkTokenBridge";
@@ -104,7 +105,13 @@ if (!DEMO_MODE && !PUBLISHABLE_KEY) {
 export default function App() {
   const content = (
     <SafeAreaProvider>
-      <RootNavigator />
+      {/* ThemeProvider sits inside SafeAreaProvider and outside the navigator:
+          it hydrates the persisted Light/Dark/System preference before the
+          first paint and keeps the palette in sync with the OS appearance
+          switch, without ever remounting the navigation tree on a change. */}
+      <ThemeProvider>
+        <RootNavigator />
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 
