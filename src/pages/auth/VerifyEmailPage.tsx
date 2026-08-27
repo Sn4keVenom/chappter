@@ -17,6 +17,7 @@ import { finishAuthSync } from "../../auth/finishAuthSync";
 import { readPendingSignup, clearPendingSignup } from "../../auth/pendingSignup";
 import { claimRoleNumber } from "../../api/roster";
 import { useAuthStore } from "../../store/useAuthStore";
+import { clerkErrorMessage } from "../../auth/clerkError";
 import { AuthBanner, AuthField, AuthLinks, AuthSubmit } from "./AuthForm";
 
 export default function VerifyEmailPage() {
@@ -77,7 +78,7 @@ export default function VerifyEmailPage() {
 
       navigate("/join");
     } catch (e: any) {
-      setBanner(e?.errors?.[0]?.message ?? "That code didn't work. Check it and try again.");
+      setBanner(clerkErrorMessage(e, "That code didn't work. Check it and try again."));
     } finally {
       setBusy(false);
     }

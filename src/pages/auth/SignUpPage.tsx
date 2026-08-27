@@ -15,6 +15,7 @@ import { useSignUp } from "@clerk/clerk-react";
 import { verifyRoleNumber } from "../../api/auth";
 import { stashPendingSignup } from "../../auth/pendingSignup";
 import { ChoiceList, type Choice } from "../../components/ui/Form";
+import { clerkErrorMessage } from "../../auth/clerkError";
 import { AuthBanner, AuthField, AuthLinks, AuthSubmit } from "./AuthForm";
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -104,7 +105,7 @@ export default function SignUpPage() {
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
       navigate("/verify-email");
     } catch (e: any) {
-      setBanner(e?.errors?.[0]?.message ?? "Couldn't create your account. Please try again.");
+      setBanner(clerkErrorMessage(e, "Couldn't create your account. Please try again."));
     } finally {
       setBusy(false);
     }

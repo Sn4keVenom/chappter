@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSignIn } from "@clerk/clerk-react";
 
+import { clerkErrorMessage } from "../../auth/clerkError";
 import { AuthBanner, AuthField, AuthLinks, AuthSubmit } from "./AuthForm";
 
 export default function ForgotPasswordPage() {
@@ -27,7 +28,7 @@ export default function ForgotPasswordPage() {
       await signIn.create({ strategy: "reset_password_email_code", identifier: email.trim() });
       navigate("/reset-password");
     } catch (e: any) {
-      setBanner(e?.errors?.[0]?.message ?? "Couldn't send a reset code. Check the email and try again.");
+      setBanner(clerkErrorMessage(e, "Couldn't send a reset code. Check the email and try again."));
     } finally {
       setBusy(false);
     }

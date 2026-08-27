@@ -7,6 +7,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useClerk, useSignIn } from "@clerk/clerk-react";
 
 import { finishAuthSync } from "../../auth/finishAuthSync";
+import { clerkErrorMessage } from "../../auth/clerkError";
 import { AuthBanner, AuthField, AuthLinks, AuthSubmit } from "./AuthForm";
 
 const MIN_PASSWORD_LENGTH = 10;
@@ -48,7 +49,7 @@ export default function ResetPasswordPage() {
       if (clerk.user) await finishAuthSync(clerk.user);
       navigate("/", { replace: true });
     } catch (e: any) {
-      setBanner(e?.errors?.[0]?.message ?? "That code didn't work. Check it and try again.");
+      setBanner(clerkErrorMessage(e, "That code didn't work. Check it and try again."));
     } finally {
       setBusy(false);
     }

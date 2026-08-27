@@ -6,6 +6,7 @@ import { useClerk, useSignIn } from "@clerk/clerk-react";
 
 import { rememberSession } from "../../auth/session";
 import { finishAuthSync } from "../../auth/finishAuthSync";
+import { clerkErrorMessage } from "../../auth/clerkError";
 import { AuthBanner, AuthField, AuthLinks, AuthSubmit, authStyles } from "./AuthForm";
 
 export default function LoginPage() {
@@ -48,7 +49,7 @@ export default function LoginPage() {
       const from = (location.state as { from?: Location } | null)?.from;
       navigate(from ? `${from.pathname}${from.search}` : "/", { replace: true });
     } catch (e: any) {
-      setError(e?.errors?.[0]?.message ?? "Incorrect email/username or password.");
+      setError(clerkErrorMessage(e, "Incorrect email/username or password."));
     } finally {
       setBusy(false);
     }
