@@ -1,0 +1,43 @@
+# deploy/Dockerfile.api — ChapterHub Express API
+#
+# Build context is the REPO ROOT (see docker-compose.yml), not backend/, so
+# that both images share one context and one .dockerignore.
+#
+# Single stage on purpose. A multi-stage build would shave a few hundred MB,
+# but the runtime needs three things from the "dev" side anyway — the
+# generated Prisma client, the `prisma` CLI (for `migrate deploy` on every
+# boot), and the compiled output — so splitting stages buys complexity, not
+# much size. Disk is not the scarce resource on a 512GB laptop.
+
+FROM node:22-bookworm-slim
+
+# openssl: Prisma's query engine links against it and fails at runtime with a
+# cryptic "libssl" error on slim images without it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Dependency layer first — this only re-runs when package files change, so
+# day-to-day code edits rebuild in seconds instead of re-installing npm.
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci
+
+COPY backend/ ./
+
+# `prisma generate` must run after the schema is copied. `npm run build` is
+# tsc; it also emits dist/tests/* (tsconfig includes them), which is harmless
+# — nothing at runtime imports them.
+RUN npx prisma generate && npm run build
+
+# Set AFTER npm ci, or npm would skip devDependencies and the build above
+# would have no TypeScript compiler.
+ENV NODE_ENV=production
+ENV PORT=4000
+EXPOSE 4000
+
+# Migrations run at container start, not build time — the database isn't
+# reachable during a build. `migrate deploy` only applies committed
+# migrations and never prompts or resets, which is what you want unattended.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]

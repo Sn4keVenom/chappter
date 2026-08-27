@@ -1,0 +1,93 @@
+# deploy/Caddyfile — ChapterHub edge
+#
+# One hostname serves both halves of the app:
+#   https://HOST/          → the React SPA (static files from /srv)
+#   https://HOST/api/v1/*  → the Express API (api container, port 4000)
+#
+# Same-origin by design. The alternative — api.example.com as a second origin —
+# would drag in CORS preflights and third-party-cookie problems for no benefit
+# on a single-box deployment.
+#
+# APP_HOSTNAME and ACME_EMAIL come from deploy/.env via docker-compose.
+# Changing the hostname here is the whole "move to a real domain" migration:
+# edit deploy/.env, run ./update.sh, and Caddy re-issues a certificate for the
+# new name automatically.
+
+{
+	email {$ACME_EMAIL}
+	# Certificates and OCSP staples live in the caddy_data volume, so a
+	# container rebuild does NOT re-request certs. Important: Let's Encrypt
+	# rate-limits to 5 duplicate certificates per week, and a deploy loop
+	# that loses /data will burn through that in an afternoon.
+}
+
+{$APP_HOSTNAME} {
+	encode zstd gzip
+
+	header {
+		# 1 year. Deliberately no includeSubDomains: on a shared parent like
+		# duckdns.org there is no reason to make claims about names you do
+		# not control.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# ── API ───────────────────────────────────────────────────────────────
+	# No path rewriting: server.ts mounts its routers at /api/v1 already, so
+	# the upstream expects the full path exactly as the browser sent it.
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+
+	# Health probe (server.ts step 6 — checks DB connectivity, not just
+	# process liveness). Handy for `curl https://HOST/health` from anywhere.
+	handle /health {
+		reverse_proxy api:4000
+	}
+
+	# ── Static assets ─────────────────────────────────────────────────────
+	# Vite content-hashes everything under /assets, so these are immutable and
+	# can be cached forever. index.html deliberately is NOT in here — it must
+	# stay revalidated or members keep loading last week's bundle.
+	handle /assets/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# ── SPA ───────────────────────────────────────────────────────────────
+	# try_files → /index.html is what makes React Router's client-side routes
+	# survive a hard refresh or a pasted link. Without it, hitting
+	# /admin/roster directly returns a 404 from the file server.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# ─────────────────────────────────────────────────────────────────────────
+# MIGRATING TO A REAL DOMAIN + CLOUDFLARE TUNNEL (later, optional)
+#
+# With a tunnel, cloudflared terminates TLS at Cloudflare's edge and connects
+# to Caddy over the internal Docker network — so Caddy should stop doing ACME
+# and stop binding 80/443 on the host. The change is:
+#
+#   1. Replace the site opener above with:   :80 {
+#   2. Delete the Strict-Transport-Security line (Cloudflare sets it)
+#   3. In docker-compose.yml: delete the web service's `ports:` block and
+#      uncomment the cloudflared service
+#
+# Nothing else about the app changes — same images, same database, same
+# routes. See the deployment guide's "Upgrading later" section.
+# ─────────────────────────────────────────────────────────────────────────

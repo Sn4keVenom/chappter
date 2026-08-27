@@ -1,0 +1,35 @@
+# Build context hygiene — the repo is ~2.6GB with node_modules; without this
+# every `docker compose build` uploads all of it to the daemon.
+node_modules
+**/node_modules
+.git
+.github
+.claude
+.expo
+
+# Build output — the images build their own; copying the host's would
+# shadow it with a stale (or Mac-arch) build.
+dist
+build
+backend/dist
+web-build
+
+# Native projects — irrelevant to the server images.
+ios
+android
+assets/*.psd
+
+# Secrets must never bake into an image layer. Runtime env comes from
+# docker-compose (deploy/.env); the web image writes its own .env.production
+# during build from --build-arg values.
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Noise
+*.log
+.DS_Store
+.vscode
+.idea
+*.tsbuildinfo

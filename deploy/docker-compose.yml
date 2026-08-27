@@ -1,0 +1,110 @@
+# deploy/docker-compose.yml — the whole ChapterHub stack on one machine.
+#
+#   db   → PostgreSQL 16, data in a named volume (survives rebuilds)
+#   api  → Express + Prisma, runs `migrate deploy` on every start
+#   web  → Caddy serving the built SPA + reverse-proxying /api to api
+#
+# Only `web` publishes ports. The database and API are reachable only on the
+# internal Docker network — there is no way to hit Postgres from the LAN, let
+# alone the internet, without going through Caddy first.
+#
+# Environment comes from deploy/.env, which Compose loads automatically
+# because this file lives in the same directory. Copy .env.example to .env.
+#
+#   cd deploy
+#   docker compose up -d --build
+
+name: chapterhub
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      # Deterministic collation — avoids index-corruption surprises if the
+      # base image's glibc/ICU version changes under you on a rebuild.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      db:
+        # Not just "started" — `prisma migrate deploy` runs immediately on
+        # boot and fails hard if Postgres is still initialising.
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      CLERK_WEBHOOK_SIGNING_SECRET: ${CLERK_WEBHOOK_SIGNING_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # server.ts refuses to boot in production without this.
+      CORS_ORIGIN: https://${APP_HOSTNAME}
+      NODE_ENV: production
+      PORT: "4000"
+    expose:
+      - "4000"
+    logging: &json_logs
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        # Relative URL → axios resolves it against the page origin, so the
+        # same bundle works on any hostname. This is the main reason moving
+        # to a real domain later needs no frontend code change.
+        VITE_API_URL: /api/v1
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY}
+        VITE_DEMO_MODE: "false"
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      APP_HOSTNAME: ${APP_HOSTNAME}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"      # required for Let's Encrypt's HTTP-01 challenge
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # certificates — do not delete casually
+      - caddy_config:/config
+    logging: *json_logs
+
+  # ── Optional, for the Cloudflare Tunnel upgrade ────────────────────────
+  # Uncomment this, remove the `ports:` block above, and switch the Caddyfile
+  # site opener to `:80` (see the note at the bottom of deploy/Caddyfile).
+  # Then no router port-forwarding is needed at all and your home IP stops
+  # being public.
+  #
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   depends_on:
+  #     - web
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:

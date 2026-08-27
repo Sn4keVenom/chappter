@@ -1,0 +1,40 @@
+# deploy/Dockerfile.web — ChapterHub web client (static) + Caddy
+#
+# Two stages: Node builds the Vite bundle, Caddy serves it and reverse-proxies
+# /api to the api container. One origin for both means the browser never makes
+# a cross-origin request, so CORS is a non-issue in normal operation.
+#
+# ── Why the VITE_* values are BUILD args, not runtime env ─────────────────
+# Vite inlines import.meta.env.* into the JS bundle at build time. There is no
+# runtime env for a static site — changing VITE_CLERK_PUBLISHABLE_KEY or
+# VITE_DEMO_MODE requires rebuilding this image, not just restarting it.
+# `deploy/update.sh` always rebuilds, so this stays invisible day to day.
+
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+ARG VITE_API_URL=/api/v1
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ARG VITE_DEMO_MODE=false
+
+# Written as .env.production rather than passed as ENV because `vite build`
+# runs in production mode and loads that file explicitly — the most
+# predictable of the several ways Vite can pick up variables.
+RUN printf 'VITE_DEMO_MODE=%s\nVITE_API_URL=%s\nVITE_CLERK_PUBLISHABLE_KEY=%s\n' \
+      "$VITE_DEMO_MODE" "$VITE_API_URL" "$VITE_CLERK_PUBLISHABLE_KEY" \
+      > .env.production \
+ && npm run build
+
+# Fail the build loudly if Demo Mode survived into the bundle. Without this a
+# misconfigured .env silently ships the mock API to real members — the app
+# would look like it works while writing nothing to the database.
+RUN grep -q 'VITE_DEMO_MODE=false' .env.production \
+ || (echo "REFUSING TO BUILD: VITE_DEMO_MODE must be false for a real deployment" && exit 1)
+
+FROM caddy:2-alpine
+COPY --from=build /app/dist /srv

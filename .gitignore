@@ -20,6 +20,9 @@ backend/dist/
 .env.local
 backend/.env
 backend/.env.test
+# Deployment secrets — DB password, Clerk secret key, DuckDNS token.
+# deploy/.env.example IS committed; the filled-in copy never is.
+deploy/.env
 
 # Prisma (migrations/ IS committed — only local dev artifacts are ignored)
 backend/prisma/dev.db
