@@ -142,6 +142,18 @@ app.use(
     legacyHeaders: false,
   })
 );
+// /auth/verify-role-number is a name+number enumeration vector — no account
+// is required to call it, so it gets a tighter cap layered on top of the
+// general /auth limiter above.
+app.use(
+  "/api/v1/auth/verify-role-number",
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 8,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  })
+);
 
 // ── 6. Health check — verifies DB connectivity, not just process liveness ──
 app.get("/health", async (_req, res) => {

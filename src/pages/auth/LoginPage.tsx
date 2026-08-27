@@ -1,30 +1,57 @@
 // src/pages/auth/LoginPage.tsx — email/username + password sign-in.
-// See AuthForm.tsx for why submission explains rather than authenticates.
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useClerk, useSignIn } from "@clerk/clerk-react";
 
 import { rememberSession } from "../../auth/session";
-import { AuthBanner, AuthField, AuthLinks, AuthNotAvailableNotice, AuthSubmit, authStyles } from "./AuthForm";
+import { finishAuthSync } from "../../auth/finishAuthSync";
+import { AuthBanner, AuthField, AuthLinks, AuthSubmit, authStyles } from "./AuthForm";
 
 export default function LoginPage() {
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const clerk = useClerk();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!identifier.trim() || !password) {
       setError("Enter your email and password.");
       return;
     }
-    // The remember-me choice is recorded now so it's already correct when a
-    // real session provider is wired in.
-    rememberSession(remember);
-    setError(
-      "Sign-in isn't connected in this build — see the note below. Demo Mode signs you in automatically."
-    );
+    if (!isLoaded) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await signIn.create({ identifier: identifier.trim(), password });
+      if (result.status !== "complete" || !result.createdSessionId) {
+        // Clerk instances with additional sign-in factors (MFA, etc.) would
+        // land here — not configured for this app today, so treat it as an
+        // unexpected failure rather than building a second-factor UI.
+        setError("Couldn't finish signing in. Please try again.");
+        return;
+      }
+      rememberSession(remember);
+      await setActive({ session: result.createdSessionId });
+      // clerk.user is the singleton's own state, not a React hook value — it
+      // reflects the session set above as soon as setActive() resolves, no
+      // extra render needed to read it here.
+      if (clerk.user) await finishAuthSync(clerk.user);
+      const from = (location.state as { from?: Location } | null)?.from;
+      navigate(from ? `${from.pathname}${from.search}` : "/", { replace: true });
+    } catch (e: any) {
+      setError(e?.errors?.[0]?.message ?? "Incorrect email/username or password.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -64,7 +91,7 @@ export default function LoginPage() {
           </label>
         </div>
 
-        <AuthSubmit>Sign in</AuthSubmit>
+        <AuthSubmit disabled={busy}>{busy ? "Signing in…" : "Sign in"}</AuthSubmit>
       </form>
 
       <AuthLinks>
@@ -73,10 +100,6 @@ export default function LoginPage() {
           New here? <Link to="/signup">Create an account</Link>
         </span>
       </AuthLinks>
-
-      <div style={{ marginTop: "var(--space-6)" }}>
-        <AuthNotAvailableNotice />
-      </div>
     </div>
   );
 }

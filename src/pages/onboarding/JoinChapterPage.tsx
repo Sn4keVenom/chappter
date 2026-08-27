@@ -1,33 +1,37 @@
 // src/pages/onboarding/JoinChapterPage.tsx
 //
 // Shown when a signed-in user has no chapter membership yet — never
-// auto-assigned. Two ways in, both backed by the chapters API:
+// auto-assigned. Three ways in, all backed by the chapters API:
 //
 //   · redeem an invite code (pre-filled from ?code= so an invite link works
 //     as a single click, which is what the QR codes in the invite manager
 //     encode)
 //   · browse chapters and request to join, which an admin approves
-//
-// Unreachable in Demo Mode, where every mock user already belongs to the demo
-// chapter — kept complete so the real onboarding flow works the moment
-// accounts are connected.
+//   · (most PNM/Active/Alumni signups never reach this page at all — see
+//     SignUpPage.tsx/VerifyEmailPage.tsx, which claim a matching roster entry
+//     and file the join request automatically. This page is the fallback:
+//     PNM signups always land here, and a verified signup that lost a
+//     roster-claim race lands here too, with `error` in router state.)
 
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 import { listChapters, redeemInviteCode, requestToJoinChapter } from "../../api/chapters";
 import { useAsync } from "../../hooks/useAsync";
 import { useAuthStore } from "../../store/useAuthStore";
-import { AuthBanner, AuthField, AuthNotAvailableNotice, AuthSubmit, authStyles } from "../auth/AuthForm";
+import { AuthBanner, AuthField, AuthSubmit, authStyles } from "../auth/AuthForm";
 import { Spinner } from "../../components/ui/Feedback";
 
 export default function JoinChapterPage() {
   const [params] = useSearchParams();
+  const location = useLocation();
   const setUser = useAuthStore((s) => s.setUser);
 
   const [code, setCode] = useState(params.get("code")?.toUpperCase() ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    (location.state as { error?: string } | null)?.error ?? null
+  );
   const [requested, setRequested] = useState<string | null>(null);
 
   const { data: chapters, loading } = useAsync(() => listChapters().catch(() => []), []);
@@ -145,10 +149,6 @@ export default function JoinChapterPage() {
           ))}
         </div>
       )}
-
-      <div style={{ marginTop: "var(--space-6)" }}>
-        <AuthNotAvailableNotice />
-      </div>
     </div>
   );
 }

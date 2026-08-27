@@ -22,3 +22,22 @@ export async function syncUser(payload: SyncPayload): Promise<User> {
   const { data } = await apiClient.post<{ user: User }>("/auth/sync", payload);
   return data.user;
 }
+
+export type VerifyRoleNumberResult =
+  | { valid: true }
+  | { valid: false; reason: "NAME_MISMATCH" | "NOT_FOUND" | "ALREADY_CLAIMED" };
+
+/**
+ * Read-only pre-check called from the sign-up form BEFORE a Clerk account
+ * exists — public, no auth. Lets the form show an inline mismatch error
+ * without ever touching Clerk. The real, atomic claim happens after account
+ * creation via api/roster.ts claimRoleNumber().
+ */
+export async function verifyRoleNumber(payload: {
+  firstName: string;
+  roleNumber: number;
+  status: "ACTIVE" | "ALUMNI";
+}): Promise<VerifyRoleNumberResult> {
+  const { data } = await apiClient.post<VerifyRoleNumberResult>("/auth/verify-role-number", payload);
+  return data;
+}

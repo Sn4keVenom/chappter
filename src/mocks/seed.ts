@@ -881,3 +881,33 @@ let joinRequestIdCounter = joinRequests.length + 1;
 export function nextJoinRequestId(): string {
   return `jr${joinRequestIdCounter++}`;
 }
+
+// ── Roster verification entries ───────────────────────────────────────────
+// Exec-maintained verification list (see ChapterRosterEntry's doc comment in
+// backend/prisma/schema.prisma) — checked against a new signup's claimed
+// name + role number. Unreachable via the actual sign-up flow in Demo Mode
+// (RequireSignedOut redirects away from /signup before the demo session
+// ever renders it), but the admin management screen at
+// admin/RosterVerificationPage.tsx is reachable from AdminPanelScreen for
+// any Exec+ demo user, same as the invite manager above.
+export interface MockChapterRosterEntry {
+  id: string;
+  chapterId: string;
+  firstName: string;
+  lastName: string;
+  roleNumber: number;
+  status: "ACTIVE" | "ALUMNI";
+  claimedByUserId: string | null;
+  createdAt: string;
+}
+
+export const chapterRosterEntries: MockChapterRosterEntry[] = [
+  { id: "roster1", chapterId: DEMO_CHAPTER_ID, firstName: "Priya", lastName: "Natarajan", roleNumber: 118, status: "ACTIVE", claimedByUserId: "u2", createdAt: daysFromNow(-60) },
+  { id: "roster2", chapterId: DEMO_CHAPTER_ID, firstName: "Malik", lastName: "Thompson", roleNumber: 204, status: "ACTIVE", claimedByUserId: null, createdAt: daysFromNow(-14) },
+  { id: "roster3", chapterId: DEMO_CHAPTER_ID, firstName: "Grace", lastName: "Oduya", roleNumber: 96, status: "ALUMNI", claimedByUserId: null, createdAt: daysFromNow(-200) },
+];
+let rosterEntryIdCounter = chapterRosterEntries.length + 1;
+
+export function nextRosterEntryId(): string {
+  return `roster${rosterEntryIdCounter++}`;
+}

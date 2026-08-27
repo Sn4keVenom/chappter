@@ -247,6 +247,7 @@ export default function AdminHomePage() {
           <div style={{ display: "grid", gap: "var(--space-3)" }}>
             <ActionRow to="/admin/invites" icon="🔗" label="Invite codes" sub="Create, edit, archive, and regenerate join codes" />
             <ActionRow to="/admin/join-requests" icon="📥" label="Join requests" sub="Review pending requests to join the chapter" />
+            <ActionRow to="/admin/roster-verification" icon="🧾" label="Roster verification" sub="Pre-load real members/alumni so signups can be matched and auto-filed" />
           </div>
         </Section>
       ) : null}

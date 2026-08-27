@@ -725,6 +725,82 @@ export function regenerateInvite(_chapterId: string, inviteId: string): db.MockC
   return invite;
 }
 
+// ── Roster verification entries ───────────────────────────────────────────
+// Same access gate as the invite manager — see requireChapterInviteAccess()
+// above.
+
+type RosterEntryPayload = {
+  firstName: string;
+  lastName: string;
+  roleNumber: number;
+  status: "ACTIVE" | "ALUMNI";
+};
+
+function validateRosterEntryPayload(payload: RosterEntryPayload, chapterId: string, existingId?: string): void {
+  if (!payload.firstName?.trim() || !payload.lastName?.trim()) {
+    throw new DemoApiError(400, "First and last name are required.");
+  }
+  if (!Number.isInteger(payload.roleNumber) || payload.roleNumber <= 0) {
+    throw new DemoApiError(400, "Role number must be a whole number greater than 0.");
+  }
+  const clash = db.chapterRosterEntries.find(
+    (e) => e.chapterId === chapterId && e.roleNumber === payload.roleNumber && e.id !== existingId
+  );
+  if (clash) throw new DemoApiError(409, `Role number ${payload.roleNumber} is already on the roster.`);
+}
+
+export function getRosterEntries(chapterId: string): db.MockChapterRosterEntry[] {
+  requireChapterInviteAccess();
+  return db.chapterRosterEntries
+    .filter((e) => e.chapterId === chapterId)
+    .slice()
+    .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName));
+}
+
+export function createRosterEntry(chapterId: string, payload: RosterEntryPayload): db.MockChapterRosterEntry {
+  requireChapterInviteAccess();
+  validateRosterEntryPayload(payload, chapterId);
+  const entry: db.MockChapterRosterEntry = {
+    id: db.nextRosterEntryId(),
+    chapterId,
+    firstName: payload.firstName.trim(),
+    lastName: payload.lastName.trim(),
+    roleNumber: payload.roleNumber,
+    status: payload.status,
+    claimedByUserId: null,
+    createdAt: new Date().toISOString(),
+  };
+  db.chapterRosterEntries.push(entry);
+  return entry;
+}
+
+export function bulkCreateRosterEntries(
+  chapterId: string,
+  entries: RosterEntryPayload[]
+): { created: db.MockChapterRosterEntry[]; errors: { index: number; error: string }[] } {
+  requireChapterInviteAccess();
+  const created: db.MockChapterRosterEntry[] = [];
+  const errors: { index: number; error: string }[] = [];
+  entries.forEach((payload, index) => {
+    try {
+      created.push(createRosterEntry(chapterId, payload));
+    } catch (e) {
+      errors.push({ index, error: e instanceof DemoApiError ? e.message : "Couldn't add this row." });
+    }
+  });
+  return { created, errors };
+}
+
+export function deleteRosterEntry(chapterId: string, entryId: string): void {
+  requireChapterInviteAccess();
+  const index = db.chapterRosterEntries.findIndex((e) => e.id === entryId && e.chapterId === chapterId);
+  if (index === -1) throw new DemoApiError(404, "Roster entry not found");
+  if (db.chapterRosterEntries[index].claimedByUserId) {
+    throw new DemoApiError(400, "This entry has already been claimed by a signup and is now part of that record — it can't be deleted.");
+  }
+  db.chapterRosterEntries.splice(index, 1);
+}
+
 // ── Chapter branding ─────────────────────────────────────────────────────
 // Backed by the same single mutable record the rest of the demo uses, so an
 // admin's edit is immediately visible to every screen for the session — the

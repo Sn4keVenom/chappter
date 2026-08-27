@@ -407,8 +407,37 @@ export interface ChapterJoinRequest {
   chapterName?: string;
   message?: string | null;
   status: "PENDING" | "APPROVED" | "DENIED";
+  /**
+   * Set only when this request was auto-filed by claiming a verified roster
+   * entry (see api/roster.ts claimRoleNumber) — the backend derives these
+   * from the matched ChapterRosterEntry, never from client input. Null for
+   * an ordinary browse-chapter/invite-adjacent request.
+   */
+  roleNumber?: number | null;
+  memberStatus?: MemberStatus | null;
   createdAt: string;
   user?: { id: string; firstName: string; lastName: string; email: string };
+}
+
+/**
+ * Exec-maintained verification roster — real member/alumni identity data,
+ * pre-loaded independent of who has actually signed up, checked against a
+ * new signup's claimed name + role number. See ChapterRosterEntry's doc
+ * comment in backend/prisma/schema.prisma for why this is a separate list
+ * from ChapterMembership.roleNumber (which is only assigned to someone
+ * AFTER they already have an account).
+ */
+export interface ChapterRosterEntry {
+  id: string;
+  chapterId: string;
+  firstName: string;
+  lastName: string;
+  roleNumber: number;
+  /** Only ACTIVE or ALUMNI — a PNM never has a role number. */
+  status: Extract<MemberStatus, "ACTIVE" | "ALUMNI">;
+  /** Set once a signup successfully matches and claims this row. */
+  claimedByUserId?: string | null;
+  createdAt: string;
 }
 
 export interface Semester {

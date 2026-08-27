@@ -1,16 +1,20 @@
 // backend/routes/chapters.routes.ts
 //
-// Chapters, invite codes/links, and join requests (spec §3). A newly
-// created account never auto-joins a chapter (see auth.routes.ts /auth/sync)
-// — these are the three ways one becomes a member: redeem an invite code
-// (or the same code embedded in a deep link — see ChapterInvite's doc
-// comment in schema.prisma), or request to join and have it approved.
+// Chapters, invite codes/links, roster verification entries, and join
+// requests (spec §3). A newly created account never auto-joins a chapter
+// (see auth.routes.ts /auth/sync) — these are the ways one becomes a member:
+// redeem an invite code (or the same code embedded in a deep link — see
+// ChapterInvite's doc comment in schema.prisma), request to join and have it
+// approved, or claim a role number off the exec-maintained roster (see
+// ChapterRosterEntry's doc comment) which auto-files a join request.
 //
 // Integration:
 //   · rbac.ts → requireRole, requirePermission, AuthedRequest, writeAuditLog
 //   · lib/userSerializer.ts → flattenUser (shared with auth.routes.ts/users.routes.ts)
 //   · schema.prisma → Chapter, ChapterMembership, ChapterInvite,
-//     ChapterInviteRedemption, ChapterJoinRequest
+//     ChapterInviteRedemption, ChapterJoinRequest, ChapterRosterEntry
+//   · auth.routes.ts → POST /auth/verify-role-number, the public read-only
+//     pre-check that runs before POST /chapters/claim-role-number below
 
 import { Router, Response } from "express";
 import { z } from "zod";
@@ -192,6 +196,231 @@ router.delete(
     });
 
     res.json({ invite: revoked });
+  })
+);
+
+// ── Roster verification entries ─────────────────────────────────────────────
+// Exec-maintained list of real members/alumni (name + role number), checked
+// against a new signup's claim via POST /chapters/claim-role-number below.
+// Independent of ChapterMembership.roleNumber, which is only assigned to
+// someone AFTER they already have an account — see schema.prisma doc comment
+// on ChapterRosterEntry.
+
+const rosterEntrySchema = z.object({
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  roleNumber: z.number().int().positive(),
+  status: z.enum(["ACTIVE", "ALUMNI"]),
+});
+
+router.get(
+  "/chapters/:id/roster-entries",
+  requirePermission("chapters.manageInvites"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const rosterEntries = await prisma.chapterRosterEntry.findMany({
+      where: { chapterId: req.params.id },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    });
+    res.json({ rosterEntries });
+  })
+);
+
+router.post(
+  "/chapters/:id/roster-entries",
+  requirePermission("chapters.manageInvites"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const parsed = rosterEntrySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    let entry;
+    try {
+      entry = await prisma.chapterRosterEntry.create({
+        data: { chapterId: req.params.id, ...parsed.data, createdById: req.user!.membershipId! },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return res.status(409).json({ error: `Role number ${parsed.data.roleNumber} is already on the roster.` });
+      }
+      throw err;
+    }
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_ROSTER_ENTRY_CREATE",
+      entityType: "ChapterRosterEntry",
+      entityId: entry.id,
+      after: entry,
+    });
+
+    res.status(201).json({ rosterEntry: entry });
+  })
+);
+
+// Bulk paste-import — one call per pasted batch rather than one request per
+// row. Each row is created independently (not one all-or-nothing
+// transaction) so a single duplicate role number doesn't block the rest of
+// a real chapter's roster from importing.
+router.post(
+  "/chapters/:id/roster-entries/bulk",
+  requirePermission("chapters.manageInvites"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const parsed = z.array(rosterEntrySchema).min(1).max(500).safeParse(req.body.entries);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const created: Awaited<ReturnType<typeof prisma.chapterRosterEntry.create>>[] = [];
+    const errors: { index: number; error: string }[] = [];
+    for (const [index, row] of parsed.data.entries()) {
+      try {
+        created.push(
+          await prisma.chapterRosterEntry.create({
+            data: { chapterId: req.params.id, ...row, createdById: req.user!.membershipId! },
+          })
+        );
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          errors.push({ index, error: `Role number ${row.roleNumber} is already on the roster.` });
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_ROSTER_BULK_CREATE",
+      entityType: "ChapterRosterEntry",
+      entityId: req.params.id,
+      after: { created: created.length, failed: errors.length },
+    });
+
+    res.status(201).json({ created, errors });
+  })
+);
+
+router.delete(
+  "/chapters/:id/roster-entries/:entryId",
+  requirePermission("chapters.manageInvites"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const entry = await prisma.chapterRosterEntry.findUnique({ where: { id: req.params.entryId } });
+    if (!entry || entry.chapterId !== req.params.id) {
+      return res.status(404).json({ error: "Roster entry not found" });
+    }
+    if (entry.claimedByUserId) {
+      return res.status(400).json({
+        error: "This entry has already been claimed by a signup and is now part of that record — it can't be deleted.",
+      });
+    }
+
+    await prisma.chapterRosterEntry.delete({ where: { id: entry.id } });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_ROSTER_ENTRY_DELETE",
+      entityType: "ChapterRosterEntry",
+      entityId: entry.id,
+      before: entry,
+    });
+
+    res.status(204).end();
+  })
+);
+
+// ── POST /chapters/claim-role-number — any authenticated user ─────────────
+// The real, atomic version of the pre-check at POST /auth/verify-role-number
+// (auth.routes.ts) — that endpoint is read-only and runs before a Clerk
+// account even exists; this one runs once the user has a session, actually
+// claims the roster row, and derives the join request's roleNumber/
+// memberStatus from the MATCHED ROW, never from client input directly. Do
+// not let a future change accept those two fields straight from req.body —
+// that would let anyone claim to be e.g. role #1 with no verification.
+const claimRoleNumberSchema = z.object({
+  firstName: z.string().min(1).max(100),
+  roleNumber: z.number().int().positive(),
+  status: z.enum(["ACTIVE", "ALUMNI"]),
+  message: z.string().max(500).optional(),
+});
+
+router.post(
+  "/chapters/claim-role-number",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = claimRoleNumberSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { firstName, roleNumber, status, message } = parsed.data;
+
+    // Same lookup shape (and ordering, for the multi-chapter-collision edge
+    // case) as the pre-check in auth.routes.ts, so both calls resolve to the
+    // same row.
+    const match = await prisma.chapterRosterEntry.findFirst({
+      where: { roleNumber, status, firstName: { equals: firstName, mode: "insensitive" }, claimedByUserId: null },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!match) {
+      return res.status(404).json({ error: "That name and role number don't match an unclaimed roster entry." });
+    }
+
+    const existingMembership = await prisma.chapterMembership.findUnique({
+      where: { chapterId_userId: { chapterId: match.chapterId, userId: req.user!.id } },
+    });
+    if (existingMembership) {
+      return res.status(409).json({ error: "You're already a member of this chapter" });
+    }
+    const existingPending = await prisma.chapterJoinRequest.findFirst({
+      where: { chapterId: match.chapterId, userId: req.user!.id, status: "PENDING" },
+    });
+    if (existingPending) {
+      return res.status(409).json({ error: "You already have a pending request for this chapter" });
+    }
+
+    let joinRequest;
+    try {
+      joinRequest = await prisma.$transaction(async (tx) => {
+        // Same conditional-update-as-lock pattern as invite redemption above:
+        // the findFirst check is a fast-path nicety, this guarded updateMany
+        // is the real guarantee against two signups racing the same row.
+        const claim = await tx.chapterRosterEntry.updateMany({
+          where: { id: match.id, claimedByUserId: null },
+          data: { claimedByUserId: req.user!.id },
+        });
+        if (claim.count === 0) {
+          throw new Error("ROSTER_ENTRY_ALREADY_CLAIMED");
+        }
+        return tx.chapterJoinRequest.create({
+          data: {
+            chapterId: match.chapterId,
+            userId: req.user!.id,
+            message,
+            roleNumber: match.roleNumber,
+            memberStatus: match.status,
+          },
+        });
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "ROSTER_ENTRY_ALREADY_CLAIMED") {
+        return res.status(409).json({ error: "That role number was just claimed by someone else." });
+      }
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return res.status(409).json({ error: "You already have a pending request for this chapter" });
+      }
+      throw err;
+    }
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "MEMBERSHIP_JOIN_REQUEST_VIA_ROSTER_CLAIM",
+      entityType: "ChapterJoinRequest",
+      entityId: joinRequest.id,
+      after: { chapterId: joinRequest.chapterId, roleNumber: joinRequest.roleNumber, memberStatus: joinRequest.memberStatus },
+    });
+
+    res.status(201).json({ joinRequest });
   })
 );
 
@@ -389,6 +618,17 @@ router.patch(
             userId: joinRequest.userId,
             chapterId: joinRequest.chapterId,
             invitedById: req.user!.membershipId,
+            // Only set for requests auto-filed by claim-role-number
+            // (roster-verified signup) — an ordinary browse/invite-adjacent
+            // request leaves these at the schema defaults (role MEMBER,
+            // status PNM), same as today.
+            ...(joinRequest.memberStatus
+              ? {
+                  role: joinRequest.memberStatus === "ALUMNI" ? "ALUMNI" : "MEMBER",
+                  status: joinRequest.memberStatus,
+                  roleNumber: joinRequest.roleNumber,
+                }
+              : {}),
           },
         });
         const user = await tx.user.findUniqueOrThrow({ where: { id: joinRequest.userId } });

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { ChapterJoinRequest, ExecOffice, MemberStatus, UserRole } from "../types";
+import { DEMO_MODE } from "../config/demo";
 
 export interface AppUser {
   id: string;
@@ -27,20 +28,18 @@ export interface AppUser {
 
 interface AuthState {
   user: AppUser | null;
-  // Historically reflected an in-progress session restoration, but cold-start
-  // restoration is now handled entirely by navigation/SessionRestore.tsx
-  // (real mode) / mocks/bootstrap.ts (Demo Mode) BEFORE RootNavigator ever
-  // mounts — both call setUser() synchronously-or-after-await, so by the
-  // time RootNavigator reads this store, isLoading is always false. Kept
-  // for backward compatibility with RootNavigator's guard rather than
-  // removed outright; a genuinely mid-navigation loading state (rare) would
-  // still use it correctly if ever needed again.
+  // Demo Mode's mocks/bootstrap.ts calls setUser() synchronously before the
+  // first render, so this is always false there. Real mode's
+  // auth/SessionRestore.tsx can't do the same — it has to wait on Clerk's
+  // own async load plus a POST /auth/sync round trip — so it starts true
+  // there and RootRedirect (routes/RootRedirect.tsx) shows a spinner instead
+  // of flashing /login for an already-signed-in returning user.
   isLoading: boolean;
   setUser: (user: AppUser | null) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  isLoading: false,
+  isLoading: !DEMO_MODE,
   setUser: (user) => set({ user, isLoading: false }),
 }));

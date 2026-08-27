@@ -46,6 +46,14 @@ const syncSchema = z.object({
   avatarUrl: z.string().url().optional(),
 });
 
+const verifyRoleNumberSchema = z.object({
+  firstName: z.string().min(1).max(100),
+  roleNumber: z.number().int().positive(),
+  // PNM never has a role number, so it's never a valid input here — the
+  // signup form only calls this endpoint when the user picked Active/Alumni.
+  status: z.enum(["ACTIVE", "ALUMNI"]),
+});
+
 const USERNAME_ALPHABET = /[^a-z0-9_]/g;
 
 /** Derives a unique username from an email local-part for OAuth sign-ins
@@ -214,6 +222,52 @@ router.post(
         pendingJoinRequest,
       },
     });
+  })
+);
+
+// ── POST /auth/verify-role-number — public, no auth ─────────────────────────
+// Read-only pre-check called from the sign-up form BEFORE a Clerk account
+// exists, so a name/role-number mismatch can be shown inline without ever
+// touching Clerk. This is deliberately NOT the actual claim — see
+// POST /chapters/claim-role-number (chapters.routes.ts), which does the real
+// atomic claim once the user has a session, using the exact same lookup
+// ordering as here so both calls resolve to the same roster row.
+//
+// roleNumber is only unique per-chapter (schema.prisma), not globally, so in
+// a deployment with multiple chapters two different chapters could in theory
+// both have an unclaimed "Active, role #12, first name Sam" row — an
+// astronomically unlikely real-world collision this endpoint does not try to
+// disambiguate; it takes the oldest matching row, deterministically.
+//
+// Rate-limited hard in server.ts (separately from the general /auth limiter)
+// because this is an enumeration vector: a name+number pair can be brute-forced
+// by anyone, no account required.
+router.post(
+  "/auth/verify-role-number",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = verifyRoleNumberSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { firstName, roleNumber, status } = parsed.data;
+
+    const match = await prisma.chapterRosterEntry.findFirst({
+      where: { roleNumber, status, firstName: { equals: firstName, mode: "insensitive" } },
+      orderBy: { createdAt: "asc" },
+    });
+    if (match) {
+      if (match.claimedByUserId) {
+        return res.json({ valid: false, reason: "ALREADY_CLAIMED" });
+      }
+      return res.json({ valid: true });
+    }
+
+    // Distinguish "role number just doesn't exist for that status" from
+    // "it exists, but under a different name" — same generic message is
+    // shown to the user either way, but the reason is useful for support/logs.
+    const numberExists = await prisma.chapterRosterEntry.findFirst({
+      where: { roleNumber, status },
+      select: { id: true },
+    });
+    res.json({ valid: false, reason: numberExists ? "NAME_MISMATCH" : "NOT_FOUND" });
   })
 );
 

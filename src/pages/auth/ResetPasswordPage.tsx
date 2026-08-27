@@ -1,27 +1,57 @@
 // src/pages/auth/ResetPasswordPage.tsx — code + new password.
-// See AuthForm.tsx for why submission explains rather than resetting.
+// Continues the in-progress attempt ForgotPasswordPage started; Clerk keeps
+// that resource live client-side across the route change.
 
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useClerk, useSignIn } from "@clerk/clerk-react";
 
-import { AuthBanner, AuthField, AuthLinks, AuthNotAvailableNotice, AuthSubmit } from "./AuthForm";
+import { finishAuthSync } from "../../auth/finishAuthSync";
+import { AuthBanner, AuthField, AuthLinks, AuthSubmit } from "./AuthForm";
+
+const MIN_PASSWORD_LENGTH = 10;
 
 export default function ResetPasswordPage() {
+  const { isLoaded, signIn, setActive } = useSignIn();
+  const clerk = useClerk();
+  const navigate = useNavigate();
+
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     const next: Record<string, string> = {};
     if (code.length !== 6) next.code = "Enter the 6-digit code from your email.";
-    if (password.length < 8) next.password = "Use at least 8 characters.";
+    if (password.length < MIN_PASSWORD_LENGTH) next.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
     if (password !== confirm) next.confirm = "Passwords don't match.";
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
-    setBanner("Password reset isn't connected in this build — see the note below.");
+    if (Object.keys(next).length > 0 || !isLoaded) return;
+
+    setBusy(true);
+    setBanner(null);
+    try {
+      const result = await signIn.attemptFirstFactor({
+        strategy: "reset_password_email_code",
+        code,
+        password,
+      });
+      if (result.status !== "complete" || !result.createdSessionId) {
+        setBanner("That code didn't work. Check it and try again.");
+        return;
+      }
+      await setActive({ session: result.createdSessionId });
+      if (clerk.user) await finishAuthSync(clerk.user);
+      navigate("/", { replace: true });
+    } catch (e: any) {
+      setBanner(e?.errors?.[0]?.message ?? "That code didn't work. Check it and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -56,16 +86,12 @@ export default function ResetPasswordPage() {
           error={errors.confirm}
           autoComplete="new-password"
         />
-        <AuthSubmit>Set new password</AuthSubmit>
+        <AuthSubmit disabled={busy}>{busy ? "Saving…" : "Set new password"}</AuthSubmit>
       </form>
 
       <AuthLinks>
         <Link to="/login">Back to sign in</Link>
       </AuthLinks>
-
-      <div style={{ marginTop: "var(--space-6)" }}>
-        <AuthNotAvailableNotice />
-      </div>
     </div>
   );
 }

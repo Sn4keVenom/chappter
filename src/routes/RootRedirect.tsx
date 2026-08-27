@@ -30,10 +30,18 @@ export function RequireChapter() {
 /** Requires a signed-in user who has NOT yet joined a chapter. */
 export function RequireOnboarding() {
   const { user, isLoading } = useAuthStore();
+  const location = useLocation();
 
   if (isLoading) return <LoadingState label="Restoring your session…" />;
   if (!user) return <Navigate to="/login" replace />;
   if (user.hasChapter) return <Navigate to="/" replace />;
+  // A user who already has an outstanding request shouldn't see the join
+  // options again on every visit/reload — send them straight to the
+  // "pending" screen instead. Only redirect away from /join, not away from
+  // /pending itself (redirecting a route to itself is harmless but pointless).
+  if (user.pendingJoinRequest?.status === "PENDING" && location.pathname !== "/pending") {
+    return <Navigate to="/pending" replace />;
+  }
   return <Outlet />;
 }
 

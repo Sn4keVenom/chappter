@@ -212,6 +212,7 @@ model User {
   chapterMemberships   ChapterMembership[]
   inviteRedemptions    ChapterInviteRedemption[]
   joinRequests         ChapterJoinRequest[]
+  claimedRosterEntry   ChapterRosterEntry?
   committeeMemberships CommitteeMembership[]
   rsvps                Rsvp[]
   attendances          Attendance[]          @relation("AttendanceUser")
@@ -261,6 +262,7 @@ model Chapter {
   memberships     ChapterMembership[]
   invites         ChapterInvite[]
   joinRequests    ChapterJoinRequest[]
+  rosterEntries   ChapterRosterEntry[]
   // Users whose activeChapterId currently points here — not "all members"
   // (that's memberships above), just whichever users have this chapter
   // selected as their current context.
@@ -307,6 +309,7 @@ model ChapterMembership {
   invitedMembers ChapterMembership[] @relation("MembershipInvitedBy")
   createdInvites ChapterInvite[]
   reviewedJoinRequests ChapterJoinRequest[]
+  createdRosterEntries ChapterRosterEntry[]
 
   @@unique([chapterId, userId])
   @@unique([chapterId, roleNumber])
@@ -366,6 +369,15 @@ model ChapterJoinRequest {
   userId       String
   message      String?
   status       JoinRequestStatus @default(PENDING)
+  // Set only when this request was auto-filed by POST /chapters/claim-role-number
+  // (roster-verified signup) — derived server-side from the matched
+  // ChapterRosterEntry, never from client input. Null for ordinary
+  // browse-chapter/invite-adjacent requests. On approval, chapters.routes.ts
+  // seeds ChapterMembership.role/status/roleNumber from these instead of
+  // leaving them at schema defaults. Named memberStatus (not `status`) to
+  // avoid colliding with this model's own request-lifecycle status above.
+  roleNumber   Int?
+  memberStatus MemberStatus?
   reviewedById String?
   reviewedAt   DateTime?
   createdAt    DateTime          @default(now())
@@ -376,6 +388,35 @@ model ChapterJoinRequest {
 
   @@index([chapterId, status])
   @@index([userId])
+}
+
+// Exec-maintained verification list, independent of who has actually signed
+// up (see ChapterMembership.roleNumber, which is only assigned to real
+// members after they already have an account — this is the opposite
+// direction: real member identity data, pre-loaded, that a new signup's
+// claimed name + role number gets checked against). claimedByUserId is set
+// atomically by POST /chapters/claim-role-number the first time a signup
+// successfully matches this row, so two people can never both claim role
+// #214. lastName is stored for exec's own bookkeeping in the admin list
+// only — matching is first-name-only by design (see doc comment on the
+// verify-role-number route), so it is never used in the lookup query.
+model ChapterRosterEntry {
+  id              String       @id @default(cuid())
+  chapterId       String
+  firstName       String
+  lastName        String
+  roleNumber      Int
+  status          MemberStatus // ACTIVE | ALUMNI only — PNMs never have a role number
+  claimedByUserId String?      @unique
+  createdById     String
+  createdAt       DateTime     @default(now())
+
+  chapter   Chapter           @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  claimedBy User?             @relation(fields: [claimedByUserId], references: [id])
+  createdBy ChapterMembership @relation(fields: [createdById], references: [id])
+
+  @@unique([chapterId, roleNumber])
+  @@index([chapterId, firstName])
 }
 
 model Semester {

@@ -17,6 +17,7 @@
     "backend:migrate": "npm --prefix backend run db:migrate:dev"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.9",
     "axios": "^1.18.1",
     "qrcode": "^1.5.4",
     "react": "19.2.3",

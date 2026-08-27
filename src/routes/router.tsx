@@ -103,6 +103,7 @@ export const router = createBrowserRouter([
           { path: "admin/dues", lazy: page(() => import("../pages/admin/DuesPage")) },
           { path: "admin/invites", lazy: page(() => import("../pages/admin/InvitesPage")) },
           { path: "admin/join-requests", lazy: page(() => import("../pages/admin/JoinRequestsPage")) },
+          { path: "admin/roster-verification", lazy: page(() => import("../pages/admin/RosterVerificationPage")) },
           { path: "admin/budgets", lazy: page(() => import("../pages/admin/BudgetsPage")) },
           { path: "admin/expenses", lazy: page(() => import("../pages/admin/ExpensesPage")) },
           { path: "admin/feedback", lazy: page(() => import("../pages/admin/FeedbackListPage")) },

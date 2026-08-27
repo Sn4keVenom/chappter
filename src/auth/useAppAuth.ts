@@ -3,10 +3,13 @@
 // Sign-out, without callers needing to know whether Clerk exists.
 //
 // In Demo Mode there is no auth provider in the tree at all, so this is a
-// no-op that only clears the per-user caches. When the real backend is
-// reconnected, the marked seam below is where @clerk/clerk-react's
-// useAuth().signOut() gets called — no page changes.
+// no-op that only clears the per-user caches. In real mode it also tears
+// down the Clerk session — useClerk() is safe to call unconditionally here
+// because useAppAuth() itself is only ever invoked from a mounted component,
+// and Demo Mode's <ClerkProvider>-free tree never reaches this hook's
+// real-mode branch (DEMO_MODE guards it below).
 
+import { useClerk } from "@clerk/clerk-react";
 import { DEMO_MODE } from "../config/demo";
 import { usePointsStore } from "../store/usePointsStore";
 import { useMessagesStore } from "../store/useMessagesStore";
@@ -15,15 +18,16 @@ import { setAuthToken, setTokenGetter } from "../api/client";
 import { clearSession } from "./session";
 
 export function useAppAuth(): { signOut: () => Promise<void> } {
+  // Calling useClerk() only makes sense once <ClerkProvider> is mounted
+  // (real mode) — DEMO_MODE is a build-time-stable flag, so this
+  // conditional hook call never flips between renders.
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  const clerk = DEMO_MODE ? null : useClerk();
+
   return {
     signOut: async () => {
-      if (!DEMO_MODE) {
-        // ── Real-backend seam ──────────────────────────────────────────
-        // await clerk.signOut();
-        // Left unwired deliberately: adding @clerk/clerk-react is a
-        // dependency decision for whoever reconnects the backend, and
-        // stubbing it with a fake would hide that. Everything below still
-        // runs, so the local session is fully torn down either way.
+      if (clerk) {
+        await clerk.signOut();
       }
 
       setTokenGetter(null);

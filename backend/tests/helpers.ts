@@ -146,6 +146,28 @@ export async function createInvite(params: {
   });
 }
 
+export async function createRosterEntry(params: {
+  chapterId: string;
+  createdById: string; // ChapterMembership id
+  firstName?: string;
+  lastName?: string;
+  roleNumber?: number;
+  status?: "ACTIVE" | "ALUMNI";
+  claimedByUserId?: string | null;
+}) {
+  return prisma.chapterRosterEntry.create({
+    data: {
+      chapterId: params.chapterId,
+      createdById: params.createdById,
+      firstName: params.firstName ?? "Jordan",
+      lastName: params.lastName ?? unique("Roster"),
+      roleNumber: params.roleNumber ?? Math.floor(Math.random() * 100000) + 1,
+      status: params.status ?? "ACTIVE",
+      claimedByUserId: params.claimedByUserId ?? null,
+    },
+  });
+}
+
 /** Truncates every table in the public schema (except Prisma's own
  * migration ledger) and resets identity sequences — a clean slate before
  * every single test, not just every file. Simpler and faster than

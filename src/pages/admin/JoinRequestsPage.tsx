@@ -12,10 +12,13 @@ import { useAuthStore } from "../../store/useAuthStore";
 import RequireAccess from "../../components/RequireAccess";
 import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/ui/Card";
+import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { ChipGroup } from "../../components/ui/Form";
 import { EmptyState, ErrorBanner, LoadingState } from "../../components/ui/Feedback";
 import { formatFullDate } from "../../utils/format";
+
+const MEMBER_STATUS_LABEL: Record<string, string> = { ACTIVE: "Active", ALUMNI: "Alumni", PNM: "PNM", INACTIVE: "Inactive" };
 
 type Status = "PENDING" | "APPROVED" | "DENIED";
 const STATUSES: Status[] = ["PENDING", "APPROVED", "DENIED"];
@@ -88,6 +91,13 @@ export default function JoinRequestsPage() {
               <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
                 {request.user?.email} · requested {formatFullDate(request.createdAt)}
               </p>
+              {request.roleNumber != null && request.memberStatus ? (
+                <div style={{ marginTop: "var(--space-2)" }}>
+                  <Badge tone="success" uppercase>
+                    Verified: {MEMBER_STATUS_LABEL[request.memberStatus] ?? request.memberStatus} · Role #{request.roleNumber}
+                  </Badge>
+                </div>
+              ) : null}
               {request.message ? (
                 <p style={{ marginTop: "var(--space-3)", fontSize: "var(--text-sm)", lineHeight: 1.55 }}>
                   “{request.message}”

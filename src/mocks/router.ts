@@ -168,6 +168,13 @@ route("patch", "/chapters/:id/branding", (p, _q, body) => ({ branding: api.updat
 route("post", "/chapters/:id/branding/reset", (p) => ({ branding: api.resetChapterBranding(p.id) }));
 route("get", "/chapters/:id/join-requests", (p, q) => ({ joinRequests: api.getJoinRequests(p.id, q.status ?? "PENDING") }));
 route("patch", "/chapters/join-requests/:id", (p, _q, body) => ({ joinRequest: api.reviewJoinRequest(p.id, body.approve) }));
+route("get", "/chapters/:id/roster-entries", (p) => ({ rosterEntries: api.getRosterEntries(p.id) }));
+route("post", "/chapters/:id/roster-entries", (p, _q, body) => ({ rosterEntry: api.createRosterEntry(p.id, body) }));
+route("post", "/chapters/:id/roster-entries/bulk", (p, _q, body) => api.bulkCreateRosterEntries(p.id, body.entries ?? []));
+route("delete", "/chapters/:id/roster-entries/:entryId", (p) => {
+  api.deleteRosterEntry(p.id, p.entryId);
+  return {};
+});
 
 // Modules (spec §5)
 route("get", "/modules", () => ({ modules: api.getModules() }));
