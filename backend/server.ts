@@ -161,7 +161,7 @@ app.get("/health", async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ ok: true, ts: new Date(), db: "ok" });
   } catch (err) {
-    console.error("[ChapterHub] Health check DB probe failed:", err);
+    console.error("[Chappter] Health check DB probe failed:", err);
     res.status(503).json({ ok: false, ts: new Date(), db: "unreachable" });
   }
 });
@@ -204,7 +204,7 @@ app.use(
     res: express.Response,
     _next: express.NextFunction
   ) => {
-    console.error("[ChapterHub]", err.message, err.stack);
+    console.error("[Chappter]", err.message, err.stack);
     res.status(500).json({ error: "Internal server error" });
   }
 );
@@ -216,7 +216,7 @@ app.use(
 if (process.env.NODE_ENV !== "test") {
   const PORT = Number(process.env.PORT ?? 4000);
   const server = app.listen(PORT, () => {
-    console.log(`ChapterHub API → http://localhost:${PORT}`);
+    console.log(`Chappter API → http://localhost:${PORT}`);
   });
 
   // ── Graceful shutdown ────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ if (process.env.NODE_ENV !== "test") {
   // platforms that send SIGTERM before killing the container (Render,
   // Railway, Fly.io, k8s all do this).
   const shutdown = (signal: string): void => {
-    console.log(`[ChapterHub] ${signal} received, shutting down gracefully…`);
+    console.log(`[Chappter] ${signal} received, shutting down gracefully…`);
     server.close(async () => {
       await prisma.$disconnect();
       process.exit(0);

@@ -37,7 +37,7 @@ export default function ModulesPage() {
     <div>
       <PageHeader
         title="Modules"
-        subtitle="Turn whole sections of ChapterHub on or off for the entire chapter."
+        subtitle="Turn whole sections of Chappter on or off for the entire chapter."
         backTo="/settings"
         backLabel="Settings"
       />

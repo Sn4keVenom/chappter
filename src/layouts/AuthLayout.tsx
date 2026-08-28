@@ -19,7 +19,7 @@ export default function AuthLayout() {
           <div className={styles.mark} aria-hidden="true">
             {branding.logoEmoji || branding.chapterLetters || "ΘΤ"}
           </div>
-          <h1 className={styles.appName}>ChapterHub</h1>
+          <h1 className={styles.appName}>Chappter</h1>
           <p className={styles.tagline}>{branding.chapterName}</p>
         </div>
         <div className={styles.panel}>

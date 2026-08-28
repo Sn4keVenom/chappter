@@ -4,7 +4,7 @@
 # maintenance window, but when it happens the app is unreachable until DNS
 # catches up, so this runs every 5 minutes from cron:
 #
-#   */5 * * * * /home/YOU/chapterhub/deploy/duckdns-update.sh >/dev/null 2>&1
+#   */5 * * * * /home/YOU/chappter/deploy/duckdns-update.sh >/dev/null 2>&1
 #
 # Leaving ip= empty tells DuckDNS to use the source IP of this request, which
 # is exactly the address the outside world would need.

@@ -10,7 +10,7 @@
 // port: the browser itself enforces the lifetime, instead of the app having
 // to remember a flag and sign the user out on the next cold start.
 
-const KEY = "chapterhub.rememberMe";
+const KEY = "chappter.rememberMe";
 
 export function rememberSession(rememberMe: boolean): void {
   try {

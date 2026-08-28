@@ -1,4 +1,4 @@
-# ChapterHub — Build & Deployment Guide
+# Chappter — Build & Deployment Guide
 
 **Stack:** Node.js 20+ · Express · Prisma 6 · PostgreSQL 16 · Expo SDK 57 · React Native 0.86
 **Last validated:** 2026-07-07
@@ -25,7 +25,7 @@
 ## Repository Structure
 
 ```
-chapterhub/                ← repo root = the Expo mobile app (run npm commands here)
+chappter/                ← repo root = the Expo mobile app (run npm commands here)
 ├── package.json
 ├── App.tsx                ← root entry point (ClerkProvider + providers)
 ├── src/
@@ -56,23 +56,23 @@ chapterhub/                ← repo root = the Expo mobile app (run npm commands
 
 ```bash
 docker run -d \
-  --name chapterhub-db \
-  -e POSTGRES_USER=chapterhub \
+  --name chappter-db \
+  -e POSTGRES_USER=chappter \
   -e POSTGRES_PASSWORD=changeme \
-  -e POSTGRES_DB=chapterhub_dev \
+  -e POSTGRES_DB=chappter_dev \
   -p 5432:5432 \
   postgres:16
 
 # Verify it's running
-docker ps | grep chapterhub-db
+docker ps | grep chappter-db
 ```
 
 ### Option B: Local PostgreSQL
 
 ```sql
 -- In psql as a superuser:
-CREATE USER chapterhub WITH PASSWORD 'changeme';
-CREATE DATABASE chapterhub_dev OWNER chapterhub;
+CREATE USER chappter WITH PASSWORD 'changeme';
+CREATE DATABASE chappter_dev OWNER chappter;
 ```
 
 ---
@@ -102,7 +102,7 @@ cp .env.example .env
 
 Open `.env` and set at minimum:
 ```
-DATABASE_URL="postgresql://chapterhub:changeme@localhost:5432/chapterhub_dev"
+DATABASE_URL="postgresql://chappter:changeme@localhost:5432/chappter_dev"
 CLERK_SECRET_KEY="sk_test_..."
 ```
 
@@ -131,7 +131,7 @@ npm run dev
 
 **Expected output:**
 ```
-ChapterHub API → http://localhost:4000
+Chappter API → http://localhost:4000
 ```
 
 **Verify:**

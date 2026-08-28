@@ -1,4 +1,4 @@
-# deploy/ — self-hosted ChapterHub
+# deploy/ — self-hosted Chappter
 
 Everything needed to run the full stack on one machine: Postgres, the Express
 API, and Caddy serving the built React bundle behind automatic HTTPS.
@@ -37,13 +37,13 @@ no frontend code change.
 ## Daily commands
 
 ```bash
-cd ~/chapterhub/deploy
+cd ~/chappter/deploy
 
 ./update.sh                          # deploy the latest commit
 docker compose ps                    # what's running
 docker compose logs -f api           # tail the API
 ./backup.sh                          # dump now
-docker compose exec db psql -U chapterhub -d chapterhub
+docker compose exec db psql -U chappter -d chappter
 ```
 
 Never `docker compose down -v` — the `-v` deletes the database and TLS

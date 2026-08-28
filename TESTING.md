@@ -1,4 +1,4 @@
-# ChapterHub — Test Plan
+# Chappter — Test Plan
 
 **Scope:** Backend API, Mobile screens & stores, End-to-end user workflows  
 **Testing approach:** Manual for MVP; structure is designed for future Jest/Supertest/Detox automation
@@ -11,10 +11,10 @@
 
 ```bash
 # Create a test database
-createdb chapterhub_test
+createdb chappter_test
 
 # Set test env
-DATABASE_URL="postgresql://chapterhub:changeme@localhost:5432/chapterhub_test"
+DATABASE_URL="postgresql://chappter:changeme@localhost:5432/chappter_test"
 NODE_ENV="test"
 
 # Migrate test DB

@@ -1,4 +1,4 @@
-# deploy/Dockerfile.api — ChapterHub Express API
+# deploy/Dockerfile.api — Chappter Express API
 #
 # Build context is the REPO ROOT (see docker-compose.yml), not backend/, so
 # that both images share one context and one .dockerignore.

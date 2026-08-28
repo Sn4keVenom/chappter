@@ -179,7 +179,7 @@ router.post(
             where: { id: user.id },
             data: {
               deletedAt: new Date(),
-              email: `${placeholder}@deleted.chapterhub.invalid`,
+              email: `${placeholder}@deleted.chappter.invalid`,
               username: placeholder,
             },
           });

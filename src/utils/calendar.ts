@@ -64,11 +64,11 @@ function escapeIcs(text: string): string {
 }
 
 export function buildIcsContent(event: CalendarEventInput): string {
-  const uid = `${Date.now()}@chapterhub`;
+  const uid = `${Date.now()}@chappter`;
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//ChapterHub//EN",
+    "PRODID:-//Chappter//EN",
     "BEGIN:VEVENT",
     `UID:${uid}`,
     `DTSTAMP:${toIcsDate(new Date().toISOString())}`,

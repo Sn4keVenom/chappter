@@ -1,6 +1,6 @@
 // src/config/demo.ts
 //
-// Demo Mode lets ChapterHub run with zero external dependencies — no Clerk
+// Demo Mode lets Chappter run with zero external dependencies — no Clerk
 // account, no PostgreSQL, no Express backend. It is ON BY DEFAULT so a fresh
 // clone launches straight into a fully mocked experience: `npm install` +
 // `npm run dev` + a browser, nothing else. No server is involved at all:

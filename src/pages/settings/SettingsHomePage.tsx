@@ -157,7 +157,7 @@ export default function SettingsHomePage() {
       <Section title="About">
         <Card>
           <p className={styles.about}>
-            ChapterHub {APP_VERSION}
+            Chappter {APP_VERSION}
             {DEMO_MODE ? " · Demo Mode" : ""}
             <br />
             {settings?.currentSemesterLabel ? `Current semester: ${settings.currentSemesterLabel}` : null}
@@ -177,7 +177,7 @@ export default function SettingsHomePage() {
         body={
           DEMO_MODE
             ? "There's no real account to sign out of — this is a local demo. This resets to the default demo user."
-            : "You'll need to sign back in to access ChapterHub."
+            : "You'll need to sign back in to access Chappter."
         }
         confirmLabel={DEMO_MODE ? "Reset" : "Sign out"}
         destructive={!DEMO_MODE}

@@ -9,12 +9,12 @@ import type { ChapterBranding } from "../types";
 /**
  * Used before branding has loaded (first frame, offline, or a failed fetch)
  * and as the "Reset to default" target. Matches the original hard-coded
- * ChapterHub palette exactly, so an un-branded chapter looks identical to
+ * Chappter palette exactly, so an un-branded chapter looks identical to
  * how the app looked before branding existed.
  */
 export const DEFAULT_BRANDING: ChapterBranding = {
   chapterId: "",
-  chapterName: "ChapterHub",
+  chapterName: "Chappter",
   chapterLetters: "ΘΤ",
   logoUrl: null,
   logoEmoji: "⚙️",

@@ -1,4 +1,4 @@
-# ChapterHub — Web Migration
+# Chappter — Web Migration
 
 Platform migration from Expo/React Native to a responsive web application.
 Mobile web is the primary design target; desktop is a first-class experience.

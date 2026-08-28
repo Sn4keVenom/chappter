@@ -1,4 +1,4 @@
-// ChapterHub — Prisma schema
+// Chappter — Prisma schema
 // Postgres. Run `npx prisma migrate dev --name init` after copying into a project.
 
 generator client {
@@ -319,7 +319,7 @@ model ChapterMembership {
 }
 
 // One row per invite code. A "link" is just this same code embedded in a
-// deep link (chapterhub://join?code=XXXX) — no separate model needed for
+// deep link (chappter://join?code=XXXX) — no separate model needed for
 // "code" vs. "link", they're two presentations of the same redeemable thing.
 model ChapterInvite {
   id          String       @id @default(cuid())

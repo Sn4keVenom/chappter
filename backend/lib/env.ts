@@ -27,14 +27,14 @@ if (missing.length > 0) {
 
 if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
   console.warn(
-    "[ChapterHub] STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET not set — " +
+    "[Chappter] STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET not set — " +
       "Stripe dues payments are disabled until both are configured."
   );
 }
 
 if (!process.env.CLERK_WEBHOOK_SIGNING_SECRET) {
   console.warn(
-    "[ChapterHub] CLERK_WEBHOOK_SIGNING_SECRET not set — the /webhooks/clerk " +
+    "[Chappter] CLERK_WEBHOOK_SIGNING_SECRET not set — the /webhooks/clerk " +
       "endpoint will reject every delivery with 503 until it's configured " +
       "(Clerk Dashboard → Webhooks → your endpoint → Signing Secret)."
   );

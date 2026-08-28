@@ -6,7 +6,7 @@
 # applies any new Prisma migrations on api start, and leaves the database
 # volume untouched.
 #
-#   cd ~/chapterhub/deploy && ./update.sh
+#   cd ~/chappter/deploy && ./update.sh
 
 set -euo pipefail
 cd "$(dirname "$0")"

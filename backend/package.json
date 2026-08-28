@@ -1,8 +1,8 @@
 {
-  "name": "chapterhub-backend",
+  "name": "chappter-backend",
   "version": "1.1.0",
   "private": true,
-  "description": "ChapterHub API server — Theta Tau chapter operations platform",
+  "description": "Chappter API server — Theta Tau chapter operations platform",
   "main": "dist/server.js",
   "engines": {
     "node": ">=18.18"

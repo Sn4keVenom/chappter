@@ -1,4 +1,4 @@
-# ChapterHub — Roles, Offices, Permissions & Modules
+# Chappter — Roles, Offices, Permissions & Modules
 
 This is the reference for the permission system introduced in the
 foundational architecture expansion. Source of truth for all of it is code,

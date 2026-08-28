@@ -1,4 +1,4 @@
-# ChapterHub
+# Chappter
 
 **Theta Tau Chapter Operations Platform**
 
@@ -10,8 +10,8 @@ a website.
 ## Quick Start — Demo Mode (default, no setup required)
 
 ```bash
-git clone https://github.com/your-org/chapterhub.git
-cd chapterhub
+git clone https://github.com/your-org/chappter.git
+cd chappter
 npm install
 npm run dev                   # then open http://localhost:5173
 ```
@@ -54,7 +54,7 @@ See [BUILD.md](BUILD.md) for complete setup instructions.
 ## Project Structure
 
 ```
-chapterhub/           ← repository root = the web app
+chappter/           ← repository root = the web app
 ├── index.html        ← document shell
 ├── src/
 │   ├── main.tsx      ← entry point

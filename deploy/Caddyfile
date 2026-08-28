@@ -1,4 +1,4 @@
-# deploy/Caddyfile — ChapterHub edge
+# deploy/Caddyfile — Chappter edge
 #
 # One hostname serves both halves of the app:
 #   https://HOST/          → the React SPA (static files from /srv)

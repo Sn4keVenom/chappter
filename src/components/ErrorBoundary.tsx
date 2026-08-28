@@ -51,7 +51,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           </span>
           <h1 style={{ fontSize: "var(--text-xl)" }}>Something went wrong</h1>
           <p style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)", lineHeight: 1.55 }}>
-            ChapterHub hit an unexpected error and couldn't finish loading this
+            Chappter hit an unexpected error and couldn't finish loading this
             page. Reloading usually clears it.
           </p>
           <p style={{ color: "var(--color-text-muted)", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>
@@ -70,7 +70,7 @@ export default class ErrorBoundary extends Component<Props, State> {
               justifySelf: "center",
             }}
           >
-            Reload ChapterHub
+            Reload Chappter
           </button>
         </div>
       </div>

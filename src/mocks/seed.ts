@@ -698,7 +698,7 @@ export const chapterSettings: ChapterSettings = {
 // device-local and never stored server-side). Seeded with a realistic
 // non-default palette so the branding feature is visibly doing something on
 // first launch — a chapter that has actually been branded, not the stock
-// ChapterHub colors. See src/theme/palette.ts for how these become tokens.
+// Chappter colors. See src/theme/palette.ts for how these become tokens.
 
 export const chapterBranding: ChapterBranding = {
   chapterId: "chapter_demo",

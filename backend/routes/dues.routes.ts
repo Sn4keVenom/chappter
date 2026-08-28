@@ -277,7 +277,7 @@ router.post(
     });
 
     // Placeholder: integrate with SendGrid / Resend / etc. before launch.
-    console.log(`[ChapterHub] Dues reminders requested for ${unpaid.length} members`);
+    console.log(`[Chappter] Dues reminders requested for ${unpaid.length} members`);
 
     await writeAuditLog({
       actorId: req.user!.id,

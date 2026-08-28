@@ -34,10 +34,10 @@ function loadEnvFile(filePath: string): void {
 
 loadEnvFile(path.resolve(__dirname, "../.env.test"));
 
-if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes("chapterhub_test")) {
+if (!process.env.DATABASE_URL || !process.env.DATABASE_URL.includes("chappter_test")) {
   throw new Error(
     "backend/tests/setup.ts: DATABASE_URL doesn't look like the test database " +
-      '(expected it to include "chapterhub_test"). Refusing to run tests against ' +
+      '(expected it to include "chappter_test"). Refusing to run tests against ' +
       "what might be a real database. Copy .env.test.example to .env.test and " +
       "point it at a dedicated test database."
   );

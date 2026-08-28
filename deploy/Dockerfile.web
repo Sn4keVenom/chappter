@@ -1,4 +1,4 @@
-# deploy/Dockerfile.web — ChapterHub web client (static) + Caddy
+# deploy/Dockerfile.web — Chappter web client (static) + Caddy
 #
 # Two stages: Node builds the Vite bundle, Caddy serves it and reverse-proxies
 # /api to the api container. One origin for both means the browser never makes

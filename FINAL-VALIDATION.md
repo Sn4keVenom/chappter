@@ -1,4 +1,4 @@
-# ChapterHub — Final Validation Report
+# Chappter — Final Validation Report
 
 **Validated:** 2026-07-07
 **Validated by:** Full local audit + real installs, typechecks, Metro bundles, and a

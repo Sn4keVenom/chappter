@@ -77,7 +77,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
 
   // Branding is chapter-scoped, so it can only be fetched once we know which
   // chapter the signed-in user belongs to. Before that the app renders in
-  // DEFAULT_BRANDING, which is exactly the stock ChapterHub palette.
+  // DEFAULT_BRANDING, which is exactly the stock Chappter palette.
   useEffect(() => {
     if (chapterId) fetchBranding(chapterId);
   }, [chapterId, fetchBranding]);

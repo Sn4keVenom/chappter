@@ -1,6 +1,6 @@
 // prisma/seed.ts
 //
-// Creates the minimum data required to run ChapterHub locally.
+// Creates the minimum data required to run Chappter locally.
 // Run with: npx tsx prisma/seed.ts  (or: npm run db:seed)
 //
 // IDEMPOTENT: uses upsert / skipDuplicates so re-running is safe.
@@ -25,7 +25,7 @@ import { seedDefaultPermissions } from "../lib/permissionDefaults";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🌱  Seeding ChapterHub database...\n");
+  console.log("🌱  Seeding Chappter database...\n");
 
   // ── Default Chapter + Settings ──────────────────────────────────────────
   // Adjust name/letters/university to match the real chapter before going

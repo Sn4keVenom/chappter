@@ -1,4 +1,4 @@
-# deploy/docker-compose.yml — the whole ChapterHub stack on one machine.
+# deploy/docker-compose.yml — the whole Chappter stack on one machine.
 #
 #   db   → PostgreSQL 16, data in a named volume (survives rebuilds)
 #   api  → Express + Prisma, runs `migrate deploy` on every start
@@ -14,6 +14,14 @@
 #   cd deploy
 #   docker compose up -d --build
 
+# Deliberately left as "chapterhub", not renamed to match the product's new
+# name. Compose derives volume names from this (chapterhub_db_data, etc.) —
+# changing it on a stack that's already running would make the next
+# `docker compose up` create BRAND NEW EMPTY volumes under chappter_db_data
+# instead of reattaching to the real database, with no error or warning.
+# If you want this renamed too, do it deliberately: pg_dump under the old
+# name (./backup.sh), `docker compose down` (no -v), change this line,
+# `docker compose up -d --build`, then restore the dump (./restore.sh).
 name: chapterhub
 
 services:

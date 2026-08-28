@@ -1,12 +1,12 @@
 # Demo Mode
 
-ChapterHub launches into a fully mocked, fully interactive demo **by
+Chappter launches into a fully mocked, fully interactive demo **by
 default** — no Clerk account, no PostgreSQL, no Express backend, no `.env`
 file. This is for evaluating the UI, navigation, and feature set quickly.
 
 ```bash
 git clone <repo>
-cd chapterhub
+cd chappter
 npm install
 npm start
 ```

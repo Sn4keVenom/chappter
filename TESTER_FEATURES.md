@@ -1,4 +1,4 @@
-# ChapterHub — What to Test
+# Chappter — What to Test
 
 A quick tour of everything that's built, where to find it, and who can use it.
 Read the **Demo Mode vs. Real Account** section first — it changes what you
@@ -8,7 +8,7 @@ should expect to work.
 
 ## Demo Mode vs. Real Account
 
-ChapterHub can run two ways, and they look almost identical:
+Chappter can run two ways, and they look almost identical:
 
 - **Demo Mode** — no login, drops you straight into a fake chapter with 14
   mock members and sample data. A banner on the Profile tab lets you switch
@@ -49,7 +49,7 @@ see may not match this table exactly if it's been edited.
 ### 1. Getting in
 Sign up (email/password), or **Google**/**Apple** sign-in. New accounts verify
 their email, then land on **Join a Chapter** — either enter an invite code
-(including tapping a `chapterhub://join?...` link) or browse chapters and
+(including tapping a `chappter://join?...` link) or browse chapters and
 request to join, which an Exec/Super Admin approves.
 **Try this:** create an account, then try both the invite-code path and the
 request-to-join path.
@@ -161,7 +161,7 @@ known and intentional at this stage:
 - **Pyli self-service dues payment** (a member paying their own dues directly,
   without an officer recording it)
 - **Chapter Branding** (the colors/name/logo editor). Against a real account
-  the app falls back to the stock ChapterHub palette instead of erroring.
+  the app falls back to the stock Chappter palette instead of erroring.
 - **Invite code restore and regenerate.** Create, edit, and archive already
   exist on the server; those two are Demo Mode only for now.
 

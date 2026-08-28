@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy/restore.sh — restore a backup created by backup.sh.
 #
-#   ./restore.sh /var/backups/chapterhub/chapterhub_2026-08-25_030000.sql.gz
+#   ./restore.sh /var/backups/chappter/chappter_2026-08-25_030000.sql.gz
 #
 # DESTRUCTIVE: overwrites the live database. Requires typing the word RESTORE.
 

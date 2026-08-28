@@ -30,7 +30,7 @@ import { applyPaletteToDocument } from "./cssVars";
 
 export type ThemeMode = "system" | "light" | "dark";
 
-const MODE_STORAGE_KEY = "chapterhub.appearanceMode";
+const MODE_STORAGE_KEY = "chappter.appearanceMode";
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "system" || value === "light" || value === "dark";

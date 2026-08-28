@@ -71,7 +71,7 @@ export default function AppearancePage() {
     <div>
       <PageHeader
         title="Appearance"
-        subtitle="How ChapterHub looks on this device."
+        subtitle="How Chappter looks on this device."
         backTo="/settings"
         backLabel="Settings"
       />

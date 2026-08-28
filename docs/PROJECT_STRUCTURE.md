@@ -1,4 +1,4 @@
-# ChapterHub — Project Structure
+# Chappter — Project Structure
 
 This document explains every directory and file in the repository.
 
@@ -17,7 +17,7 @@ from the root to build and launch the app. The backend lives in `backend/` as a
 separate Node.js package with its own `package.json`.
 
 ```
-chapterhub/
+chappter/
 ├── App.tsx               Root entry point. Wraps the app in providers:
 │                           ErrorBoundary (top-level render-error safety net)
 │                           GestureHandlerRootView (gesture handler req.)

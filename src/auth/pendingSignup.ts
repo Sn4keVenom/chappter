@@ -7,7 +7,7 @@
 // the right lifetime: gone once the tab closes, and never meant to survive
 // longer than the single sign-up attempt it belongs to.
 
-const KEY = "chapterhub.pendingSignup";
+const KEY = "chappter.pendingSignup";
 
 export interface PendingSignup {
   phone: string;

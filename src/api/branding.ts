@@ -19,7 +19,7 @@
 //
 // Against a live backend that hasn't shipped them, getChapterBranding() 404s
 // and useThemeStore falls back to DEFAULT_BRANDING — the app renders in the
-// stock ChapterHub palette rather than breaking.
+// stock Chappter palette rather than breaking.
 
 import { apiClient } from "./client";
 import type { ChapterBranding } from "../types";
