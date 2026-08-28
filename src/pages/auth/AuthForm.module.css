@@ -86,3 +86,18 @@
   line-height: 1.6;
   color: color-mix(in srgb, var(--color-on-primary) 88%, transparent);
 }
+
+/* A text button that reads as one of the links in .links — used for
+   in-flow actions that navigate no route (e.g. abandoning the sign-in
+   verification step), which must be a <button>, not an <a>. */
+.linkButton {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--color-link);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.linkButton:hover { color: var(--color-primary-tint); }
