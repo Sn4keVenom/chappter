@@ -18,6 +18,7 @@ import { verifyWebhook } from "@clerk/backend/webhooks";
 import { Decimal } from "@prisma/client/runtime/library";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
+import { softDeleteLocalUser } from "../lib/deleteUser";
 import { recalcDuesStatus } from "../lib/dues.helpers";
 import { writeAuditLog } from "../middleware/rbac";
 
@@ -170,26 +171,20 @@ router.post(
       const authProviderId = evt.data.id;
       if (authProviderId) {
         const user = await prisma.user.findUnique({ where: { authProviderId } });
-        // Idempotent — Clerk retries webhook deliveries, and deletedAt
-        // already being set means a previous delivery (or a re-delivery of
-        // the same event) already handled this.
-        if (user && !user.deletedAt) {
-          const placeholder = `deleted-${user.id}`;
-          await prisma.user.update({
-            where: { id: user.id },
-            data: {
-              deletedAt: new Date(),
-              email: `${placeholder}@deleted.chappter.invalid`,
-              username: placeholder,
-            },
-          });
-          await writeAuditLog({
-            actorId: user.id,
-            action: "USER_SOFT_DELETED_VIA_WEBHOOK",
-            entityType: "User",
-            entityId: user.id,
-            after: { deletedAt: new Date() },
-          });
+        // softDeleteLocalUser() is already idempotent (checks deletedAt
+        // itself) — Clerk retries webhook deliveries, and a re-delivery of
+        // an event already handled here is expected, not an error.
+        if (user) {
+          const didDelete = await softDeleteLocalUser(user.id);
+          if (didDelete) {
+            await writeAuditLog({
+              actorId: user.id,
+              action: "USER_SOFT_DELETED_VIA_WEBHOOK",
+              entityType: "User",
+              entityId: user.id,
+              after: { deletedAt: new Date() },
+            });
+          }
         }
       }
     }

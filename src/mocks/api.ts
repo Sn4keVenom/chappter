@@ -465,6 +465,28 @@ export function updateUserRole(userId: string, role: UserRole): User {
   return toFullUser(u);
 }
 
+// Mirrors backend/routes/users.routes.ts DELETE /users/:id — same
+// authorization as updateUserRole, self-delete blocked the same way (use
+// "Delete my account" in Settings for that — deleteMyAccount() is handled
+// entirely client-side in Demo Mode, see SettingsHomePage.tsx, so there's
+// no mock counterpart to register for it). There's no deletedAt concept in
+// this mock world (usernames aren't even stored — see toUserSummary), so
+// this just removes the record outright rather than soft-deleting it; a
+// demo session resets on reload anyway, so there's nothing to actually
+// reconcile long-term the way the real backend has to.
+export function deleteMemberAccount(userId: string): { deleted: true } {
+  if (!can(getCurrentDemoUserId(), "users.manage")) {
+    throw new DemoApiError(403, "Not authorized to delete accounts");
+  }
+  if (userId === getCurrentDemoUserId()) {
+    throw new DemoApiError(400, 'Use "Delete my account" in Settings to delete your own account.');
+  }
+  const index = db.users.findIndex((u) => u.id === userId);
+  if (index === -1) throw new DemoApiError(404, "User not found");
+  db.users.splice(index, 1);
+  return { deleted: true };
+}
+
 // Fuller editor (spec §4 — Super Admin: manage users, assign roles, assign
 // exec offices). Same authorization as updateUserRole; office/status are
 // independent fields (see types/index.ts doc comment) so each is optional

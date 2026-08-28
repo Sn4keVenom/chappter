@@ -120,3 +120,16 @@ export async function adjustPoints(payload: {
   const { data } = await apiClient.post<{ entry: LedgerEntry }>("/points/adjust", payload);
   return data.entry;
 }
+
+/** Deletes the caller's own account — removes the live Clerk account and
+ * soft-deletes the local record in one call. Sign-in stops working
+ * immediately; call useAppAuth().signOut() right after this resolves. */
+export async function deleteMyAccount(): Promise<void> {
+  await apiClient.delete("/users/me");
+}
+
+/** Super Admin only; deleting your own account through this path is
+ * blocked server-side — use deleteMyAccount() for that. */
+export async function deleteMemberAccount(userId: string): Promise<void> {
+  await apiClient.delete(`/users/${userId}`);
+}

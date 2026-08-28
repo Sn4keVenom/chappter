@@ -9,19 +9,20 @@
 // action rather than firing on a single mis-tap in a list.
 
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { getMemberProfile, updateUserRole } from "../../api/users";
+import { getMemberProfile, updateUserRole, deleteMemberAccount } from "../../api/users";
 import { getMemberAttendanceHistory } from "../../api/attendance";
 import { getFamily, setBig, setRoleNumber } from "../../api/membership";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useAuthStore } from "../../store/useAuthStore";
 import { PageHeader, Section } from "../../components/PageHeader";
 import { AssignBigDialog } from "../../components/AssignBigDialog";
 import { Card, CardLabel } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button, ButtonLink } from "../../components/ui/Button";
-import { Dialog } from "../../components/ui/Dialog";
+import { Dialog, ConfirmDialog } from "../../components/ui/Dialog";
 import { Input, Select } from "../../components/ui/Form";
 import { ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
 import { userRoleTone } from "../../theme/semantic";
@@ -32,8 +33,11 @@ import styles from "./ProfilePage.module.css";
 const ROLES: UserRole[] = ["PNM", "MEMBER", "EXEC", "ALUMNI", "SUPER_ADMIN"];
 
 export default function MemberProfilePage() {
+  const navigate = useNavigate();
   const { userId = "" } = useParams();
   const { isExecOrAbove, isSuperAdmin, can } = usePermissions();
+  const currentUser = useAuthStore((s) => s.user);
+  const isSelf = userId === currentUser?.id;
 
   const { data, loading, error, reload } = useAsync(async () => {
     const [member, family, history] = await Promise.all([
@@ -47,8 +51,23 @@ export default function MemberProfilePage() {
   const [bigOpen, setBigOpen] = useState(false);
   const [roleNumberOpen, setRoleNumberOpen] = useState(false);
   const [roleNumberValue, setRoleNumberValue] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setActionError(null);
+    try {
+      await deleteMemberAccount(userId);
+      navigate("/admin/roster", { replace: true });
+    } catch (e: any) {
+      setActionError(e?.message ?? "Couldn't delete this account.");
+      setDeleting(false);
+      setDeleteOpen(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -232,10 +251,27 @@ export default function MemberProfilePage() {
                   ))}
                 </Select>
               ) : null}
+
+              {isSuperAdmin && !isSelf ? (
+                <Button variant="danger" block onClick={() => setDeleteOpen(true)}>
+                  Delete account
+                </Button>
+              ) : null}
             </div>
           </Card>
         </Section>
       ) : null}
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="Delete this account?"
+        body={`This permanently removes ${member.firstName}'s login. They'd need to sign up again from scratch to rejoin the chapter.`}
+        confirmLabel="Delete account"
+        destructive
+        busy={deleting}
+      />
 
       <AssignBigDialog
         open={bigOpen}

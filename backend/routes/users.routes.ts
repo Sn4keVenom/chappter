@@ -17,6 +17,9 @@
 //                        that route's comment)
 //   PATCH /users/:id/role  Super Admin only; self-change blocked
 //   PATCH /users/:id       Super Admin only
+//   DELETE /users/me     Any authenticated user, self only
+//   DELETE /users/:id    Super Admin only; self-delete blocked (use
+//                        DELETE /users/me)
 
 import { Router, Response } from "express";
 import { z } from "zod";
@@ -25,6 +28,7 @@ import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requireRole, writeAuditLog } from "../middleware/rbac";
 import { flattenUser } from "../lib/userSerializer";
+import { deleteUserAccount } from "../lib/deleteUser";
 
 const router = Router();
 
@@ -166,6 +170,30 @@ router.patch(
         })),
       },
     });
+  })
+);
+
+// ── DELETE /users/me — self-service account deletion ──────────────────────
+// Any authenticated user, no permission gate — deleting your own account
+// isn't something that needs a grant. deleteUserAccount() removes the live
+// Clerk account (so sign-in stops working immediately, on any device) and
+// soft-deletes the local row in the same call — see lib/deleteUser.ts.
+router.delete(
+  "/users/me",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user || user.deletedAt) return res.status(404).json({ error: "User not found" });
+
+    await deleteUserAccount(user);
+
+    await writeAuditLog({
+      actorId: user.id,
+      action: "USER_SELF_DELETED",
+      entityType: "User",
+      entityId: user.id,
+    });
+
+    res.json({ deleted: true });
   })
 );
 
@@ -540,6 +568,42 @@ router.patch(
     });
 
     res.json({ user: await loadFullUser(req.params.id, req.user!.chapterId!) });
+  })
+);
+
+// ── DELETE /users/:id — Super Admin only ───────────────────────────────────
+// Self-delete is blocked here too, same as PATCH /users/:id/role — use
+// DELETE /users/me above instead. Not to prevent a Super Admin from ever
+// deleting themselves (bootstrap-admin.ts can always create a new one), but
+// so the two actions stay distinct: this is "I'm removing someone else,"
+// that one is "I'm removing myself," and conflating them behind one button
+// risks a misclick on the wrong account.
+router.delete(
+  "/users/:id",
+  requireRole("SUPER_ADMIN"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (req.params.id === req.user!.id) {
+      return res.status(400).json({ error: "Use \"Delete my account\" in Settings to delete your own account." });
+    }
+
+    const membership = await prisma.chapterMembership.findUnique({
+      where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId: req.params.id } },
+    });
+    if (!membership) return res.status(404).json({ error: "User not found in your chapter" });
+
+    const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!user || user.deletedAt) return res.status(404).json({ error: "User not found" });
+
+    await deleteUserAccount(user);
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "USER_DELETED_BY_ADMIN",
+      entityType: "User",
+      entityId: user.id,
+    });
+
+    res.json({ deleted: true });
   })
 );
 

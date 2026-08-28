@@ -1,35 +1,24 @@
 // backend/scripts/delete-user.ts
 //
-// Soft-deletes a User by username — the manual counterpart to the Clerk
-// `user.deleted` webhook (webhook.routes.ts), for when that webhook isn't
-// configured (CLERK_WEBHOOK_SIGNING_SECRET unset) or you'd rather not wait
-// on it. Does exactly what the webhook does and nothing more: sets
-// deletedAt and rewrites email/username to a `deleted-<id>` placeholder so
-// the originals free up for reuse — it does NOT touch ChapterMembership,
-// on purpose (see below).
+// Soft-deletes a User by username, freeing their email/username for reuse.
+// The app itself now has a real "delete account" feature (DELETE /users/me,
+// DELETE /users/:id in users.routes.ts) that deletes the live Clerk account
+// AND does this same local step in one action — use that instead whenever
+// the account in question can still sign in and use it.
 //
-// Deleting the account is a TWO-PART job, always:
-//   1. Delete the user in the Clerk Dashboard (Users → find them → Delete).
-//      Required regardless of this script — Clerk enforces unique emails on
-//      its own side, so a fresh signup with the same email is blocked until
-//      the old Clerk account itself is gone, not just our local row.
-//   2. Run this script, so our side's email/username also free up. If the
-//      webhook fires (it retries for a while if it wasn't reachable at the
-//      moment of deletion), this becomes a harmless no-op — the username
-//      you passed will already be renamed to the deleted-<id> placeholder
-//      and this script will report "not found."
+// This script exists for the case that path can't cover: a Clerk account
+// that's ALREADY gone (deleted by hand from the Clerk Dashboard, or from
+// before this in-app feature existed) with only a stale local row left
+// over. Nothing here calls Clerk — if the Clerk account still exists,
+// delete it from the Dashboard first, or use the in-app feature instead of
+// this script entirely.
 //
-// Deliberately does NOT delete or touch ChapterMembership, and deliberately
-// does NOT attempt a hard row delete. Two real reasons, not just caution:
-//   · schema.prisma's User.deletedAt doc comment: AuditLog/Attendance/
-//     Message/etc. aren't all cascade-safe for a record chapters rely on
-//     for history — a hard delete can leave broken references or silently
-//     erase things nobody meant to erase.
-//   · Concretely, for anyone who has ever created a roster entry (run a
-//     Bulk Import, add a roster row) — ChapterRosterEntry.createdById is
-//     ON DELETE RESTRICT, not CASCADE. Deleting that membership would make
-//     Postgres reject the whole operation outright. Soft delete sidesteps
-//     this entirely by never touching ChapterMembership.
+// Uses the same softDeleteLocalUser() as the webhook and the in-app routes
+// (lib/deleteUser.ts) — see its doc comment for why this is a soft delete
+// (sets deletedAt + a placeholder email/username) and never touches
+// ChapterMembership at all (ChapterRosterEntry.createdById is ON DELETE
+// RESTRICT — for anyone who's ever run a roster Bulk Import, touching that
+// membership would make Postgres reject the operation outright).
 //
 // Run from the backend directory:
 //   npx tsx scripts/delete-user.ts <username>
@@ -38,6 +27,7 @@
 //   docker compose exec api node dist/scripts/delete-user.js <username>
 
 import { PrismaClient } from "@prisma/client";
+import { softDeleteLocalUser } from "../lib/deleteUser";
 
 const prisma = new PrismaClient();
 
@@ -85,16 +75,7 @@ async function main() {
     }
   }
 
-  const placeholder = `deleted-${user.id}`;
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      deletedAt: new Date(),
-      email: `${placeholder}@deleted.chappter.invalid`,
-      username: placeholder,
-    },
-  });
+  await softDeleteLocalUser(user.id);
 
   console.log(`✅  ${user.firstName} ${user.lastName} (@${username}) soft-deleted.`);
   console.log(`    Email and username are now free for a fresh signup, once the Clerk account is also deleted.`);
