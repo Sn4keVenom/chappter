@@ -37,7 +37,7 @@ import { AuthBanner, AuthField, AuthLinks, AuthSubmit, authStyles } from "./Auth
  * someone holding only a password. */
 type PendingVerification =
   | { factor: "first"; strategy: "email_code" | "phone_code"; label: string }
-  | { factor: "second"; strategy: "phone_code" | "totp" | "backup_code"; label: string };
+  | { factor: "second"; strategy: "email_code" | "phone_code" | "totp" | "backup_code"; label: string };
 
 export default function LoginPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
@@ -107,6 +107,25 @@ export default function LoginPage() {
     }
 
     if (result.status === "needs_second_factor") {
+      // email_code first: this is what Clerk's new-device / sign-in
+      // verification actually uses, and it's a SECOND factor here, not a
+      // first one (SignInSecondFactor includes EmailCodeFactor). Missing it
+      // was what produced "…in a form this app can't complete yet."
+      const email = result.supportedSecondFactors?.find((f) => f.strategy === "email_code");
+      if (email) {
+        await signIn.prepareSecondFactor({
+          strategy: "email_code",
+          // Optional on EmailCodeSecondFactorConfig — Clerk defaults to the
+          // account's primary address when the factor doesn't carry one.
+          ...("emailAddressId" in email ? { emailAddressId: email.emailAddressId } : {}),
+        });
+        setPending({
+          factor: "second",
+          strategy: "email_code",
+          label: "safeIdentifier" in email ? email.safeIdentifier : "your email",
+        });
+        return;
+      }
       const phone = result.supportedSecondFactors?.find((f) => f.strategy === "phone_code");
       if (phone && "phoneNumberId" in phone) {
         await signIn.prepareSecondFactor({ strategy: "phone_code", phoneNumberId: phone.phoneNumberId });
@@ -123,7 +142,10 @@ export default function LoginPage() {
         setPending({ factor: "second", strategy: "backup_code", label: "your backup codes" });
         return;
       }
-      setError("This account has two-factor authentication enabled in a form this app can't complete yet.");
+      // Name what WAS offered, so an unhandled strategy is diagnosable from
+      // the message instead of needing a code change to find out.
+      const offered = result.supportedSecondFactors?.map((f) => f.strategy).join(", ") || "none";
+      setError(`This account's two-factor method (${offered}) isn't supported here yet.`);
       return;
     }
 
