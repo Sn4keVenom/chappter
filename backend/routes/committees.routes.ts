@@ -281,4 +281,51 @@ router.delete(
   })
 );
 
+// ── DELETE /committees/:id — Exec+ ────────────────────────────────────────
+// Deliberately requireRole("EXEC") rather than requireCommitteeScope: a chair
+// can edit their own committee (PATCH above), but dissolving one is a chapter
+// decision, not a committee-internal one.
+//
+// The committee's channel is ARCHIVED, not deleted, and archived before the
+// delete rather than after. Channel.committeeId is ON DELETE SET NULL (see
+// the init migration), so deleting the committee on its own would leave a
+// COMMITTEE-type channel pointing at nothing — still listed for every Exec,
+// now unlabelled and un-deletable through any UI. Archiving keeps every
+// message the committee ever posted while dropping it out of the channel
+// list (GET /channels filters archivedAt).
+router.delete(
+  "/committees/:id",
+  requireRole("EXEC"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const committee = await prisma.committee.findUnique({
+      where: { id: req.params.id },
+      include: { channel: { select: { id: true } } },
+    });
+    if (!committee) return res.status(404).json({ error: "Committee not found" });
+
+    await prisma.$transaction(async (tx) => {
+      if (committee.channel) {
+        await tx.channel.update({
+          where: { id: committee.channel.id },
+          data: { archivedAt: new Date() },
+        });
+      }
+      // Cascades CommitteeMembership; Event.committeeId is SET NULL, so past
+      // committee events survive as ordinary chapter events rather than
+      // disappearing along with their attendance and points history.
+      await tx.committee.delete({ where: { id: committee.id } });
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "COMMITTEE_DELETE",
+      entityType: "Committee",
+      entityId: committee.id,
+      before: { name: committee.name },
+    });
+
+    res.json({ deleted: true });
+  })
+);
+
 export default router;

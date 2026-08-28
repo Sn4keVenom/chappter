@@ -179,22 +179,44 @@ export default function CommitteeDetailPage() {
                   </span>
                 </Link>
                 <Badge tone={member.role === "CHAIR" ? "accent" : "neutral"} uppercase>
-                  {member.role}
+                  {member.role === "CHAIR" ? "Head" : member.role}
                 </Badge>
                 {canManage ? (
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    disabled={busy}
-                    onClick={() =>
-                      mutate(
-                        () => removeCommitteeMember(committeeId, member.userId),
-                        "Couldn't remove the member."
-                      )
-                    }
-                  >
-                    Remove
-                  </Button>
+                  <>
+                    {/* POST /committees/:id/members upserts, so re-adding an
+                        existing member with a different role is exactly how
+                        the backend expects a promotion/demotion. */}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        mutate(
+                          () =>
+                            addCommitteeMember(committeeId, {
+                              userId: member.userId,
+                              role: member.role === "CHAIR" ? "MEMBER" : "CHAIR",
+                            }),
+                          "Couldn't change the committee head."
+                        )
+                      }
+                    >
+                      {member.role === "CHAIR" ? "Remove as Head" : "Make Head"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      disabled={busy}
+                      onClick={() =>
+                        mutate(
+                          () => removeCommitteeMember(committeeId, member.userId),
+                          "Couldn't remove the member."
+                        )
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </>
                 ) : null}
               </div>
             ))

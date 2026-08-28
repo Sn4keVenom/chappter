@@ -1,12 +1,14 @@
 // backend/routes/messages.routes.ts
 //
 // Integration points:
-//   · rbac.ts → requireRole, AuthedRequest, writeAuditLog
-//   · schema.prisma → Channel (type: GENERAL|COMMITTEE|OFFICERS|DM),
-//     ChannelMembership, Message (soft-delete via deletedAt)
+//   · rbac.ts → requirePermission, AuthedRequest, writeAuditLog
+//   · schema.prisma → Channel (type: GENERAL|COMMITTEE|OFFICERS|DM,
+//     archivedAt), ChannelMembership, Message (soft-delete via deletedAt)
 //
-// Access model (mirrors product spec §4.3):
-//   GENERAL   — all members read; Exec+ post (announcement channel)
+// Access model:
+//   GENERAL   — all members read AND post. Pinning here is the chapter
+//               announcement and needs `messaging.announce` (Regent/Vice
+//               Regent by office) — see PATCH /messages/:id/pin.
 //   OFFICERS  — Exec+ read and post (the OFFICER role tier was removed —
 //               see permissions/permissions.ts on the mobile side, which
 //               additionally grants this to an ACTIVE-status committee
@@ -22,7 +24,7 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
-import { AuthedRequest, requireRole, writeAuditLog, ROLE_RANK, isAtLeast } from "../middleware/rbac";
+import { AuthedRequest, requirePermission, writeAuditLog, ROLE_RANK, isAtLeast } from "../middleware/rbac";
 
 const router = Router();
 
@@ -47,9 +49,17 @@ async function canPostToChannel(channelId: string, req: AuthedRequest): Promise<
   const channel = await prisma.channel.findUnique({ where: { id: channelId } });
   if (!channel) return false;
 
+  // An archived channel is read-only for everyone, Super Admin included —
+  // un-archive it first if it needs to be live again.
+  if (channel.archivedAt) return false;
+
   const isExecOrAbove = isAtLeast(req.user!.role, "EXEC");
 
-  if (channel.type === "GENERAL") return isExecOrAbove;
+  // GENERAL is the whole-chapter channel and is open to every member to post
+  // in, not just Exec. Broadcasting to everyone (a PINNED message, which the
+  // home dashboard surfaces as the chapter announcement) is the narrow,
+  // still-restricted action — see PATCH /messages/:id/pin below.
+  if (channel.type === "GENERAL") return true;
   if (channel.type === "OFFICERS") return isExecOrAbove;
   if (isExecOrAbove && channel.type === "COMMITTEE") return true;
 
@@ -59,8 +69,9 @@ async function canPostToChannel(channelId: string, req: AuthedRequest): Promise<
   return !!membership;
 }
 
-function canPostToChannelSync(type: string, rank: number): boolean {
-  if (type === "GENERAL") return rank >= ROLE_RANK.EXEC;
+function canPostToChannelSync(type: string, rank: number, archivedAt: Date | null): boolean {
+  if (archivedAt) return false;
+  if (type === "GENERAL") return true; // open to all — see canPostToChannel
   if (type === "OFFICERS") return rank >= ROLE_RANK.EXEC;
   // COMMITTEE / DM — caller verified via membership; return true for display
   return true;
@@ -75,9 +86,14 @@ router.get(
     // membership" never satisfies an Exec+ check below.
     const rank = req.user!.role ? ROLE_RANK[req.user!.role] : -1;
 
+    // `?includeArchived=true` lets the channel-management UI show retired
+    // channels so they can be un-archived; the normal list hides them.
+    const includeArchived = String(req.query.includeArchived) === "true";
+
     // Collect accessible channel IDs based on type
     const accessibleChannels = await prisma.channel.findMany({
       where: {
+        ...(includeArchived ? {} : { archivedAt: null }),
         OR: [
           { type: "GENERAL" },
           ...(rank >= ROLE_RANK.EXEC ? [{ type: "OFFICERS" as const }] : []),
@@ -108,6 +124,7 @@ router.get(
       type: ch.type,
       committeeId: ch.committeeId,
       committee: ch.committee,
+      archivedAt: ch.archivedAt,
       pinnedCount: ch._count.messages,
       lastMessage: ch.messages[0]
         ? {
@@ -116,7 +133,7 @@ router.get(
             createdAt: ch.messages[0].createdAt,
           }
         : null,
-      canPost: canPostToChannelSync(ch.type, rank),
+      canPost: canPostToChannelSync(ch.type, rank, ch.archivedAt),
     }));
 
     res.json({ channels });
@@ -241,24 +258,40 @@ router.get(
   })
 );
 
-// ── PATCH /messages/:id/pin — Exec+ ───────────────────────────────────────
+// ── PATCH /messages/:id/pin ───────────────────────────────────────────────
+// Two different actions wear the same verb, and they have different bars:
+//   · Pinning in #general IS the chapter announcement (the home dashboard
+//     renders the newest pinned GENERAL message as `pinnedAnnouncement` —
+//     see users.routes.ts). Requires `messaging.announce`, granted by
+//     office to Regent and Vice Regent, not to Exec at large.
+//   · Pinning anywhere else is ordinary moderation — `messaging.moderate`,
+//     which the Exec role preset carries.
+// Super Admin bypasses both, as everywhere (rbac.ts requirePermission).
 router.patch(
   "/messages/:id/pin",
-  requireRole("EXEC"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { pinned } = req.body as { pinned?: boolean };
     if (typeof pinned !== "boolean") {
       return res.status(400).json({ error: "pinned (boolean) required" });
     }
 
-    const message = await prisma.message.findUnique({ where: { id: req.params.id } });
+    const message = await prisma.message.findUnique({
+      where: { id: req.params.id },
+      include: { channel: { select: { type: true } } },
+    });
     if (!message || message.deletedAt) {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    // requireRole("EXEC") above only checks role tier, not channel access — an
-    // Exec is not automatically a member of every DM, so re-verify against the
-    // same channel-scoping rules reads/posts use before allowing a pin.
+    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
+    const required = message.channel.type === "GENERAL" ? "messaging.announce" : "messaging.moderate";
+    if (!isSuperAdmin && !req.user!.permissions?.has(required)) {
+      return res.status(403).json({ error: "Not permitted" });
+    }
+
+    // The permission check above is chapter-wide, not channel-scoped — nobody
+    // is automatically a member of every DM, so re-verify against the same
+    // channel-scoping rules reads/posts use before allowing a pin.
     const canAccessChannel = await canReadChannel(message.channelId, req);
     if (!canAccessChannel) return res.status(403).json({ error: "Not permitted" });
 
@@ -317,6 +350,83 @@ router.delete(
     }
 
     res.json({ deleted: true });
+  })
+);
+
+// ── POST /channels — messaging.manageChannels ─────────────────────────────
+// Creates a standing chapter channel. Deliberately only GENERAL/OFFICERS
+// here: COMMITTEE channels are created (and named) automatically alongside
+// their committee in committees.routes.ts, and a DM is opened by messaging
+// someone, not by an admin declaring one.
+const createChannelSchema = z.object({
+  name: z.string().min(1).max(60),
+  type: z.enum(["GENERAL", "OFFICERS"]),
+});
+
+router.post(
+  "/channels",
+  requirePermission("messaging.manageChannels"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = createChannelSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    // Normalized the same way committees.routes.ts names its channels, so
+    // every channel in the list reads consistently regardless of origin.
+    const name = `#${parsed.data.name.trim().toLowerCase().replace(/^#/, "").replace(/\s+/g, "-")}`;
+
+    const channel = await prisma.channel.create({
+      data: { name, type: parsed.data.type },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHANNEL_CREATE",
+      entityType: "Channel",
+      entityId: channel.id,
+      after: { name: channel.name, type: channel.type },
+    });
+
+    res.status(201).json({ channel });
+  })
+);
+
+// ── PATCH /channels/:id/archive — messaging.manageChannels ────────────────
+// Reversible: { archived: false } un-archives. Messages are never touched —
+// see the Channel.archivedAt doc comment in schema.prisma.
+router.patch(
+  "/channels/:id/archive",
+  requirePermission("messaging.manageChannels"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const { archived } = req.body as { archived?: boolean };
+    if (typeof archived !== "boolean") {
+      return res.status(400).json({ error: "archived (boolean) required" });
+    }
+
+    const channel = await prisma.channel.findUnique({ where: { id: req.params.id } });
+    if (!channel) return res.status(404).json({ error: "Channel not found" });
+
+    // #general is the one channel the app assumes always exists and is live:
+    // the home dashboard reads its pinned announcement, and seed.ts creates
+    // it for exactly that reason. Archiving it would silently break that.
+    if (archived && channel.type === "GENERAL") {
+      return res.status(400).json({ error: "The general channel can't be archived." });
+    }
+
+    const updated = await prisma.channel.update({
+      where: { id: channel.id },
+      data: { archivedAt: archived ? new Date() : null },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: archived ? "CHANNEL_ARCHIVE" : "CHANNEL_UNARCHIVE",
+      entityType: "Channel",
+      entityId: channel.id,
+      before: { archivedAt: channel.archivedAt },
+      after: { archivedAt: updated.archivedAt },
+    });
+
+    res.json({ channel: updated });
   })
 );
 

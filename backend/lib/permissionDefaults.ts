@@ -28,7 +28,7 @@ export const DEFAULT_PRESETS: Record<(typeof EDITABLE_ROLES)[number], string[]> 
     "attendance.view", "attendance.take", "attendance.edit",
     "documents.view", "documents.upload", "documents.delete",
     "points.award", "points.deduct",
-    "messaging.post", "messaging.moderate",
+    "messaging.post", "messaging.moderate", "messaging.manageChannels",
     "committees.manage",
     "dues.manage", "finance.manage",
     "teams.manage",
@@ -46,6 +46,10 @@ export const DEFAULT_PRESETS: Record<(typeof EDITABLE_ROLES)[number], string[]> 
 // expressed here, not as an `office === "SCRIBE"` check in membership.routes.ts.
 export const DEFAULT_OFFICE_PRESETS: Partial<Record<(typeof EDITABLE_OFFICES)[number], string[]>> = {
   SCRIBE: ["membership.assignRoleNumber"],
+  // Chapter-wide announcements are narrower than Exec — only the two offices
+  // that speak for the chapter. Mirrors src/permissions/permissions.ts.
+  REGENT: ["messaging.announce"],
+  VICE_REGENT: ["messaging.announce"],
 };
 
 /** Idempotent — safe to call on every boot/seed run, and safe to call

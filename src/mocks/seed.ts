@@ -188,6 +188,9 @@ export interface MockChannel {
   name: string;
   type: ChannelType;
   committeeId?: string | null;
+  // Mirrors Channel.archivedAt on the real backend — retired channels keep
+  // their messages but drop out of the list and reject new ones.
+  archivedAt?: string | null;
 }
 
 export interface MockChannelMembership {

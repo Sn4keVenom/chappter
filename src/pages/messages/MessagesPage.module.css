@@ -277,3 +277,44 @@
   text-align: center;
   color: var(--color-text-muted);
 }
+
+/* Channel-management strip at the top of the list pane — only rendered for
+   messaging.manageChannels holders, so it must not reserve space otherwise. */
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  flex: none;
+}
+
+.listHeaderTitle {
+  font-size: var(--text-xs);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Archived rows stay legible but visibly retired. */
+.channelArchived { opacity: 0.6; }
+
+/* The archive control sits BESIDE the channel row, not on top of it — the row
+   already fills its width with a last-message preview, so an absolutely
+   positioned button overlapped that text. */
+.channelRowWrap {
+  display: flex;
+  align-items: center;
+}
+
+.channelRowWrap > a {
+  flex: 1;
+  min-width: 0;
+}
+
+.channelArchiveButton {
+  flex: none;
+  margin-right: var(--space-3);
+}

@@ -1306,6 +1306,28 @@ export function createCommittee(payload: { name: string; description?: string })
   return toCommittee(committee);
 }
 
+// Mirrors DELETE /committees/:id — Exec+ (committees.manage), NOT chair-
+// scoped: a chair can edit their committee but not dissolve it. The channel
+// is archived rather than removed so its messages survive, same as the real
+// route.
+export function deleteCommittee(id: string): { deleted: true } {
+  if (!can(getCurrentDemoUserId(), "committees.manage")) {
+    throw new DemoApiError(403, "Not authorized to delete committees");
+  }
+  const index = db.committees.findIndex((x) => x.id === id);
+  if (index === -1) throw new DemoApiError(404, "Committee not found");
+
+  const channel = db.channels.find((c) => c.committeeId === id);
+  if (channel) channel.archivedAt = new Date().toISOString();
+
+  db.committees.splice(index, 1);
+  // Cascade the memberships, matching CommitteeMembership's ON DELETE CASCADE.
+  for (let i = db.committeeMemberships.length - 1; i >= 0; i--) {
+    if (db.committeeMemberships[i].committeeId === id) db.committeeMemberships.splice(i, 1);
+  }
+  return { deleted: true };
+}
+
 export function updateCommittee(id: string, payload: { name?: string; description?: string }): Committee {
   const c = db.committees.find((x) => x.id === id);
   if (!c) throw new DemoApiError(404, "Committee not found");
@@ -1327,11 +1349,34 @@ export function addCommitteeMember(
   if (!can(getCurrentDemoUserId(), "committees.manage") && !committeeManageAccess(getCurrentDemoUserId(), committeeId)) {
     throw new DemoApiError(403, "Not authorized to manage this committee's members");
   }
+  // UPSERT, matching POST /committees/:id/members on the real backend — the
+  // route is "add OR promote", and re-posting an existing member with a
+  // different role is how a promotion/demotion is expressed. This previously
+  // only handled the create half, so promoting an existing member to CHAIR
+  // silently did nothing in Demo Mode while working against the real API.
+  const role = payload.role ?? "MEMBER";
   const existing = db.committeeMemberships.find((m) => m.committeeId === committeeId && m.userId === payload.userId);
-  if (!existing) {
-    db.committeeMemberships.push({ committeeId, userId: payload.userId, role: payload.role ?? "MEMBER" });
+  if (existing) {
+    existing.role = role;
+  } else {
+    db.committeeMemberships.push({ committeeId, userId: payload.userId, role });
   }
-  return { committeeId, committeeName: c.name, role: payload.role ?? "MEMBER" };
+
+  // Committee chairs administer the committee's channel — same mapping the
+  // backend applies in the same transaction.
+  if (c.channelId) {
+    const channelRole = role === "CHAIR" ? "ADMIN" : "MEMBER";
+    const channelMembership = db.channelMemberships.find(
+      (m) => m.channelId === c.channelId && m.userId === payload.userId
+    );
+    if (channelMembership) {
+      channelMembership.role = channelRole;
+    } else {
+      db.channelMemberships.push({ channelId: c.channelId, userId: payload.userId, role: channelRole });
+    }
+  }
+
+  return { committeeId, committeeName: c.name, role };
 }
 
 export function removeCommitteeMember(committeeId: string, userId: string): void {
@@ -1421,9 +1466,14 @@ export function removeTeamMember(teamId: string, userId: string): Team {
 function channelCanPost(channel: db.MockChannel, userId: string): boolean {
   const u = db.findUser(userId);
   if (!u) return false;
+  // Archived channels are read-only for everyone — mirrors canPostToChannel
+  // in backend/routes/messages.routes.ts.
+  if (channel.archivedAt) return false;
   switch (channel.type) {
     case "GENERAL":
-      return isExecOrAbove(userId);
+      // Open to every member. Pinning here (the chapter announcement) is the
+      // restricted action instead — see pinMessage below.
+      return true;
     case "OFFICERS":
       return isOfficerOrAbove(userId);
     case "COMMITTEE":
@@ -1459,6 +1509,7 @@ function toChannel(c: db.MockChannel, userId: string): Channel {
     committeeId: c.committeeId ?? null,
     committee: committee ? { id: committee.id, name: committee.name } : null,
     canPost: channelCanPost(c, userId),
+    archivedAt: c.archivedAt ?? null,
     pinnedCount: db.messages.filter((m) => m.channelId === c.id && m.pinned && !m.deletedAt).length,
     lastMessage: last
       ? {
@@ -1470,9 +1521,41 @@ function toChannel(c: db.MockChannel, userId: string): Channel {
   };
 }
 
-export function listChannels(): Channel[] {
+export function listChannels(params?: { includeArchived?: string | boolean }): Channel[] {
   const userId = getCurrentDemoUserId();
-  return db.channels.filter((c) => channelVisible(c, userId)).map((c) => toChannel(c, userId));
+  const includeArchived = String(params?.includeArchived) === "true";
+  return db.channels
+    .filter((c) => (includeArchived || !c.archivedAt) && channelVisible(c, userId))
+    .map((c) => toChannel(c, userId));
+}
+
+// Mirrors POST /channels — only GENERAL/OFFICERS, same name normalization as
+// the real route and as committee channel creation.
+export function createChannel(payload: { name: string; type: "GENERAL" | "OFFICERS" }): Channel {
+  const userId = getCurrentDemoUserId();
+  if (!can(userId, "messaging.manageChannels")) {
+    throw new DemoApiError(403, "Not authorized to manage channels");
+  }
+  const name = `#${payload.name.trim().toLowerCase().replace(/^#/, "").replace(/\s+/g, "-")}`;
+  const channel: db.MockChannel = { id: db.nextId("chan"), name, type: payload.type };
+  db.channels.push(channel);
+  return toChannel(channel, userId);
+}
+
+// Mirrors PATCH /channels/:id/archive — reversible, and #general is pinned
+// open for the same reason as the real route (the dashboard reads it).
+export function setChannelArchived(channelId: string, archived: boolean): Channel {
+  const userId = getCurrentDemoUserId();
+  if (!can(userId, "messaging.manageChannels")) {
+    throw new DemoApiError(403, "Not authorized to manage channels");
+  }
+  const channel = db.channels.find((c) => c.id === channelId);
+  if (!channel) throw new DemoApiError(404, "Channel not found");
+  if (archived && channel.type === "GENERAL") {
+    throw new DemoApiError(400, "The general channel can't be archived.");
+  }
+  channel.archivedAt = archived ? new Date().toISOString() : null;
+  return toChannel(channel, userId);
 }
 
 function toMessage(m: db.MockMessage): Message {
@@ -1541,10 +1624,23 @@ export function sendMessage(channelId: string, payload: { content: string; paren
   return toMessage(message);
 }
 
+// Mirrors PATCH /messages/:id/pin — pinning in #general IS the chapter
+// announcement and needs `messaging.announce` (Regent/Vice Regent by office);
+// pinning anywhere else is ordinary moderation.
 export function pinMessage(messageId: string, pinned: boolean): Message {
-  if (!isOfficerOrAbove(getCurrentDemoUserId())) throw new DemoApiError(403, "Officer+ required");
+  const userId = getCurrentDemoUserId();
   const m = db.findMessage(messageId);
   if (!m) throw new DemoApiError(404, "Message not found");
+  const channel = db.channels.find((c) => c.id === m.channelId);
+  const required = channel?.type === "GENERAL" ? "messaging.announce" : "messaging.moderate";
+  if (!can(userId, required)) {
+    throw new DemoApiError(
+      403,
+      required === "messaging.announce"
+        ? "Only the Regent or Vice Regent can post chapter announcements."
+        : "Not authorized to pin messages"
+    );
+  }
   m.pinned = pinned;
   return toMessage(m);
 }

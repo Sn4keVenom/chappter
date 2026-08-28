@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { getMemberProfile, updateUserRole, deleteMemberAccount } from "../../api/users";
+import { getMemberProfile, updateUserRole, updateUserFields, deleteMemberAccount } from "../../api/users";
 import { getMemberAttendanceHistory } from "../../api/attendance";
 import { getFamily, setBig, setRoleNumber } from "../../api/membership";
 import { useAsync } from "../../hooks/useAsync";
@@ -26,11 +26,27 @@ import { Dialog, ConfirmDialog } from "../../components/ui/Dialog";
 import { Input, Select } from "../../components/ui/Form";
 import { ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
 import { userRoleTone } from "../../theme/semantic";
-import { fullName, type UserRole } from "../../types";
+import { fullName, type ExecOffice, type UserRole } from "../../types";
 import { formatShortDate, titleCaseEnum } from "../../utils/format";
 import styles from "./ProfilePage.module.css";
 
 const ROLES: UserRole[] = ["PNM", "MEMBER", "EXEC", "ALUMNI", "SUPER_ADMIN"];
+
+// Named exec-board positions. Independent of role by design (see the
+// ExecOffice doc comment in schema.prisma) — holding an office never by
+// itself changes the role tier, but some permissions are granted BY office
+// rather than by role: Scribe assigns role numbers, and Regent/Vice Regent
+// post chapter announcements (permissions/permissions.ts
+// DEFAULT_OFFICE_PRESETS). "" is the no-office case.
+const OFFICES: ExecOffice[] = [
+  "REGENT",
+  "VICE_REGENT",
+  "TREASURER",
+  "SCRIBE",
+  "MARSHAL",
+  "CORRESPONDING_SECRETARY",
+  "NEW_MEMBER_EDUCATOR",
+];
 
 export default function MemberProfilePage() {
   const navigate = useNavigate();
@@ -247,6 +263,38 @@ export default function MemberProfilePage() {
                   {ROLES.map((role) => (
                     <option key={role} value={role}>
                       {titleCaseEnum(role)}
+                    </option>
+                  ))}
+                </Select>
+              ) : null}
+
+              {isSuperAdmin ? (
+                <Select
+                  label="Exec office"
+                  hint="Independent of role — an office grants its own permissions (Scribe assigns role numbers; Regent and Vice Regent post announcements)."
+                  value={member.office ?? ""}
+                  onChange={async (e) => {
+                    setBusy(true);
+                    setActionError(null);
+                    try {
+                      // "" means "no office" — send null, not the empty
+                      // string, which the API's enum wouldn't accept.
+                      await updateUserFields(userId, {
+                        office: e.target.value ? (e.target.value as ExecOffice) : null,
+                      });
+                      await reload({ silent: true });
+                    } catch (err: any) {
+                      setActionError(err?.message ?? "Couldn't change the office.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  disabled={busy}
+                >
+                  <option value="">No office</option>
+                  {OFFICES.map((office) => (
+                    <option key={office} value={office}>
+                      {titleCaseEnum(office)}
                     </option>
                   ))}
                 </Select>

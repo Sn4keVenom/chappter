@@ -49,3 +49,10 @@ export async function removeCommitteeMember(
 ): Promise<void> {
   await apiClient.delete(`/committees/${committeeId}/members/${userId}`);
 }
+
+/** Dissolves a committee. Its channel is archived rather than deleted, so
+ * the committee's message history survives; past events become ordinary
+ * chapter events. Exec+ only. */
+export async function deleteCommittee(committeeId: string): Promise<void> {
+  await apiClient.delete(`/committees/${committeeId}`);
+}

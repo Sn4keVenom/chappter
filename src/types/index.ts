@@ -78,6 +78,12 @@ export const ALL_PERMISSIONS = [
   "points.deduct",
   "messaging.post",
   "messaging.moderate",
+  // Creating/archiving channels is separate from moderating messages inside
+  // one: an Exec runs the channel list, but announcing to the whole chapter
+  // is narrower still and granted by office (Regent/Vice Regent) rather than
+  // role — see DEFAULT_OFFICE_PRESETS in permissions/permissions.ts.
+  "messaging.manageChannels",
+  "messaging.announce",
   "committees.manage",
   "dues.manage",
   "finance.manage",
@@ -684,6 +690,10 @@ export interface Channel {
   committeeId?: string | null;
   committee?: { id: string; name: string } | null;
   canPost: boolean;
+  /** Set once retired — the channel keeps its messages but drops out of the
+   * channel list and rejects new ones. Only present when the caller asked
+   * for archived channels (see listChannels({ includeArchived })). */
+  archivedAt?: string | null;
   pinnedCount: number;
   lastMessage?: {
     content: string;

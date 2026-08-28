@@ -654,6 +654,11 @@ model Channel {
   type        ChannelType
   committeeId String?     @unique // set only for COMMITTEE-type channels
   createdAt   DateTime    @default(now())
+  // Archived channels drop out of the channel list and reject new messages,
+  // but keep every message they already hold — chapters refer back to old
+  // discussions, so this is never a delete. Nullable-timestamp rather than a
+  // boolean so "when was this retired" is answerable later.
+  archivedAt  DateTime?
 
   committee Committee?          @relation(fields: [committeeId], references: [id])
   members   ChannelMembership[]

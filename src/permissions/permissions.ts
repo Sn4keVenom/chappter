@@ -48,7 +48,7 @@ export const DEFAULT_ROLE_PRESETS: Record<Exclude<UserRole, "SUPER_ADMIN">, Perm
     "attendance.view", "attendance.take", "attendance.edit",
     "documents.view", "documents.upload", "documents.delete",
     "points.award", "points.deduct",
-    "messaging.post", "messaging.moderate",
+    "messaging.post", "messaging.moderate", "messaging.manageChannels",
     "committees.manage",
     "dues.manage", "finance.manage",
     "teams.manage",
@@ -93,10 +93,20 @@ export function defaultRolePermissions(): Record<UserRole, Permission[]> {
 
 export const DEFAULT_OFFICE_PRESETS: Partial<Record<ExecOffice, Permission[]>> = {
   SCRIBE: ["membership.assignRoleNumber"],
+  // Announcing to the whole chapter (a pinned message in #general, which the
+  // home dashboard surfaces) is deliberately narrower than Exec: the two
+  // offices that speak for the chapter, not every board member.
+  REGENT: ["messaging.announce"],
+  VICE_REGENT: ["messaging.announce"],
 };
 
 export function defaultOfficePermissions(): Partial<Record<ExecOffice, Permission[]>> {
-  return { SCRIBE: [...(DEFAULT_OFFICE_PRESETS.SCRIBE ?? [])] };
+  // Deep-copied generically rather than key-by-key — the previous hand-written
+  // form silently dropped every office added to DEFAULT_OFFICE_PRESETS after
+  // SCRIBE, which is exactly the bug that would have hidden the two above.
+  return Object.fromEntries(
+    Object.entries(DEFAULT_OFFICE_PRESETS).map(([office, permissions]) => [office, [...(permissions ?? [])]])
+  ) as Partial<Record<ExecOffice, Permission[]>>;
 }
 
 // ── The check every screen/mock-endpoint should call ──────────────────────
@@ -170,6 +180,8 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "points.deduct": "Deduct points",
   "messaging.post": "Post messages",
   "messaging.moderate": "Moderate messages (pin/delete others')",
+  "messaging.manageChannels": "Create & archive channels",
+  "messaging.announce": "Post chapter announcements",
   "committees.manage": "Manage committees",
   "dues.manage": "Manage dues",
   "finance.manage": "Manage committee budgets & reimbursements",

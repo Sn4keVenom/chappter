@@ -117,6 +117,44 @@ async function main() {
     console.log(`⏭   Officers channel already exists (${existingOfficers.id})`);
   }
 
+  // ── Standing committees ─────────────────────────────────────────────────
+  // The chapter's real committee list. Each gets a COMMITTEE channel, exactly
+  // as POST /committees does when one is created from the app (see
+  // committees.routes.ts) — seeding a committee without its channel would
+  // produce a committee whose Messages tab silently has nowhere to post.
+  //
+  // Matched by name so re-running the seed is idempotent: an existing
+  // committee is left completely alone (renames and membership survive), and
+  // only genuinely missing ones are added. Committees created later from the
+  // app are never touched or removed by this.
+  const COMMITTEE_NAMES = [
+    "Special Events",
+    "Rush",
+    "Fundraising",
+    "Brotherhood",
+    "Community Service",
+    "Professional Development",
+    "Alumni",
+    "Social Media/Website/App",
+  ];
+
+  for (const name of COMMITTEE_NAMES) {
+    const existing = await prisma.committee.findFirst({ where: { name } });
+    if (existing) {
+      console.log(`⏭   Committee already exists: ${name}`);
+      continue;
+    }
+    const committee = await prisma.committee.create({ data: { name } });
+    await prisma.channel.create({
+      data: {
+        name: `#${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`,
+        type: "COMMITTEE",
+        committeeId: committee.id,
+      },
+    });
+    console.log(`✅  Committee created: ${name}`);
+  }
+
   // ── Optional: seed a SUPER_ADMIN user + membership ──────────────────────
   // Uncomment and replace <your-clerk-user-id> with the Clerk user ID from
   // the Clerk Dashboard after your first sign-in attempt (it will fail with

@@ -17,11 +17,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
+import { createChannel, setChannelArchived } from "../../api/messages";
 import { useMessagesStore } from "../../store/useMessagesStore";
 import { useAuthStore } from "../../store/useAuthStore";
 import { usePermissions } from "../../hooks/usePermissions";
 import { Button } from "../../components/ui/Button";
-import { ConfirmDialog } from "../../components/ui/Dialog";
+import { ConfirmDialog, Dialog } from "../../components/ui/Dialog";
+import { Input } from "../../components/ui/Form";
 import { EmptyState, ErrorBanner, LoadingState, Spinner } from "../../components/ui/Feedback";
 import { formatRelativeShort, formatTime } from "../../utils/format";
 import type { Channel, ChannelType, Message } from "../../types";
@@ -120,7 +122,7 @@ function MessageBubble({
 function Conversation({ channelId }: { channelId: string }) {
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
-  const { isOfficerOrAbove } = usePermissions();
+  const { can } = usePermissions();
   const { channels, channelData, fetchMessages, loadMoreMessages, sendMessage, togglePin } =
     useMessagesStore();
 
@@ -134,6 +136,10 @@ function Conversation({ channelId }: { channelId: string }) {
   const pinned = cache?.pinned ?? [];
 
   const channel = channels.find((c) => c.id === channelId);
+  // Mirrors PATCH /messages/:id/pin: pinning in #general IS the chapter
+  // announcement (messaging.announce — Regent/Vice Regent by office);
+  // pinning anywhere else is ordinary moderation.
+  const canPinHere = channel?.type === "GENERAL" ? can("messaging.announce") : can("messaging.moderate");
   // Fail closed: showing a composer for a channel whose permissions we don't
   // know yet would let a member type a message that the server then rejects.
   const canPost = channel?.canPost ?? false;
@@ -205,7 +211,7 @@ function Conversation({ channelId }: { channelId: string }) {
             key={message.id}
             message={message}
             isMine={message.sender.id === currentUser?.id}
-            canPin={isOfficerOrAbove}
+            canPin={canPinHere}
             onTogglePin={() => setPinTarget(message)}
           />
         ))}
@@ -273,10 +279,34 @@ function Conversation({ channelId }: { channelId: string }) {
 export default function MessagesPage() {
   const { channelId } = useParams<{ channelId: string }>();
   const { channels, loading, error, fetchChannels } = useMessagesStore();
+  const { can } = usePermissions();
+  const canManageChannels = can("messaging.manageChannels");
+
+  const [newOpen, setNewOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [archiveTarget, setArchiveTarget] = useState<Channel | null>(null);
+  const [managing, setManaging] = useState(false);
+  const [manageError, setManageError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetchChannels();
   }, [fetchChannels]);
+
+  async function manage(action: () => Promise<unknown>, failure: string, onDone?: () => void) {
+    setManaging(true);
+    setManageError(null);
+    try {
+      await action();
+      onDone?.();
+      // Refetch rather than patching the store: creating or archiving changes
+      // which channels are visible at all, not just one row's fields.
+      fetchChannels();
+    } catch (e: any) {
+      setManageError(e?.message ?? failure);
+    } finally {
+      setManaging(false);
+    }
+  }
 
   useEffect(() => {
     load();
@@ -313,6 +343,21 @@ export default function MessagesPage() {
           </div>
         ) : null}
 
+        {canManageChannels ? (
+          <div className={styles.listHeader}>
+            <span className={styles.listHeaderTitle}>Channels</span>
+            <Button size="sm" variant="secondary" onClick={() => setNewOpen(true)}>
+              + New
+            </Button>
+          </div>
+        ) : null}
+
+        {manageError ? (
+          <div style={{ padding: "var(--space-3) var(--space-4)" }}>
+            <ErrorBanner message={manageError} />
+          </div>
+        ) : null}
+
         <nav className={styles.list} aria-label="Conversations">
           <h1 className="sr-only">Messages</h1>
           {grouped.length === 0 ? (
@@ -322,13 +367,94 @@ export default function MessagesPage() {
               <div key={group.type}>
                 <h2 className={styles.groupHeader}>{GROUP_LABEL[group.type]}</h2>
                 {group.channels.map((channel) => (
-                  <ChannelRow key={channel.id} channel={channel} active={channel.id === channelId} />
+                  <div key={channel.id} className={styles.channelRowWrap}>
+                    <ChannelRow channel={channel} active={channel.id === channelId} />
+                    {/* #general is never archivable — the home dashboard reads
+                        its pinned announcement, so the backend refuses too.
+                        DMs aren't chapter channels and aren't managed here. */}
+                    {canManageChannels && channel.type !== "GENERAL" && channel.type !== "DM" ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={managing}
+                        onClick={() => setArchiveTarget(channel)}
+                        className={styles.channelArchiveButton}
+                      >
+                        Archive
+                      </Button>
+                    ) : null}
+                  </div>
                 ))}
               </div>
             ))
           )}
         </nav>
       </div>
+
+      <Dialog
+        open={newOpen}
+        onClose={() => {
+          setNewOpen(false);
+          setNewName("");
+        }}
+        title="New channel"
+        subtitle="Committee channels are created with their committee — this is for standing chapter channels."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setNewOpen(false)} disabled={managing}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              busy={managing}
+              disabled={!newName.trim()}
+              onClick={() =>
+                manage(
+                  () => createChannel({ name: newName.trim(), type: "OFFICERS" }),
+                  "Couldn't create the channel.",
+                  () => {
+                    setNewOpen(false);
+                    setNewName("");
+                  }
+                )
+              }
+            >
+              Create
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Name"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="fundraising-planning"
+          hint="Visible to Exec and above. Spaces become dashes."
+          autoComplete="off"
+        />
+      </Dialog>
+
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        onClose={() => setArchiveTarget(null)}
+        onConfirm={() =>
+          archiveTarget &&
+          manage(
+            () => setChannelArchived(archiveTarget.id, true),
+            "Couldn't archive the channel.",
+            () => setArchiveTarget(null)
+          )
+        }
+        title="Archive this channel?"
+        body={
+          archiveTarget
+            ? `${archiveTarget.name} will drop out of the channel list and stop accepting new messages. Everything already posted is kept.`
+            : undefined
+        }
+        confirmLabel="Archive"
+        destructive
+        busy={managing}
+      />
 
       {/* On mobile the conversation replaces the list; on desktop it sits
           beside it, with a placeholder when nothing is open. */}

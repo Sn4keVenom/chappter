@@ -5,9 +5,30 @@
 import { apiClient } from "./client";
 import type { Channel, Message } from "../types";
 
-export async function listChannels(): Promise<Channel[]> {
-  const { data } = await apiClient.get<{ channels: Channel[] }>("/channels");
+export async function listChannels(params?: { includeArchived?: boolean }): Promise<Channel[]> {
+  const { data } = await apiClient.get<{ channels: Channel[] }>("/channels", { params });
   return data.channels;
+}
+
+/** Creates a standing chapter channel. Committee channels aren't created
+ * here — they come with their committee (see api/committees.ts). Requires
+ * `messaging.manageChannels`. */
+export async function createChannel(payload: {
+  name: string;
+  type: "GENERAL" | "OFFICERS";
+}): Promise<Channel> {
+  const { data } = await apiClient.post<{ channel: Channel }>("/channels", payload);
+  return data.channel;
+}
+
+/** Reversible — pass `archived: false` to bring a channel back. Messages are
+ * never deleted either way. Requires `messaging.manageChannels`. */
+export async function setChannelArchived(channelId: string, archived: boolean): Promise<Channel> {
+  const { data } = await apiClient.patch<{ channel: Channel }>(
+    `/channels/${channelId}/archive`,
+    { archived }
+  );
+  return data.channel;
 }
 
 export async function getChannelMessages(

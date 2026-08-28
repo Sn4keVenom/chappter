@@ -112,6 +112,7 @@ route("get", "/committees", () => ({ committees: api.listCommittees() }));
 route("post", "/committees", (_p, _q, body) => ({ committee: api.createCommittee(body) }));
 route("get", "/committees/:id", (p) => ({ committee: api.getCommittee(p.id) }));
 route("patch", "/committees/:id", (p, _q, body) => ({ committee: api.updateCommittee(p.id, body) }));
+route("delete", "/committees/:id", (p) => api.deleteCommittee(p.id));
 route("post", "/committees/:id/members", (p, _q, body) => ({ membership: api.addCommitteeMember(p.id, body) }));
 route("delete", "/committees/:id/members/:userId", (p) => {
   api.removeCommitteeMember(p.id, p.userId);
@@ -119,7 +120,9 @@ route("delete", "/committees/:id/members/:userId", (p) => {
 });
 
 // Messaging
-route("get", "/channels", () => ({ channels: api.listChannels() }));
+route("get", "/channels", (_p, q) => ({ channels: api.listChannels(q) }));
+route("post", "/channels", (_p, _q, body) => ({ channel: api.createChannel(body) }));
+route("patch", "/channels/:id/archive", (p, _q, body) => ({ channel: api.setChannelArchived(p.id, body.archived) }));
 route("get", "/channels/:id/messages/:messageId/thread", (p) => api.getThread(p.id, p.messageId));
 route("get", "/channels/:id/messages", (p, q) => api.getChannelMessages(p.id, q));
 route("post", "/channels/:id/messages", (p, _q, body) => ({ message: api.sendMessage(p.id, body) }));
