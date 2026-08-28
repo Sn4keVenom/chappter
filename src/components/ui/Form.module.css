@@ -129,12 +129,25 @@ select.control {
 
 .choiceBody { flex: 1; min-width: 0; display: block; }
 .choiceLabel { display: block; font-size: var(--text-base); font-weight: 700; }
-.choiceSelected .choiceLabel { color: var(--color-primary-tint); }
+/* Selection is communicated by the background wash + radio dot, not by
+   recoloring the label — tinting label text toward --color-primary-tint on
+   top of --color-primary-soft compounds two brand-derived colors that were
+   each only contrast-checked against the plain page background, not against
+   each other. Measured: 3.39:1 in dark mode with the default branding — under
+   the 4.5:1 floor for body text. Leaving the label at its normal (inherited,
+   already-passing) color sidesteps that entirely, for any chapter's brand
+   color, not just the default. */
 .choiceHint {
   display: block;
   margin-top: 2px;
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  /* --color-text-muted only clears ~3:1 against a plain surface (it was
+     tuned as a caption color, not tested against a tinted background) — on
+     the selected row's --color-primary-soft wash that drops further, to
+     ~2.5:1 in light mode. --color-text-secondary is the next step up and
+     comfortably clears 4.5:1 against both the plain surface and the
+     tinted selected background, in both themes. */
+  color: var(--color-text-secondary);
   line-height: 1.45;
 }
 

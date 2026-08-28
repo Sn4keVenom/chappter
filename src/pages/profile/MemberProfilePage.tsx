@@ -11,172 +11,25 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { getMemberProfile, getRoster, updateUserRole } from "../../api/users";
+import { getMemberProfile, updateUserRole } from "../../api/users";
 import { getMemberAttendanceHistory } from "../../api/attendance";
 import { getFamily, setBig, setRoleNumber } from "../../api/membership";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PageHeader, Section } from "../../components/PageHeader";
+import { AssignBigDialog } from "../../components/AssignBigDialog";
 import { Card, CardLabel } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button, ButtonLink } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { Input, Select } from "../../components/ui/Form";
-import { EmptyState, ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
+import { ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
 import { userRoleTone } from "../../theme/semantic";
-import { fullName, type UserRole, type UserSummary } from "../../types";
+import { fullName, type UserRole } from "../../types";
 import { formatShortDate, titleCaseEnum } from "../../utils/format";
 import styles from "./ProfilePage.module.css";
 
 const ROLES: UserRole[] = ["PNM", "MEMBER", "EXEC", "ALUMNI", "SUPER_ADMIN"];
-
-/** Two-step: pick a member, then confirm. See the note at the top of the file. */
-type BigStep = { kind: "search" } | { kind: "confirm"; target: UserSummary | null };
-
-function AssignBigDialog({
-  open,
-  memberName,
-  currentBigName,
-  onClose,
-  onAssign,
-}: {
-  open: boolean;
-  memberName: string;
-  currentBigName: string | null;
-  onClose: () => void;
-  onAssign: (userId: string | null) => Promise<void>;
-}) {
-  const [query, setQuery] = useState("");
-  const [step, setStep] = useState<BigStep>({ kind: "search" });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const { data: results, loading } = useAsync(
-    () => (open ? getRoster({ q: query, limit: 15 }).then((r) => r.users) : Promise.resolve([])),
-    [query, open]
-  );
-
-  // Reset whenever the dialog is reopened, so it never resumes mid-flow.
-  const [wasOpen, setWasOpen] = useState(open);
-  if (open !== wasOpen) {
-    setWasOpen(open);
-    if (open) {
-      setStep({ kind: "search" });
-      setQuery("");
-      setError(null);
-    }
-  }
-
-  async function commit(userId: string | null) {
-    setBusy(true);
-    setError(null);
-    try {
-      await onAssign(userId);
-      onClose();
-    } catch (e: any) {
-      setError(e?.message ?? "Couldn't assign Big.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (step.kind === "confirm") {
-    const target = step.target;
-    return (
-      <Dialog
-        open={open}
-        onClose={onClose}
-        title={target ? "Assign Big" : "Remove Big"}
-        subtitle={
-          target
-            ? `${target.firstName} ${target.lastName} will become ${memberName}'s Big.`
-            : `${memberName} will no longer have a Big assigned.`
-        }
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setStep({ kind: "search" })} disabled={busy}>
-              Back
-            </Button>
-            <Button
-              variant={target ? "primary" : "dangerSolid"}
-              onClick={() => commit(target?.id ?? null)}
-              busy={busy}
-            >
-              Confirm
-            </Button>
-          </>
-        }
-      >
-        {error ? <ErrorBanner message={error} /> : null}
-        {currentBigName && target ? (
-          <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)", lineHeight: 1.55 }}>
-            This replaces {currentBigName} as {memberName}'s current Big.
-          </p>
-        ) : null}
-      </Dialog>
-    );
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      title="Assign Big"
-      subtitle={`Choose a Big for ${memberName}.`}
-      footer={
-        <Button variant="secondary" onClick={onClose} disabled={busy}>
-          Cancel
-        </Button>
-      }
-    >
-      {error ? <ErrorBanner message={error} /> : null}
-      <Input
-        label="Search members"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Name or email"
-        autoComplete="off"
-      />
-
-      {currentBigName ? (
-        <Button
-          variant="danger"
-          block
-          onClick={() => setStep({ kind: "confirm", target: null })}
-          style={{ marginBottom: "var(--space-4)" }}
-        >
-          Remove {currentBigName} as Big
-        </Button>
-      ) : null}
-
-      {loading ? (
-        <LoadingState label="Searching…" />
-      ) : (
-        <div style={{ maxHeight: 280, overflowY: "auto" }}>
-          {(results ?? []).map((user) => (
-            <button
-              key={user.id}
-              type="button"
-              className={styles.row}
-              style={{ width: "100%", textAlign: "left" }}
-              onClick={() => setStep({ kind: "confirm", target: user })}
-            >
-              <span className={styles.rowBody}>
-                <span className={styles.rowTitle}>
-                  {user.firstName} {user.lastName}
-                </span>
-                <span className={styles.rowMeta}>{user.email}</span>
-              </span>
-            </button>
-          ))}
-          {(results ?? []).length === 0 && query.trim() ? (
-            <EmptyState icon="🔍" title="No matches" />
-          ) : null}
-        </div>
-      )}
-    </Dialog>
-  );
-}
 
 export default function MemberProfilePage() {
   const { userId = "" } = useParams();
@@ -387,7 +240,7 @@ export default function MemberProfilePage() {
       <AssignBigDialog
         open={bigOpen}
         memberName={member.firstName}
-        currentBigName={family.big ? `${family.big.firstName} ${family.big.lastName}` : null}
+        currentAssigneeName={family.big ? `${family.big.firstName} ${family.big.lastName}` : null}
         onClose={() => setBigOpen(false)}
         onAssign={async (bigUserId) => {
           await setBig(userId, bigUserId);

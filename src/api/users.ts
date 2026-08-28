@@ -36,6 +36,22 @@ export async function getMemberProfile(userId: string): Promise<User> {
   return data.user;
 }
 
+/** Lightweight, name-only member search — any authenticated chapter member
+ * can call this (unlike getRoster, which is Exec+ and returns email/role/
+ * status). Backs the self-service Big/Little picker on ProfilePage.tsx: a
+ * member choosing their own Big or a Little shouldn't need roster access or
+ * see other members' emails to do it. */
+export async function searchMembers(q: string): Promise<
+  { id: string; firstName: string; lastName: string; avatarUrl?: string | null }[]
+> {
+  if (!q.trim()) return [];
+  const { data } = await apiClient.get<{ users: { id: string; firstName: string; lastName: string; avatarUrl?: string | null }[] }>(
+    "/users/search",
+    { params: { q } }
+  );
+  return data.users;
+}
+
 export async function updateUserRole(
   userId: string,
   role: User["role"]

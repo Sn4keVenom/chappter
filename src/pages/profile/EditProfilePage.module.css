@@ -1,0 +1,56 @@
+.avatarRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.avatarPreview {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 800;
+  font-size: var(--text-lg);
+}
+
+.avatarImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatarActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The real control is this invisible native input — the "Upload/Change
+   photo" Button just proxies a click onto it (see fileInputRef in
+   EditProfilePage.tsx). Hidden with clip/position, not display:none, so it
+   stays in the tab order and keyboard-only users aren't shut out of a
+   click-triggered file picker. */
+.avatarFileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.avatarError {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}

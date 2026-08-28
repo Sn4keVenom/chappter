@@ -11,7 +11,10 @@
 // Authorization mirrors the mock's default permission presets
 // (documents.view = everyone, documents.upload/delete = Exec+) — see
 // docs/PERMISSIONS.md for why this is a flat role check here rather than
-// reading the RolePermission table directly.
+// reading the RolePermission table directly. Two categories narrow "everyone"
+// further, per-category rather than per-route (see canViewCategory below):
+//   · BYLAWS            — Marshal (the office) or Super Admin only
+//   · OFFICER_RESOURCES — Exec role or Super Admin only (no PNM/Member/Alumni)
 //
 // Integration:
 //   · rbac.ts → requireRole, AuthedRequest, writeAuditLog
@@ -30,17 +33,45 @@ const CATEGORIES = [
   "CONSTITUTION", "BYLAWS", "MEETING_MINUTES", "RECRUITMENT", "FORMS", "OFFICER_RESOURCES", "OTHER",
 ] as const;
 
+/** Whether this viewer can see documents in `category`. Super Admin always
+ * can (matches the rest of the app's "SUPER_ADMIN bypasses everything"
+ * rule — see docs/PERMISSIONS.md). Every other category is unrestricted;
+ * only these two are narrowed at all. */
+function canViewCategory(user: AuthedRequest["user"], category: string): boolean {
+  if (user?.role === "SUPER_ADMIN") return true;
+  if (category === "BYLAWS") return user?.office === "MARSHAL";
+  if (category === "OFFICER_RESOURCES") return user?.role === "EXEC";
+  return true;
+}
+
 // ── GET /documents ──────────────────────────────────────────────────────────
 router.get(
   "/documents",
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { category } = req.query;
+
+    // A request scoped to one restricted category the viewer can't see gets
+    // a clear 403, not a silently empty list — the latter is indistinguishable
+    // from "this category is genuinely empty" and DocumentCategoryPage.tsx
+    // would render a confusing "No documents yet" instead of an error.
+    if (category && !canViewCategory(req.user, String(category))) {
+      return res.status(403).json({ error: "Not permitted" });
+    }
+
     const documents = await prisma.document.findMany({
       where: category ? { category: String(category) as any } : {},
       orderBy: { uploadedAt: "desc" },
       include: { uploadedBy: { select: { id: true, firstName: true, lastName: true } } },
     });
-    res.json({ documents });
+
+    // The unscoped "all documents" fetch (DocumentsPage.tsx's index, which
+    // counts per category client-side) can't 403 — legitimately-viewable
+    // categories still need to come back. Restricted docs are filtered out
+    // instead, which reads as "0 files" for that category rather than an
+    // error; the category page itself still 403s if someone navigates to it
+    // directly, per the check above.
+    const visible = documents.filter((doc) => canViewCategory(req.user, doc.category));
+    res.json({ documents: visible });
   })
 );
 

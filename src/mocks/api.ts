@@ -418,10 +418,40 @@ export function getRoster(params: { q?: string; role?: string; status?: string; 
   return { users: list.map(toUserSummary), total };
 }
 
+/** Name-only counterpart to getRoster — no email, no role/status, and never
+ * includes the caller (mirrors backend/routes/users.routes.ts GET
+ * /users/search, which any chapter member can call, unlike getRoster). */
+export function searchMembers(q: string): { id: string; firstName: string; lastName: string; avatarUrl: string | null }[] {
+  const query = q.trim().toLowerCase();
+  if (!query) return [];
+  const selfId = getCurrentDemoUserId();
+  return db.users
+    .filter(
+      (u) =>
+        u.id !== selfId &&
+        (u.firstName.toLowerCase().includes(query) || u.lastName.toLowerCase().includes(query))
+    )
+    .slice(0, 15)
+    .map((u) => ({ id: u.id, firstName: u.firstName, lastName: u.lastName, avatarUrl: u.avatarUrl ?? null }));
+}
+
 export function getMemberProfile(userId: string): User {
   const u = db.findUser(userId);
   if (!u) throw new DemoApiError(404, "User not found");
   return toFullUser(u);
+}
+
+// Mirrors backend/routes/users.routes.ts syncedStatus() — PNM/ALUMNI are
+// lifecycle stages in their own right, so setting either role forces the
+// matching status; Member/Exec only promote OUT of PNM/ALUMNI into ACTIVE
+// and never touch an existing ACTIVE/INACTIVE status. Without this, changing
+// a PNM's role to Member left status="PNM" behind — the roster would show a
+// Member who was simultaneously still a PNM.
+function syncedStatus(newRole: UserRole, currentStatus: MemberStatus): MemberStatus {
+  if (newRole === "PNM") return "PNM";
+  if (newRole === "ALUMNI") return "ALUMNI";
+  if (newRole === "SUPER_ADMIN") return currentStatus;
+  return currentStatus === "PNM" || currentStatus === "ALUMNI" ? "ACTIVE" : currentStatus;
 }
 
 export function updateUserRole(userId: string, role: UserRole): User {
@@ -431,6 +461,7 @@ export function updateUserRole(userId: string, role: UserRole): User {
     throw new DemoApiError(403, "Not authorized to change member roles");
   }
   u.role = role;
+  u.status = syncedStatus(role, u.status);
   return toFullUser(u);
 }
 
@@ -486,12 +517,29 @@ export function getFamily(userId: string): { big: ReturnType<typeof toFamilyMemb
   };
 }
 
+// Mirrors backend/routes/membership.routes.ts PATCH /users/:id/big — anyone
+// can now manage their OWN Big/Little relationships, not just Exec+/
+// manageRelationships. A PNM can add/remove their own Big, but can't take on
+// Littles (add or release); everyone else can do both, for themselves.
+// Rearranging two OTHER people's relationships is still admin-only.
 export function setBig(userId: string, bigUserId: string | null): User {
   const u = db.findUser(userId);
   if (!u) throw new DemoApiError(404, "User not found");
-  if (!can(getCurrentDemoUserId(), "membership.manageRelationships")) {
+
+  const caller = getCurrentDemoUserId();
+  const hasAdminPermission = can(caller, "membership.manageRelationships");
+  const callerUser = db.findUser(caller);
+  const isEditingOwnBig = userId === caller;
+  const isClaimingAsMyLittle = bigUserId === caller;
+  const isReleasingMyLittle = bigUserId === null && u.bigId === caller;
+  const canManageAsSelf =
+    isEditingOwnBig ||
+    ((isClaimingAsMyLittle || isReleasingMyLittle) && callerUser?.role !== "PNM");
+
+  if (!hasAdminPermission && !canManageAsSelf) {
     throw new DemoApiError(403, "Not authorized to assign Big/Little");
   }
+
   if (bigUserId === null) {
     u.bigId = null;
     return toFullUser(u);

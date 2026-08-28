@@ -12,10 +12,15 @@
 // Role gates (mirrors usePermissions.ts client-side):
 //   GET /users           Exec+ (scoped to the caller's own chapter roster)
 //   GET /users/:id       Exec+ (same chapter only)
+//   PATCH /users/me      Any authenticated user, self only (must be
+//                        registered before PATCH /users/:id below — see
+//                        that route's comment)
 //   PATCH /users/:id/role  Super Admin only; self-change blocked
+//   PATCH /users/:id       Super Admin only
 
 import { Router, Response } from "express";
 import { z } from "zod";
+import { Prisma, MemberStatus, UserRole } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requireRole, writeAuditLog } from "../middleware/rbac";
@@ -77,6 +82,83 @@ router.get(
           membership,
           committeeMemberships.filter((m) => m.role === "CHAIR").map((m) => m.committeeId)
         ),
+        committeeMemberships: committeeMemberships.map((m) => ({
+          committeeId: m.committeeId,
+          committeeName: m.committee.name,
+          role: m.role,
+        })),
+      },
+    });
+  })
+);
+
+// ── PATCH /users/me — self-service profile edit ───────────────────────────
+// Never accepts role/office/status/roleNumber — those stay admin-only
+// (PATCH /users/:id, requireRole("SUPER_ADMIN"), below). Moved here from
+// membership.routes.ts, and deliberately placed BEFORE that generic
+// PATCH /users/:id: both routers mount under /api/v1, this router is
+// mounted first (server.ts), and ":id" happily matches the literal string
+// "me" — so this must win the match, the same way GET /users/me above
+// already wins over GET /users/:id by being registered first in this same
+// file. Getting the order wrong here silently 403s every self-edit with
+// "Not permitted" instead of ever reaching this handler.
+const selfProfileSchema = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(0).max(100).optional(),
+  phone: z.string().max(30).nullable().optional(),
+  avatarUrl: z.string().url().nullable().optional(),
+  major: z.string().max(100).nullable().optional(),
+  graduationYear: z.number().int().min(1900).max(2200).nullable().optional(),
+});
+
+router.patch(
+  "/users/me",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = selfProfileSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { major, graduationYear, ...userFields } = parsed.data;
+
+    const operations: Prisma.PrismaPromise<unknown>[] = [
+      prisma.user.update({ where: { id: req.user!.id }, data: userFields }),
+    ];
+    if (req.user!.membershipId && (major !== undefined || graduationYear !== undefined)) {
+      operations.push(
+        prisma.chapterMembership.update({
+          where: { id: req.user!.membershipId },
+          data: {
+            ...(major !== undefined ? { major } : {}),
+            ...(graduationYear !== undefined ? { graduationYear } : {}),
+          },
+        })
+      );
+    }
+    await prisma.$transaction(operations);
+
+    const [updatedUser, membership, committeeMemberships] = await Promise.all([
+      prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } }),
+      req.user!.chapterId
+        ? prisma.chapterMembership.findUnique({
+            where: { chapterId_userId: { chapterId: req.user!.chapterId, userId: req.user!.id } },
+          })
+        : Promise.resolve(null),
+      prisma.committeeMembership.findMany({
+        where: { userId: req.user!.id },
+        include: { committee: { select: { id: true, name: true } } },
+      }),
+    ]);
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "SELF_PROFILE_UPDATE",
+      entityType: "User",
+      entityId: req.user!.id,
+      after: parsed.data,
+    });
+
+    res.json({
+      user: {
+        ...flattenUser(updatedUser, membership, committeeMemberships.filter((m) => m.role === "CHAIR").map((m) => m.committeeId)),
         committeeMemberships: committeeMemberships.map((m) => ({
           committeeId: m.committeeId,
           committeeName: m.committee.name,
@@ -268,6 +350,47 @@ router.get(
   })
 );
 
+// ── GET /users/search ───────────────────────────────────────────────────────
+// Any authenticated chapter member — deliberately NOT Exec-gated, unlike
+// GET /users above. This exists so a member can find candidates for their
+// OWN Big/Little (see membership.routes.ts PATCH /users/:id/big, now
+// self-serviceable) without needing roster access, which is Exec+ because it
+// returns email/role/status/roleNumber. This returns only name + avatar —
+// no email, no role, nothing an ordinary member shouldn't see about a
+// chapter-mate. Registered BEFORE GET /users/:id below for the same reason
+// PATCH /users/me had to move to before PATCH /users/:id: ":id" matches the
+// literal string "search" too, and Express takes whichever route was
+// registered first.
+router.get(
+  "/users/search",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const chapterId = req.user!.chapterId;
+    if (!chapterId) return res.status(403).json({ error: "Join a chapter first" });
+
+    const q = String(req.query.q ?? "").trim();
+    if (!q) return res.json({ users: [] });
+
+    const memberships = await prisma.chapterMembership.findMany({
+      where: {
+        chapterId,
+        userId: { not: req.user!.id }, // you're never a candidate for your own Big/Little
+        user: {
+          deletedAt: null,
+          OR: [
+            { firstName: { contains: q, mode: "insensitive" } },
+            { lastName: { contains: q, mode: "insensitive" } },
+          ],
+        },
+      },
+      take: 15,
+      orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
+      select: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
+    });
+
+    res.json({ users: memberships.map((m) => m.user) });
+  })
+);
+
 // ── GET /users/:id ────────────────────────────────────────────────────────
 router.get(
   "/users/:id",
@@ -282,9 +405,41 @@ router.get(
 // ── PATCH /users/:id/role ─────────────────────────────────────────────────
 // Super Admin only; self-role changes are blocked to prevent accidental
 // lock-out of the only admin account.
+//
+// Also derives and writes `status` alongside `role` — see syncedStatus()
+// below. Before this, this was the ONLY reachable way to change a member's
+// role from the real app (MemberProfilePage.tsx's role Select calls
+// updateUserRole → here; the broader PATCH /users/:id below can set role
+// and status together explicitly, but no screen calls it), and it only ever
+// wrote `role`. A PNM who signs up gets role=PNM + status=PNM together
+// (self-consistent at creation); promoting them to Member here left
+// status="PNM" behind, so the roster showed a Member who was simultaneously
+// still a PNM — the old and new identities visibly "stacked" instead of the
+// new one replacing it, exactly for lack of this sync.
 const roleSchema = z.object({
   role: z.enum(["SUPER_ADMIN", "EXEC", "MEMBER", "PNM", "ALUMNI"]),
 });
+
+/** What `status` should become when `role` is set to `newRole`, given the
+ * membership's current status. PNM and ALUMNI are lifecycle stages in their
+ * own right — as both a role AND a status — so setting one of those roles
+ * always forces the matching status; they're mutually exclusive with every
+ * other role/status combination by design ("Alumni should replace PNM or
+ * Member/Exec... they should not overlap"). Member and Exec aren't lifecycle
+ * stages themselves — they describe an already-ACTIVE person — so they only
+ * promote OUT of PNM/ALUMNI into ACTIVE, and never touch an existing ACTIVE
+ * or INACTIVE status: an admin correcting someone's role/office shouldn't
+ * silently un-mark them as inactive as a side effect. Super Admin is an
+ * administrative bypass, not a membership lifecycle stage the roster tracks
+ * at all — status is left exactly as it was. */
+function syncedStatus(newRole: UserRole, currentStatus: MemberStatus): MemberStatus {
+  if (newRole === "PNM") return "PNM";
+  if (newRole === "ALUMNI") return "ALUMNI";
+  if (newRole === "SUPER_ADMIN") return currentStatus;
+  // MEMBER or EXEC
+  if (currentStatus === "PNM" || currentStatus === "ALUMNI") return "ACTIVE";
+  return currentStatus;
+}
 
 router.patch(
   "/users/:id/role",
@@ -304,9 +459,11 @@ router.patch(
     });
     if (!before) return res.status(404).json({ error: "User not found in your chapter" });
 
+    const newStatus = syncedStatus(parsed.data.role, before.status);
+
     const updated = await prisma.chapterMembership.update({
       where: { id: before.id },
-      data: { role: parsed.data.role },
+      data: { role: parsed.data.role, status: newStatus },
     });
 
     await writeAuditLog({
@@ -314,8 +471,8 @@ router.patch(
       action: "ROLE_CHANGE",
       entityType: "ChapterMembership",
       entityId: before.id,
-      before: { role: before.role },
-      after: { role: updated.role },
+      before: { role: before.role, status: before.status },
+      after: { role: updated.role, status: updated.status },
     });
 
     res.json({ user: await loadFullUser(req.params.id, req.user!.chapterId!) });

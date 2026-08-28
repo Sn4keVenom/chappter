@@ -15,7 +15,6 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requirePermission, writeAuditLog } from "../middleware/rbac";
-import { flattenUser } from "../lib/userSerializer";
 
 const router = Router();
 
@@ -66,11 +65,20 @@ router.get(
 );
 
 // ── PATCH /users/:id/big ──────────────────────────────────────────────────
+// Two authorization paths, checked after loading `target` (so self-service
+// eligibility can depend on WHOSE relationship is being touched, not just
+// who's asking) — an Exec+/manageRelationships admin can still do anything,
+// exactly as before; everyone else can now manage their OWN Big/Little
+// relationships without that permission, subject to one restriction: a PNM
+// can add/remove their own Big (they can be a Little), but can't take on
+// Littles themselves (add or release) — they have no one to pass initiation
+// guidance to yet. Every other role can do both for themselves. This does
+// NOT open up rearranging two OTHER people's relationship — that's still
+// admin-only, unchanged from before.
 const bigSchema = z.object({ bigUserId: z.string().nullable() });
 
 router.patch(
   "/users/:id/big",
-  requirePermission("membership.manageRelationships"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = bigSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -80,6 +88,23 @@ router.patch(
       where: { chapterId_userId: { chapterId, userId: req.params.id } },
     });
     if (!target) return res.status(404).json({ error: "Member not found in your chapter" });
+
+    const hasAdminPermission =
+      req.user!.role === "SUPER_ADMIN" || !!req.user!.permissions?.has("membership.manageRelationships");
+    const isEditingOwnBig = req.params.id === req.user!.id;
+    // Claiming someone as one of MY littles (their new big := me), or
+    // releasing one of my existing littles (their big := null, and I was
+    // it) — both are "editing my littles," not "editing my big."
+    const isClaimingAsMyLittle = parsed.data.bigUserId === req.user!.id;
+    const isReleasingMyLittle =
+      parsed.data.bigUserId === null && target.bigMembershipId === req.user!.membershipId;
+    const canManageAsSelf =
+      isEditingOwnBig ||
+      ((isClaimingAsMyLittle || isReleasingMyLittle) && req.user!.role !== "PNM");
+
+    if (!hasAdminPermission && !canManageAsSelf) {
+      return res.status(403).json({ error: "Not permitted" });
+    }
 
     if (parsed.data.bigUserId === null) {
       const updated = await prisma.chapterMembership.update({
@@ -185,74 +210,14 @@ router.patch(
   })
 );
 
-// ── PATCH /users/me — self-service profile edit ───────────────────────────
-// Never accepts role/office/status/roleNumber — those stay admin-only
-// (PATCH /users/:id, requireRole("SUPER_ADMIN"), in users.routes.ts).
-const selfProfileSchema = z.object({
-  firstName: z.string().min(1).max(100).optional(),
-  lastName: z.string().min(0).max(100).optional(),
-  phone: z.string().max(30).nullable().optional(),
-  avatarUrl: z.string().url().nullable().optional(),
-  major: z.string().max(100).nullable().optional(),
-  graduationYear: z.number().int().min(1900).max(2200).nullable().optional(),
-});
-
-router.patch(
-  "/users/me",
-  asyncHandler(async (req: AuthedRequest, res: Response) => {
-    const parsed = selfProfileSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-
-    const { major, graduationYear, ...userFields } = parsed.data;
-
-    const operations: Prisma.PrismaPromise<unknown>[] = [
-      prisma.user.update({ where: { id: req.user!.id }, data: userFields }),
-    ];
-    if (req.user!.membershipId && (major !== undefined || graduationYear !== undefined)) {
-      operations.push(
-        prisma.chapterMembership.update({
-          where: { id: req.user!.membershipId },
-          data: {
-            ...(major !== undefined ? { major } : {}),
-            ...(graduationYear !== undefined ? { graduationYear } : {}),
-          },
-        })
-      );
-    }
-    await prisma.$transaction(operations);
-
-    const [updatedUser, membership, committeeMemberships] = await Promise.all([
-      prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } }),
-      req.user!.chapterId
-        ? prisma.chapterMembership.findUnique({
-            where: { chapterId_userId: { chapterId: req.user!.chapterId, userId: req.user!.id } },
-          })
-        : Promise.resolve(null),
-      prisma.committeeMembership.findMany({
-        where: { userId: req.user!.id },
-        include: { committee: { select: { id: true, name: true } } },
-      }),
-    ]);
-
-    await writeAuditLog({
-      actorId: req.user!.id,
-      action: "SELF_PROFILE_UPDATE",
-      entityType: "User",
-      entityId: req.user!.id,
-      after: parsed.data,
-    });
-
-    res.json({
-      user: {
-        ...flattenUser(updatedUser, membership, committeeMemberships.filter((m) => m.role === "CHAIR").map((m) => m.committeeId)),
-        committeeMemberships: committeeMemberships.map((m) => ({
-          committeeId: m.committeeId,
-          committeeName: m.committee.name,
-          role: m.role,
-        })),
-      },
-    });
-  })
-);
+// PATCH /users/me (self-service profile edit) used to live here. Moved to
+// users.routes.ts, registered before its generic PATCH /users/:id — both
+// routers mount under /api/v1, and Express matched requests to
+// /api/v1/users/me against usersRouter's PATCH /users/:id FIRST (it's
+// mounted earlier in server.ts, and ":id" happily binds to the literal
+// string "me"), which requires SUPER_ADMIN and never reached this handler
+// at all. Every non-admin editing major/graduation year/avatar got "Not
+// permitted" — a route ordering bug, not a permissions bug. See
+// users.routes.ts for the fix and the full handler.
 
 export default router;

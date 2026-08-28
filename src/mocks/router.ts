@@ -83,6 +83,10 @@ route("patch", "/users/me", (_p, _q, body) => ({ user: api.updateMyProfile(body)
 route("get", "/users/:id/family", (p) => api.getFamily(p.id));
 route("patch", "/users/:id/big", (p, _q, body) => ({ membership: api.setBig(p.id, body.bigUserId) }));
 route("patch", "/users/:id/role-number", (p, _q, body) => ({ membership: api.setRoleNumber(p.id, body.roleNumber) }));
+// Before /users/:id below — ":id" matches the literal "search" too, and
+// matchRoute() takes the first registration-order match (see its doc
+// comment above), same hazard as the real Express router.
+route("get", "/users/search", (_p, q) => ({ users: api.searchMembers(q.q ?? "") }));
 route("get", "/users/:id", (p) => ({ user: api.getMemberProfile(p.id) }));
 route("get", "/users", (_p, q) => api.getRoster(q));
 route("patch", "/users/:id/role", (p, _q, body) => ({ user: api.updateUserRole(p.id, body.role) }));

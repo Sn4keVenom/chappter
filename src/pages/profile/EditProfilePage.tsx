@@ -6,7 +6,7 @@
 // (PATCH /users/me) ignores them too, so this is defence in depth rather than
 // the only guard.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getMe, updateMyProfile } from "../../api/users";
@@ -17,6 +17,47 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Form";
 import { ErrorBanner, LoadingState } from "../../components/ui/Feedback";
+import styles from "./EditProfilePage.module.css";
+
+// There's no object storage behind this app yet (same placeholder gap as
+// documents.routes.ts) — a hosted-file upload would need a server endpoint,
+// storage, and a CDN path that don't exist. What CAN be done today without
+// any of that: resize the picked image down to a small square client-side
+// and store it as a data: URI in the existing avatarUrl column (already a
+// plain string — Zod's .url() and the Postgres column both already accept
+// one; see backend/routes/users.routes.ts selfProfileSchema). That's the
+// actual fix for "should be an upload, not a URL" — the member never sees or
+// types a URL again. If real hosted storage is added later, only this
+// function's return value needs to change; the rest of the form is unaware.
+//
+// AVATAR_SIZE is deliberately small — this becomes a base64 string sitting
+// in a plain Postgres TEXT column, not a dedicated blob store, so the goal
+// is "good enough for a 36-72px circular avatar," not photo quality.
+const AVATAR_SIZE = 256;
+const AVATAR_JPEG_QUALITY = 0.85;
+const MAX_SOURCE_FILE_BYTES = 15 * 1024 * 1024; // reject only genuinely absurd picks (RAW, TIFF, etc.)
+
+/** Center-crops to a square, downsamples to AVATAR_SIZE, and re-encodes as
+ * JPEG — so a 12-megapixel phone photo doesn't turn into a multi-MB row. */
+async function fileToAvatarDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  try {
+    const side = Math.min(bitmap.width, bitmap.height);
+    const sx = (bitmap.width - side) / 2;
+    const sy = (bitmap.height - side) / 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = AVATAR_SIZE;
+    canvas.height = AVATAR_SIZE;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas isn't supported in this browser.");
+    ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+
+    return canvas.toDataURL("image/jpeg", AVATAR_JPEG_QUALITY);
+  } finally {
+    bitmap.close();
+  }
+}
 
 export default function EditProfilePage() {
   const navigate = useNavigate();
@@ -35,6 +76,10 @@ export default function EditProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  const [avatarProcessing, setAvatarProcessing] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!me) return;
     setFirstName(me.firstName);
@@ -51,6 +96,32 @@ export default function EditProfilePage() {
         <LoadingState />
       </div>
     );
+  }
+
+  async function handleAvatarFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // lets picking the exact same file again re-fire onChange
+    if (!file) return;
+
+    setAvatarError(null);
+
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Choose an image file (JPEG, PNG, etc.).");
+      return;
+    }
+    if (file.size > MAX_SOURCE_FILE_BYTES) {
+      setAvatarError("That image is too large — choose one under 15MB.");
+      return;
+    }
+
+    setAvatarProcessing(true);
+    try {
+      setAvatarUrl(await fileToAvatarDataUrl(file));
+    } catch {
+      setAvatarError("Couldn't read that image — try a different file.");
+    } finally {
+      setAvatarProcessing(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -104,6 +175,41 @@ export default function EditProfilePage() {
 
       <Card>
         <form onSubmit={handleSubmit} noValidate>
+          <div className={styles.avatarRow}>
+            <span className={styles.avatarPreview} aria-hidden="true">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className={styles.avatarImg} />
+              ) : (
+                `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase() || "?"
+              )}
+            </span>
+            <div className={styles.avatarActions}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarFile}
+                className={styles.avatarFileInput}
+                id="avatar-file-input"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                busy={avatarProcessing}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {avatarUrl ? "Change photo" : "Upload photo"}
+              </Button>
+              {avatarUrl ? (
+                <Button type="button" variant="ghost" size="sm" onClick={() => setAvatarUrl("")}>
+                  Remove
+                </Button>
+              ) : null}
+              {avatarError ? <span className={styles.avatarError}>{avatarError}</span> : null}
+            </div>
+          </div>
+
           <Input
             label="First name"
             required
@@ -141,15 +247,6 @@ export default function EditProfilePage() {
             error={fieldErrors.graduationYear}
             placeholder="2027"
           />
-          <Input
-            label="Avatar image URL"
-            type="url"
-            value={avatarUrl}
-            onChange={(e) => setAvatarUrl(e.target.value)}
-            hint="Optional. Uploading a file isn't supported yet — paste a hosted image URL."
-            autoCapitalize="none"
-          />
-
           <div style={{ display: "grid", gap: "var(--space-2)", marginTop: "var(--space-6)" }}>
             <Button type="submit" variant="primary" block busy={saving}>
               Save changes

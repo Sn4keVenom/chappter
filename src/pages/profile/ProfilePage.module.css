@@ -53,8 +53,13 @@
 .row:hover { text-decoration: none; }
 
 .rowBody { flex: 1; min-width: 0; }
-.rowTitle { font-weight: 600; }
-.rowMeta { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 2px; }
+/* Both are <span>s (inline by default) with only whitespace between them in
+   JSX, which React collapses to nothing — without an explicit block display
+   they run together on one line with no space at all, e.g. "Bylaws3 files"
+   (see DocumentsPage.tsx's category rows, and every other screen reusing
+   this row pattern: committee members, roster, budgets, etc.). */
+.rowTitle { display: block; font-weight: 600; }
+.rowMeta { display: block; font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 2px; }
 .rowValue { font-weight: 800; flex: none; }
 
 .duesRow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }

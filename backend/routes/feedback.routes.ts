@@ -24,7 +24,11 @@ const submitSchema = z.object({
   type: z.enum(["BUG", "FEATURE_REQUEST", "GENERAL"]),
   message: z.string().min(1).max(2000),
   appVersion: z.string().max(20),
-  platform: z.string().max(20),
+  // The web client sends navigator.userAgent here (FeedbackPage.tsx), not a
+  // short platform name — a full UA string is easily 80-150+ characters.
+  // max(20) rejected every real submission with a 400, which is why this
+  // silently failed 100% of the time.
+  platform: z.string().max(500),
 });
 
 router.post(
