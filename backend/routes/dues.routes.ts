@@ -23,7 +23,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { recalcDuesStatus } from "../lib/dues.helpers";
-import { AuthedRequest, requireRole, writeAuditLog } from "../middleware/rbac";
+import { AuthedRequest, requirePermission, writeAuditLog } from "../middleware/rbac";
 
 const router = Router();
 
@@ -47,7 +47,7 @@ router.get(
 // ── GET /dues — all members, Exec+ ────────────────────────────────────────
 router.get(
   "/dues",
-  requireRole("EXEC"),
+  requirePermission("dues.manage"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { semesterId, status } = req.query;
 
@@ -83,24 +83,42 @@ router.get(
 );
 
 // ── POST /dues/initialize — bulk-create DuesRecords for a semester ────────
+// amountOwed/plan are OPTIONAL: both fall back to the chapter's configured
+// defaults (ChapterSettings.defaultDuesAmount / defaultDuesPlan) so the
+// Treasurer can bill everyone without retyping the number every term, while
+// still being able to override it for a one-off.
 const initSchema = z.object({
   semesterId: z.string(),
-  amountOwed: z.number().positive(),
+  amountOwed: z.number().positive().optional(),
+  plan: z.enum(["FULL", "MONTHLY"]).optional(),
   dueDate: z.string().datetime().optional(),
   userIds: z.array(z.string()).min(1).optional(),
 });
 
 router.post(
   "/dues/initialize",
-  requireRole("EXEC"),
+  requirePermission("dues.manage"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = initSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const { semesterId, amountOwed, dueDate, userIds } = parsed.data;
+    const { semesterId, dueDate, userIds } = parsed.data;
 
     const semester = await prisma.semester.findUnique({ where: { id: semesterId } });
     if (!semester) return res.status(404).json({ error: "Semester not found" });
+
+    const settings = await prisma.chapterSettings.findUnique({
+      where: { chapterId: req.user!.chapterId! },
+    });
+    const amountOwed = parsed.data.amountOwed ?? (settings ? Number(settings.defaultDuesAmount) : undefined);
+    if (amountOwed === undefined) {
+      return res.status(400).json({
+        error: "No amount given and no chapter default is set — set one in Chapter Settings first.",
+      });
+    }
+    const plan =
+      parsed.data.plan ??
+      (settings?.defaultDuesPlan === "MONTHLY" ? "MONTHLY" : "FULL");
 
     // status lives on ChapterMembership now, not User (see schema.prisma
     // doc comment) — default target set is ACTIVE/PNM members of the
@@ -135,6 +153,7 @@ router.post(
         userId,
         semesterId,
         amountOwed,
+        plan,
         dueDate: dueDate ? new Date(dueDate) : null,
         status: "UNPAID",
       })),
@@ -163,7 +182,7 @@ const paymentSchema = z.object({
 
 router.post(
   "/dues/:userId/payment",
-  requireRole("EXEC"),
+  requirePermission("dues.manage"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = paymentSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -222,7 +241,7 @@ const waiveSchema = z.object({
 
 router.post(
   "/dues/:userId/waive",
-  requireRole("EXEC"),
+  requirePermission("dues.manage"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = waiveSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -261,7 +280,7 @@ const remindersSchema = z.object({ semesterId: z.string() });
 
 router.post(
   "/dues/reminders/send",
-  requireRole("EXEC"),
+  requirePermission("dues.manage"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = remindersSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -298,6 +317,74 @@ router.post(
         amountPaid: r.amountPaid,
       })),
     });
+  })
+);
+
+// ── PATCH /dues/:userId — manage ONE member's dues record ─────────────────
+// The per-member half of the request: everyone is billed the chapter default
+// by POST /dues/initialize, and this is how a single person is moved onto
+// instalments, given a different amount, or a different due date, without
+// touching anyone else. Creates the record if the member was missed by the
+// bulk run, so there's no "initialize first" ordering trap.
+const manageSchema = z.object({
+  semesterId: z.string(),
+  amountOwed: z.number().positive().optional(),
+  plan: z.enum(["FULL", "MONTHLY"]).nullable().optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+});
+
+router.patch(
+  "/dues/:userId",
+  requirePermission("dues.manage"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = manageSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    // Same chapter-scoping as every other dues route — DuesRecord has no
+    // chapterId of its own, so membership is the check.
+    const membership = await prisma.chapterMembership.findUnique({
+      where: { chapterId_userId: { chapterId: req.user!.chapterId!, userId: req.params.userId } },
+    });
+    if (!membership) return res.status(404).json({ error: "Member not found in your chapter" });
+
+    const { semesterId, amountOwed, plan, dueDate } = parsed.data;
+
+    const settings = await prisma.chapterSettings.findUnique({
+      where: { chapterId: req.user!.chapterId! },
+    });
+    const fallbackAmount = settings ? Number(settings.defaultDuesAmount) : 0;
+
+    const record = await prisma.duesRecord.upsert({
+      where: { userId_semesterId: { userId: req.params.userId, semesterId } },
+      update: {
+        ...(amountOwed !== undefined ? { amountOwed } : {}),
+        ...(plan !== undefined ? { plan } : {}),
+        ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(dueDate) : null } : {}),
+      },
+      create: {
+        userId: req.params.userId,
+        semesterId,
+        amountOwed: amountOwed ?? fallbackAmount,
+        plan: plan ?? (settings?.defaultDuesPlan === "MONTHLY" ? "MONTHLY" : "FULL"),
+        dueDate: dueDate ? new Date(dueDate) : null,
+        status: "UNPAID",
+      },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
+        semester: { select: { id: true, label: true } },
+        payments: { orderBy: { paidAt: "desc" } },
+      },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "DUES_RECORD_UPDATED",
+      entityType: "DuesRecord",
+      entityId: record.id,
+      after: parsed.data,
+    });
+
+    res.json({ record });
   })
 );
 

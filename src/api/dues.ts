@@ -59,12 +59,30 @@ export async function waiveDues(
 
 export async function initializeSemesterDues(payload: {
   semesterId: string;
-  amountOwed: number;
+  /** Omit to bill the chapter's configured default (Chapter Settings). */
+  amountOwed?: number;
+  plan?: DuesPlan;
   dueDate?: string;
   userIds?: string[];
 }): Promise<{ created: number; total: number }> {
   const { data } = await apiClient.post("/dues/initialize", payload);
   return data;
+}
+
+/** Manage ONE member's dues — a different amount, a monthly plan, or a
+ * different due date, without touching anyone else. Creates the record if
+ * the bulk run missed them. */
+export async function updateMemberDues(
+  userId: string,
+  payload: {
+    semesterId: string;
+    amountOwed?: number;
+    plan?: DuesPlan | null;
+    dueDate?: string | null;
+  }
+): Promise<DuesRecord> {
+  const { data } = await apiClient.patch<{ record: DuesRecord }>(`/dues/${userId}`, payload);
+  return data.record;
 }
 
 export async function sendDuesReminders(semesterId: string): Promise<{

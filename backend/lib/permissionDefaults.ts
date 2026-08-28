@@ -46,6 +46,8 @@ export const DEFAULT_PRESETS: Record<(typeof EDITABLE_ROLES)[number], string[]> 
 // expressed here, not as an `office === "SCRIBE"` check in membership.routes.ts.
 export const DEFAULT_OFFICE_PRESETS: Partial<Record<(typeof EDITABLE_OFFICES)[number], string[]>> = {
   SCRIBE: ["membership.assignRoleNumber"],
+  // The Treasurer runs dues whether or not they hold the Exec role.
+  TREASURER: ["dues.manage", "finance.manage"],
   // Chapter-wide announcements are narrower than Exec — only the two offices
   // that speak for the chapter. Mirrors src/permissions/permissions.ts.
   REGENT: ["messaging.announce"],

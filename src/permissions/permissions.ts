@@ -93,6 +93,8 @@ export function defaultRolePermissions(): Record<UserRole, Permission[]> {
 
 export const DEFAULT_OFFICE_PRESETS: Partial<Record<ExecOffice, Permission[]>> = {
   SCRIBE: ["membership.assignRoleNumber"],
+  // The Treasurer runs dues whether or not they hold the Exec role.
+  TREASURER: ["dues.manage", "finance.manage"],
   // Announcing to the whole chapter (a pinned message in #general, which the
   // home dashboard surfaces) is deliberately narrower than Exec: the two
   // offices that speak for the chapter, not every board member.

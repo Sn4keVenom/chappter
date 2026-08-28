@@ -1789,9 +1789,12 @@ export function waiveDues(userId: string, semesterId: string, reason: string): D
   return toDuesRecord(record);
 }
 
+// amountOwed/plan fall back to the chapter's configured defaults, matching
+// POST /dues/initialize on the real backend.
 export function initializeSemesterDues(payload: {
   semesterId: string;
-  amountOwed: number;
+  amountOwed?: number;
+  plan?: DuesPlan;
   dueDate?: string;
   userIds?: string[];
 }): { created: number; total: number } {
@@ -1800,6 +1803,9 @@ export function initializeSemesterDues(payload: {
     ? payload.userIds
     : db.users.filter((u) => u.status === "ACTIVE" || u.status === "PNM").map((u) => u.id);
 
+  const amountOwed = payload.amountOwed ?? db.chapterSettings.defaultDuesAmount;
+  const plan = payload.plan ?? (db.chapterSettings.defaultDuesPlan as DuesPlan);
+
   let created = 0;
   for (const userId of targets) {
     if (db.findDuesRecord(userId, payload.semesterId)) continue;
@@ -1807,14 +1813,46 @@ export function initializeSemesterDues(payload: {
       id: db.nextId("dues"),
       userId,
       semesterId: payload.semesterId,
-      amountOwed: payload.amountOwed,
+      amountOwed,
       amountPaid: 0,
       status: "UNPAID",
+      plan,
       dueDate: payload.dueDate ?? null,
     });
     created += 1;
   }
   return { created, total: targets.length };
+}
+
+// Mirrors PATCH /dues/:userId — the per-member half: one person moved onto
+// instalments or given a different amount, without touching anyone else.
+export function updateMemberDues(
+  userId: string,
+  payload: { semesterId: string; amountOwed?: number; plan?: DuesPlan | null; dueDate?: string | null }
+): DuesRecord {
+  if (!can(getCurrentDemoUserId(), "dues.manage")) throw new DemoApiError(403, "Not authorized to manage dues");
+  const user = db.findUser(userId);
+  if (!user) throw new DemoApiError(404, "Member not found");
+
+  let record = db.findDuesRecord(userId, payload.semesterId);
+  if (!record) {
+    record = {
+      id: db.nextId("dues"),
+      userId,
+      semesterId: payload.semesterId,
+      amountOwed: payload.amountOwed ?? db.chapterSettings.defaultDuesAmount,
+      amountPaid: 0,
+      status: "UNPAID",
+      plan: payload.plan ?? (db.chapterSettings.defaultDuesPlan as DuesPlan),
+      dueDate: payload.dueDate ?? null,
+    };
+    db.duesRecords.push(record);
+  } else {
+    if (payload.amountOwed !== undefined) record.amountOwed = payload.amountOwed;
+    if (payload.plan !== undefined) record.plan = payload.plan;
+    if (payload.dueDate !== undefined) record.dueDate = payload.dueDate;
+  }
+  return toDuesRecord(record);
 }
 
 export function sendDuesReminders(semesterId: string): {

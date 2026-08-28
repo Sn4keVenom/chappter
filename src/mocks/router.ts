@@ -139,6 +139,7 @@ route("post", "/dues/initialize", (_p, _q, body) => api.initializeSemesterDues(b
 route("post", "/dues/reminders/send", (_p, _q, body) => api.sendDuesReminders(body.semesterId));
 route("post", "/dues/pay-pyli", (_p, _q, body) => api.payDuesWithPyli(body));
 route("post", "/dues/:userId/payment", (p, _q, body) => api.recordPayment(p.userId, body));
+route("patch", "/dues/:userId", (p, _q, body) => ({ record: api.updateMemberDues(p.userId, body) }));
 route("post", "/dues/:userId/waive", (p, _q, body) => api.waiveDues(p.userId, body.semesterId, body.reason));
 
 // Committee budgets & reimbursements (Feature 5 — tracking only)
