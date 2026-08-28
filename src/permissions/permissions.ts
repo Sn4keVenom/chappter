@@ -98,8 +98,8 @@ export const DEFAULT_OFFICE_PRESETS: Partial<Record<ExecOffice, Permission[]>> =
   // Announcing to the whole chapter (a pinned message in #general, which the
   // home dashboard surfaces) is deliberately narrower than Exec: the two
   // offices that speak for the chapter, not every board member.
-  REGENT: ["messaging.announce"],
-  VICE_REGENT: ["messaging.announce"],
+  REGENT: ["messaging.announce", "achievements.manage"],
+  VICE_REGENT: ["messaging.announce", "achievements.manage"],
 };
 
 export function defaultOfficePermissions(): Partial<Record<ExecOffice, Permission[]>> {
@@ -184,6 +184,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "messaging.moderate": "Moderate messages (pin/delete others')",
   "messaging.manageChannels": "Create & archive channels",
   "messaging.announce": "Post chapter announcements",
+  "achievements.manage": "Customize achievement badges",
   "committees.manage": "Manage committees",
   "dues.manage": "Manage dues",
   "finance.manage": "Manage committee budgets & reimbursements",

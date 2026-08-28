@@ -1,14 +1,17 @@
 // src/utils/achievements.ts
 //
-// Pure client-side computation of achievement badges from data the app
-// already fetches (points ledger, attendance, dues, committees) — there is
-// no Achievement model in schema.prisma and no new API endpoint here. This
-// works identically in Demo Mode and against the real backend, since it
-// only ever looks at data shaped by the existing types/index.ts contracts.
+// Evaluates a chapter's achievement badges against data the profile already
+// fetches (points ledger, attendance, dues, committees).
 //
-// Rendered by ProfileScreen as a row of chips.
+// The DEFINITIONS now come from the server (GET /achievements) so a chapter
+// can retune thresholds and add its own badges — "5+ events" is trivial for
+// one chapter and unreachable for another. What stayed here is the
+// evaluation: it's pure, needs no extra round-trip, and works identically in
+// Demo Mode and against the real backend.
+//
+// Rendered by ProfilePage as a row of chips.
 
-import type { DuesStatus } from "../types";
+import type { AchievementDefinition, DuesStatus } from "../types";
 
 export interface Achievement {
   id: string;
@@ -28,63 +31,49 @@ export interface AchievementInput {
   committeeCount: number;
 }
 
-export function computeAchievements(input: AchievementInput): Achievement[] {
-  return [
-    {
-      id: "first-checkin",
-      icon: "✓",
-      label: "First Check-In",
-      description: "Checked in to your first event",
-      earned: input.attendanceCount >= 1,
-    },
-    {
-      id: "regular",
-      icon: "🔥",
-      label: "Regular",
-      description: "Attended 5+ events this semester",
-      earned: input.attendanceCount >= 5,
-    },
-    {
-      id: "never-late",
-      icon: "🏅",
-      label: "Never Late",
-      description: "3+ check-ins, always on time",
-      earned: input.attendanceCount >= 3 && input.lateCount === 0,
-    },
-    {
-      id: "top-3",
-      icon: "🥇",
-      label: "Top 3",
-      description: "Ranked in the top 3 this semester",
-      earned: input.rank != null && input.rank <= 3,
-    },
-    {
-      id: "century",
-      icon: "💯",
-      label: "Century Club",
-      description: "Earned 100+ points this semester",
-      earned: input.totalPoints >= 100,
-    },
-    {
-      id: "dues-settled",
-      icon: "💳",
-      label: "Dues Settled",
-      description: "Dues fully paid or waived",
-      earned: input.duesStatus === "PAID" || input.duesStatus === "WAIVED",
-    },
-    {
-      id: "committed",
-      icon: "⬡",
-      label: "Committed",
-      description: "Active on a chapter committee",
-      earned: input.committeeCount >= 1,
-    },
-    {
-      id: "recognized",
-      icon: "⭐",
-      label: "Recognized",
-      description: "Received a bonus points award",
-      earned: input.bonusCount >= 1,
-    },
-  ];
+/** Whether one definition is earned. Most metrics are "this number reached
+ * the threshold"; RANK_AT_MOST inverts the comparison (lower is better) and
+ * the two compound ones carry the logic the original hardcoded badges had. */
+function isEarned(def: AchievementDefinition, input: AchievementInput): boolean {
+  switch (def.metric) {
+    case "ATTENDANCE_COUNT":
+      return input.attendanceCount >= def.threshold;
+    case "TOTAL_POINTS":
+      return input.totalPoints >= def.threshold;
+    case "BONUS_COUNT":
+      return input.bonusCount >= def.threshold;
+    case "COMMITTEE_COUNT":
+      return input.committeeCount >= def.threshold;
+    case "RANK_AT_MOST":
+      return input.rank != null && input.rank <= def.threshold;
+    case "NEVER_LATE_AFTER":
+      return input.attendanceCount >= def.threshold && input.lateCount === 0;
+    case "DUES_SETTLED":
+      return input.duesStatus === "PAID" || input.duesStatus === "WAIVED";
+    default:
+      // An unknown metric from a newer backend shouldn't award a badge —
+      // and shouldn't throw either.
+      return false;
+  }
+}
+
+/**
+ * `definitions` is optional so a caller that hasn't loaded them yet (or is
+ * offline) renders no badges rather than crashing — the profile treats an
+ * empty list as "no achievements section", which is the same thing it did
+ * before any were earned.
+ */
+export function computeAchievements(
+  input: AchievementInput,
+  definitions: AchievementDefinition[] = []
+): Achievement[] {
+  return definitions
+    .filter((def) => def.enabled)
+    .map((def) => ({
+      id: def.id,
+      icon: def.icon,
+      label: def.label,
+      description: def.description,
+      earned: isEarned(def, input),
+    }));
 }

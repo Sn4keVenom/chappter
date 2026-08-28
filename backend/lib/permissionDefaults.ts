@@ -50,8 +50,8 @@ export const DEFAULT_OFFICE_PRESETS: Partial<Record<(typeof EDITABLE_OFFICES)[nu
   TREASURER: ["dues.manage", "finance.manage"],
   // Chapter-wide announcements are narrower than Exec — only the two offices
   // that speak for the chapter. Mirrors src/permissions/permissions.ts.
-  REGENT: ["messaging.announce"],
-  VICE_REGENT: ["messaging.announce"],
+  REGENT: ["messaging.announce", "achievements.manage"],
+  VICE_REGENT: ["messaging.announce", "achievements.manage"],
 };
 
 /** Idempotent — safe to call on every boot/seed run, and safe to call

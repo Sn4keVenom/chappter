@@ -162,6 +162,20 @@ enum PaymentMethod {
   OTHER
 }
 
+// What an achievement measures. Most are "this number reached the
+// threshold"; the two compound ones are called out because the original
+// hardcoded badges (src/utils/achievements.ts) included them and dropping
+// them to fit a tidier model would have quietly removed two badges.
+enum AchievementMetric {
+  ATTENDANCE_COUNT // events checked in to, >= threshold
+  TOTAL_POINTS     // semester points, >= threshold
+  BONUS_COUNT      // bonus awards received, >= threshold
+  COMMITTEE_COUNT  // committees joined, >= threshold
+  RANK_AT_MOST     // leaderboard rank, <= threshold (lower is better)
+  NEVER_LATE_AFTER // >= threshold check-ins AND zero late ones
+  DUES_SETTLED     // dues PAID or WAIVED (threshold unused)
+}
+
 enum ReimbursementStatus {
   SUBMITTED
   APPROVED
@@ -295,6 +309,7 @@ model Chapter {
   joinRequests    ChapterJoinRequest[]
   rosterEntries   ChapterRosterEntry[]
   teams           Team[]
+  achievements    Achievement[]
   // Users whose activeChapterId currently points here — not "all members"
   // (that's memberships above), just whichever users have this chapter
   // selected as their current context.
@@ -948,4 +963,42 @@ model Expense {
 
   @@index([committeeId, status])
   @@index([submittedById])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Achievements
+// ─────────────────────────────────────────────────────────────────────────
+
+// Badges shown on a member's profile. Previously these were hardcoded in
+// src/utils/achievements.ts with fixed thresholds, so a chapter could
+// neither retune them ("5 events" might be far too low for one chapter and
+// unreachable for another) nor add its own. Now chapter-owned rows: the
+// evaluation logic still lives client-side and runs against data already
+// fetched, but WHAT it evaluates is data, not code.
+//
+// Seeded per chapter from the original eight defaults, so behaviour is
+// unchanged until someone edits them — and "reset" restores exactly those.
+model Achievement {
+  id          String            @id @default(cuid())
+  chapterId   String
+  // Stable identifier for the seeded defaults ("first-checkin", "century",
+  // …) so a reset can match them up. Null for chapter-invented ones.
+  key         String?
+  label       String
+  description String
+  icon        String
+  metric      AchievementMetric
+  // The number the metric is compared against. Unused by DUES_SETTLED.
+  threshold   Int               @default(1)
+  // Hidden rather than deleted, so a badge can be retired without breaking
+  // the profiles of members who already display it.
+  enabled     Boolean           @default(true)
+  sortOrder   Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  chapter Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  @@unique([chapterId, key])
+  @@index([chapterId, sortOrder])
 }

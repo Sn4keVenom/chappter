@@ -132,6 +132,13 @@ route("delete", "/messages/:id", (p) => {
   return {};
 });
 
+// Achievements (chapter-customizable badges)
+route("get", "/achievements", () => ({ achievements: api.listAchievements() }));
+route("post", "/achievements/reset", () => ({ achievements: api.resetAchievements() }));
+route("post", "/achievements", (_p, _q, body) => ({ achievement: api.createAchievement(body) }));
+route("patch", "/achievements/:id", (p, _q, body) => ({ achievement: api.updateAchievement(p.id, body) }));
+route("delete", "/achievements/:id", (p) => api.deleteAchievement(p.id));
+
 // Dues
 route("get", "/dues/me", () => ({ records: api.getMyDues() }));
 route("get", "/dues", (_p, q) => api.getAllDues(q));

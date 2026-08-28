@@ -84,6 +84,9 @@ export const ALL_PERMISSIONS = [
   // role — see DEFAULT_OFFICE_PRESETS in permissions/permissions.ts.
   "messaging.manageChannels",
   "messaging.announce",
+  // Editing the chapter's achievement badges — granted by office to
+  // Regent/Vice Regent, not to Exec at large.
+  "achievements.manage",
   "committees.manage",
   "dues.manage",
   "finance.manage",
@@ -623,6 +626,30 @@ export interface TeamLeaderboardEntry {
 // ─────────────────────────────────────────────────────────────────────────
 // Dues & Payments
 // ─────────────────────────────────────────────────────────────────────────
+
+export type AchievementMetric =
+  | "ATTENDANCE_COUNT"
+  | "TOTAL_POINTS"
+  | "BONUS_COUNT"
+  | "COMMITTEE_COUNT"
+  | "RANK_AT_MOST"
+  | "NEVER_LATE_AFTER"
+  | "DUES_SETTLED";
+
+/** A chapter's badge definition. Evaluated client-side by
+ * utils/achievements.ts against data the profile already has. */
+export interface AchievementDefinition {
+  id: string;
+  /** Set for the eight shipped defaults, null for a chapter's own. */
+  key?: string | null;
+  label: string;
+  description: string;
+  icon: string;
+  metric: AchievementMetric;
+  threshold: number;
+  enabled: boolean;
+  sortOrder: number;
+}
 
 export interface DuesRecord {
   id: string;

@@ -2250,3 +2250,55 @@ export function getAuditLog(params: {
     limit,
   };
 }
+
+// ── Achievements ──────────────────────────────────────────────────────────
+// Mirrors backend/routes/achievements.routes.ts. Editing is
+// achievements.manage (Regent/Vice Regent by office); reading is open.
+
+export function listAchievements(): db.MockAchievement[] {
+  return [...db.achievements].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+export function createAchievement(payload: Omit<db.MockAchievement, "id" | "key">): db.MockAchievement {
+  if (!can(getCurrentDemoUserId(), "achievements.manage")) {
+    throw new DemoApiError(403, "Only the Regent or Vice Regent can edit achievements");
+  }
+  const achievement: db.MockAchievement = { ...payload, id: db.nextId("ach"), key: null };
+  db.achievements.push(achievement);
+  return achievement;
+}
+
+export function updateAchievement(id: string, payload: Partial<db.MockAchievement>): db.MockAchievement {
+  if (!can(getCurrentDemoUserId(), "achievements.manage")) {
+    throw new DemoApiError(403, "Only the Regent or Vice Regent can edit achievements");
+  }
+  const a = db.achievements.find((x) => x.id === id);
+  if (!a) throw new DemoApiError(404, "Achievement not found");
+  Object.assign(a, payload);
+  return a;
+}
+
+export function deleteAchievement(id: string): { deleted?: true; achievement?: db.MockAchievement } {
+  if (!can(getCurrentDemoUserId(), "achievements.manage")) {
+    throw new DemoApiError(403, "Only the Regent or Vice Regent can edit achievements");
+  }
+  const index = db.achievements.findIndex((x) => x.id === id);
+  if (index === -1) throw new DemoApiError(404, "Achievement not found");
+  // A shipped default is disabled rather than removed — reset re-creates it
+  // anyway, same as the real route.
+  if (db.achievements[index].key) {
+    db.achievements[index].enabled = false;
+    return { achievement: db.achievements[index] };
+  }
+  db.achievements.splice(index, 1);
+  return { deleted: true };
+}
+
+export function resetAchievements(): db.MockAchievement[] {
+  if (!can(getCurrentDemoUserId(), "achievements.manage")) {
+    throw new DemoApiError(403, "Only the Regent or Vice Regent can edit achievements");
+  }
+  db.achievements.length = 0;
+  db.achievements.push(...db.DEFAULT_ACHIEVEMENTS.map((a, i) => ({ ...a, id: `ach_${i + 1}` })));
+  return listAchievements();
+}

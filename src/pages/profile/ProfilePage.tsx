@@ -12,6 +12,7 @@ import { getLeaderboard, getMe, getPointsLedger } from "../../api/users";
 import { getMyDues, payDuesWithPyli } from "../../api/dues";
 import { getMyAttendanceHistory } from "../../api/attendance";
 import { computeAchievements } from "../../utils/achievements";
+import { listAchievements } from "../../api/achievements";
 import { useAsync } from "../../hooks/useAsync";
 import { useModulesStore } from "../../store/useModulesStore";
 import { PageHeader, Section } from "../../components/PageHeader";
@@ -110,11 +111,14 @@ export default function ProfilePage() {
   const [payOpen, setPayOpen] = useState(false);
 
   const { data, loading, error, reload } = useAsync(async () => {
-    const [me, duesRecords, history, board] = await Promise.all([
+    const [me, duesRecords, history, board, achievementDefs] = await Promise.all([
       getMe(),
       getMyDues(),
       getMyAttendanceHistory({ limit: 5 }),
       getLeaderboard(),
+      // Chapter-defined badges. Failing soft: an older backend without the
+      // route shouldn't take the whole profile down over a chip row.
+      listAchievements().catch(() => []),
     ]);
     const self = board.leaderboard.find((entry) => entry.userId === me.id);
     const ledger = await getPointsLedger(me.id, { limit: 200 });
@@ -126,15 +130,18 @@ export default function ProfilePage() {
       rank: self?.rank ?? null,
       total: self?.total ?? 0,
       semesterLabel: board.semesterLabel,
-      achievements: computeAchievements({
-        totalPoints: self?.total ?? 0,
-        rank: self?.rank ?? null,
-        attendanceCount: ledger.entries.filter((e) => e.type === "ATTENDANCE").length,
-        lateCount: history.records.filter((r) => r.late).length,
-        bonusCount: ledger.entries.filter((e) => e.type === "BONUS").length,
-        duesStatus: duesRecords[0]?.status ?? null,
-        committeeCount: me.committeeMemberships?.length ?? 0,
-      }),
+      achievements: computeAchievements(
+        {
+          totalPoints: self?.total ?? 0,
+          rank: self?.rank ?? null,
+          attendanceCount: ledger.entries.filter((e) => e.type === "ATTENDANCE").length,
+          lateCount: history.records.filter((r) => r.late).length,
+          bonusCount: ledger.entries.filter((e) => e.type === "BONUS").length,
+          duesStatus: duesRecords[0]?.status ?? null,
+          committeeCount: me.committeeMemberships?.length ?? 0,
+        },
+        achievementDefs
+      ),
     };
   }, []);
 

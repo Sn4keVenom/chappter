@@ -914,3 +914,34 @@ let rosterEntryIdCounter = chapterRosterEntries.length + 1;
 export function nextRosterEntryId(): string {
   return `roster${rosterEntryIdCounter++}`;
 }
+
+// ── Achievements ──────────────────────────────────────────────────────────
+// Mirrors backend/lib/achievementDefaults.ts — the eight shipped badges, as
+// editable data rather than hardcoded logic.
+export interface MockAchievement {
+  id: string;
+  key: string | null;
+  label: string;
+  description: string;
+  icon: string;
+  metric: string;
+  threshold: number;
+  enabled: boolean;
+  sortOrder: number;
+}
+
+export const DEFAULT_ACHIEVEMENTS: Omit<MockAchievement, "id">[] = [
+  { key: "first-checkin", icon: "✓",  label: "First Check-In", description: "Checked in to your first event",   metric: "ATTENDANCE_COUNT", threshold: 1,   enabled: true, sortOrder: 0 },
+  { key: "regular",       icon: "🔥", label: "Regular",        description: "Attended 5+ events this semester",  metric: "ATTENDANCE_COUNT", threshold: 5,   enabled: true, sortOrder: 1 },
+  { key: "never-late",    icon: "🏅", label: "Never Late",     description: "3+ check-ins, always on time",      metric: "NEVER_LATE_AFTER", threshold: 3,   enabled: true, sortOrder: 2 },
+  { key: "top-3",         icon: "🥇", label: "Top 3",          description: "Ranked in the top 3 this semester", metric: "RANK_AT_MOST",     threshold: 3,   enabled: true, sortOrder: 3 },
+  { key: "century",       icon: "💯", label: "Century Club",   description: "Earned 100+ points this semester",  metric: "TOTAL_POINTS",     threshold: 100, enabled: true, sortOrder: 4 },
+  { key: "dues-settled",  icon: "💳", label: "Dues Settled",   description: "Dues fully paid or waived",         metric: "DUES_SETTLED",     threshold: 1,   enabled: true, sortOrder: 5 },
+  { key: "committed",     icon: "⬡",  label: "Committed",      description: "Active on a chapter committee",     metric: "COMMITTEE_COUNT",  threshold: 1,   enabled: true, sortOrder: 6 },
+  { key: "recognized",    icon: "⭐", label: "Recognized",     description: "Received a bonus points award",     metric: "BONUS_COUNT",      threshold: 1,   enabled: true, sortOrder: 7 },
+];
+
+export const achievements: MockAchievement[] = DEFAULT_ACHIEVEMENTS.map((a, i) => ({
+  ...a,
+  id: `ach_${i + 1}`,
+}));

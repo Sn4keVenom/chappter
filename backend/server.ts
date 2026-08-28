@@ -70,6 +70,7 @@ import membershipRouter from "./routes/membership.routes";
 import auditLogRouter from "./routes/auditlog.routes";
 import teamsRouter from "./routes/teams.routes";
 import financeRouter from "./routes/finance.routes";
+import achievementsRouter from "./routes/achievements.routes";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -194,6 +195,7 @@ app.use("/api/v1", membershipRouter);
 app.use("/api/v1", auditLogRouter);
 app.use("/api/v1", teamsRouter);
 app.use("/api/v1", financeRouter);
+app.use("/api/v1", achievementsRouter);
 
 // ── 11. 404 for anything unmatched ──────────────────────────────────────────
 app.use((req, res) => {
