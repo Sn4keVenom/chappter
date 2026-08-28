@@ -15,6 +15,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requirePermission, writeAuditLog } from "../middleware/rbac";
+import { reconcileRosterClaims } from "../lib/rosterClaim";
 
 const router = Router();
 
@@ -199,6 +200,12 @@ router.patch(
         before: { roleNumber: target.roleNumber },
         after: { roleNumber: updated.roleNumber },
       });
+
+      // Assigning a number by hand is one of the ways someone ends up
+      // holding a roster entry's number without the entry ever being marked
+      // claimed — reconcile so the roster verification screen reflects it
+      // straight away. See lib/rosterClaim.ts.
+      await reconcileRosterClaims(prisma, chapterId);
 
       res.json({ membership: updated });
     } catch (err) {

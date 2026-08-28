@@ -24,6 +24,7 @@ import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requireRole, requirePermission, writeAuditLog } from "../middleware/rbac";
 import { flattenUser } from "../lib/userSerializer";
+import { reconcileRosterClaims } from "../lib/rosterClaim";
 
 const router = Router();
 
@@ -218,6 +219,16 @@ router.get(
   requirePermission("chapters.manageInvites"),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     if (!requireOwnChapter(req, res)) return;
+
+    // Reconcile before reading. Claiming is otherwise only written by the
+    // signup path (POST /chapters/claim-role-number), so anyone who joined
+    // by invite code, plain join request, or who had a role number assigned
+    // by hand left their row reading "Unclaimed" permanently. Doing it here
+    // means the screen that shows the column is also the one that corrects
+    // it — including for members who joined before this existed — rather
+    // than needing a one-off backfill script. Idempotent and a no-op once
+    // everything matches, so the repeat cost is one indexed query.
+    await reconcileRosterClaims(prisma, req.params.id);
 
     const rosterEntries = await prisma.chapterRosterEntry.findMany({
       where: { chapterId: req.params.id },
@@ -638,6 +649,11 @@ router.patch(
             data: { activeChapterId: joinRequest.chapterId },
           });
         }
+        // The new membership may match a roster entry — claim it now (and
+        // fill in a role number if the match was by name), rather than
+        // leaving it until someone opens the roster screen.
+        await reconcileRosterClaims(tx, joinRequest.chapterId);
+
         return { reviewed, membership };
       }
       return { reviewed, membership: null };

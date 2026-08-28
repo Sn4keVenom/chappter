@@ -510,7 +510,14 @@ export interface EventDetail extends EventSummary {
   // Members delegated by the event creator/committee chair to generate this
   // event's check-in code without needing general attendance-management
   // access (see Feature 3 — event-scoped delegation).
-  attendanceDelegates: EventDelegate[];
+  //
+  // OPTIONAL because the real backend does not return it: delegation exists
+  // in Demo Mode's mock only — there is no EventDelegate table and no
+  // POST/DELETE /events/:id/delegates route yet. Typing it as required made
+  // `event.attendanceDelegates.length` a hard crash on every event detail
+  // page against the real API. Every read must stay optional-safe until the
+  // backend half is built.
+  attendanceDelegates?: EventDelegate[];
 }
 
 export interface EventDelegate {

@@ -221,7 +221,11 @@ export default function EventDetailPage() {
             </Section>
           ) : null}
 
-          {canManage && event.attendanceDelegates.length >= 0 ? (
+          {/* `.length >= 0` was always true for any array, so this only ever
+              meant `canManage` — and it threw outright when the backend
+              omitted the field entirely (it has no delegates route yet).
+              Hide the section when delegation isn't available at all. */}
+          {canManage && event.attendanceDelegates ? (
             <Section title="Check-in delegates">
               <Card>
                 <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)", marginBottom: "var(--space-3)" }}>
