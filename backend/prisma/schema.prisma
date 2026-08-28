@@ -263,6 +263,7 @@ model Chapter {
   invites         ChapterInvite[]
   joinRequests    ChapterJoinRequest[]
   rosterEntries   ChapterRosterEntry[]
+  teams           Team[]
   // Users whose activeChapterId currently points here — not "all members"
   // (that's memberships above), just whichever users have this chapter
   // selected as their current context.
@@ -297,6 +298,11 @@ model ChapterMembership {
   // Provenance: which membership invited (via invite code) or approved
   // (via join request) this one — optional, not enforced, just historical.
   invitedById      String?
+  // Gamification team (see Team model below) — NOT a committee: no chair,
+  // and a member belongs to at most one (reassigning replaces it, it doesn't
+  // add a second). Chapter-scoped like role/office/status/major above,
+  // rather than living on User, for the same reason all of those moved here.
+  teamId           String?
   joinedAt         DateTime     @default(now())
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
@@ -310,12 +316,36 @@ model ChapterMembership {
   createdInvites ChapterInvite[]
   reviewedJoinRequests ChapterJoinRequest[]
   createdRosterEntries ChapterRosterEntry[]
+  team           Team?               @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
   @@unique([chapterId, userId])
   @@unique([chapterId, roleNumber])
   @@index([chapterId, role])
   @@index([chapterId, status])
   @@index([bigMembershipId])
+  @@index([teamId])
+}
+
+// Gamification teams (Feature 2 — src/types/index.ts Team doc comment).
+// Deliberately NOT a committee: no chair/role distinction, and membership is
+// exclusive (a ChapterMembership.teamId points at one Team or none — see
+// that field's doc comment) where CommitteeMembership is many-to-many.
+// Points aren't stored here; a team's total is computed by summing
+// PointsLedger for its current members, same as the individual leaderboard
+// at GET /points/leaderboard (backend/routes/attendance.routes.ts) — see
+// GET /teams/leaderboard in backend/routes/teams.routes.ts.
+model Team {
+  id        String   @id @default(cuid())
+  chapterId String
+  name      String
+  color     String? // hex, e.g. "#5B6CC0" — optional, purely cosmetic
+  createdAt DateTime @default(now())
+
+  chapter Chapter             @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  members ChapterMembership[]
+
+  @@unique([chapterId, name])
+  @@index([chapterId])
 }
 
 // One row per invite code. A "link" is just this same code embedded in a
