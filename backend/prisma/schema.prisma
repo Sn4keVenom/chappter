@@ -155,6 +155,13 @@ enum PaymentMethod {
   OTHER
 }
 
+enum ReimbursementStatus {
+  SUBMITTED
+  APPROVED
+  REIMBURSED
+  REJECTED
+}
+
 enum JoinRequestStatus {
   PENDING
   APPROVED
@@ -213,6 +220,7 @@ model User {
   inviteRedemptions    ChapterInviteRedemption[]
   joinRequests         ChapterJoinRequest[]
   claimedRosterEntry   ChapterRosterEntry?
+  submittedExpenses    Expense[]                 @relation("ExpenseSubmittedBy")
   committeeMemberships CommitteeMembership[]
   rsvps                Rsvp[]
   attendances          Attendance[]          @relation("AttendanceUser")
@@ -257,6 +265,22 @@ model Chapter {
   logoUrl    String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  // ── Branding (visual identity — see src/theme/palette.ts) ──────────────
+  // Columns on Chapter rather than a separate table: name/letters/logoUrl
+  // above are already part of the chapter's identity and are read by the
+  // same screen, so splitting the rest out would mean a join for every
+  // header render and two rows to keep in step.
+  //
+  // All nullable, and null means "use the app default" rather than a stored
+  // copy of it — so a chapter that never customised anything follows the
+  // stock palette if those defaults ever change, and "reset" is simply
+  // setting these back to null.
+  logoEmoji           String?
+  primaryColor        String? // hex, e.g. "#1B2A4A"
+  accentColor         String? // hex, e.g. "#C8A24A"
+  backgroundTintLight String? // optional hex wash, light mode
+  backgroundTintDark  String? // optional hex wash, dark mode
 
   settings        ChapterSettings?
   memberships     ChapterMembership[]
@@ -316,6 +340,7 @@ model ChapterMembership {
   createdInvites ChapterInvite[]
   reviewedJoinRequests ChapterJoinRequest[]
   createdRosterEntries ChapterRosterEntry[]
+  reviewedExpenses     Expense[]           @relation("ExpenseReviewedBy")
   team           Team?               @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
   @@unique([chapterId, userId])
@@ -457,6 +482,7 @@ model Semester {
 
   duesRecords   DuesRecord[]
   ledgerEntries PointsLedger[]
+  budgets       CommitteeBudget[]
 
   @@index([startDate, endDate])
 }
@@ -475,6 +501,8 @@ model Committee {
   memberships CommitteeMembership[]
   events      Event[]
   channel     Channel?
+  budgets     CommitteeBudget[]
+  expenses    Expense[]
 
   @@index([name])
 }
@@ -850,4 +878,63 @@ model FeedbackReport {
 
   @@index([status])
   @@index([type])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Committee budgets & reimbursements (Feature 5 — tracking only)
+// ─────────────────────────────────────────────────────────────────────────
+
+// What a committee is allocated for one semester. Per-semester rather than a
+// single column on Committee so last term's numbers survive the next
+// allocation — a committee's budget history is exactly what people want when
+// arguing for the next one.
+//
+// `spent` / `pending` / `remaining` are NOT stored: they're derived by
+// summing Expense rows (see GET /budgets), so a budget can never drift out
+// of step with the expenses it's supposed to summarise.
+model CommitteeBudget {
+  id          String   @id @default(cuid())
+  committeeId String
+  semesterId  String
+  // Decimal, not Float — money. Matches DuesRecord's precision.
+  allocated   Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  committee Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  semester  Semester  @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+
+  // One allocation per committee per semester — the PATCH route upserts on
+  // this, so re-setting a budget updates rather than stacking duplicates.
+  @@unique([committeeId, semesterId])
+  @@index([semesterId])
+}
+
+// A reimbursement claim against a committee's budget. Tracking only: no money
+// moves through the app, `reimbursementMethod` records how it was settled
+// outside it (Venmo, cheque, cash).
+model Expense {
+  id                  String              @id @default(cuid())
+  committeeId         String
+  submittedById       String
+  amount              Decimal             @db.Decimal(10, 2)
+  description         String
+  date                DateTime // when the expense was incurred, not when filed
+  // Placeholder filename only — there's no object storage (same gap as
+  // Document.fileLabel and avatars). A real build needs signed-URL uploads.
+  receiptLabel        String?
+  status              ReimbursementStatus @default(SUBMITTED)
+  reimbursementMethod PaymentMethod?
+  reimbursementNote   String?
+  reviewedById        String?
+  reviewedAt          DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  committee   Committee          @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  submittedBy User               @relation("ExpenseSubmittedBy", fields: [submittedById], references: [id])
+  reviewedBy  ChapterMembership? @relation("ExpenseReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([committeeId, status])
+  @@index([submittedById])
 }

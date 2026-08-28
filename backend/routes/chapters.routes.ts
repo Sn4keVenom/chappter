@@ -117,6 +117,157 @@ router.patch(
   })
 );
 
+// ── Chapter branding ───────────────────────────────────────────────────────
+// The chapter's visual identity, applied for everyone in the chapter (see
+// src/theme/palette.ts, which turns these two brand colours into the whole
+// palette for both light and dark). Stored as nullable columns on Chapter —
+// null means "use the app default", so reset is just clearing them.
+//
+// Mirrors DEFAULT_BRANDING in src/theme/branding.ts. Kept in sync by hand,
+// same as the permission presets, since there's no shared package.
+const BRANDING_DEFAULTS = {
+  chapterLetters: "ΘΤ",
+  logoEmoji: "⚙️",
+  primaryColor: "#1B2A4A",
+  accentColor: "#C8A24A",
+} as const;
+
+// #RGB or #RRGGBB. Rejecting anything else here matters more than usual:
+// these strings are fed straight into the palette builder and rendered as
+// CSS custom properties for every member of the chapter.
+const HEX = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+const hexColor = z.string().regex(HEX, "Must be a hex colour like #1B2A4A");
+
+function toBranding(chapter: {
+  id: string;
+  name: string;
+  letters: string | null;
+  logoUrl: string | null;
+  logoEmoji: string | null;
+  primaryColor: string | null;
+  accentColor: string | null;
+  backgroundTintLight: string | null;
+  backgroundTintDark: string | null;
+  updatedAt: Date;
+}) {
+  return {
+    chapterId: chapter.id,
+    chapterName: chapter.name,
+    chapterLetters: chapter.letters || BRANDING_DEFAULTS.chapterLetters,
+    logoUrl: chapter.logoUrl,
+    logoEmoji: chapter.logoEmoji || BRANDING_DEFAULTS.logoEmoji,
+    primaryColor: chapter.primaryColor || BRANDING_DEFAULTS.primaryColor,
+    accentColor: chapter.accentColor || BRANDING_DEFAULTS.accentColor,
+    backgroundTintLight: chapter.backgroundTintLight,
+    backgroundTintDark: chapter.backgroundTintDark,
+    updatedAt: chapter.updatedAt.toISOString(),
+  };
+}
+
+// GET is open to any member of the chapter — everyone's app is themed by
+// it, so everyone has to be able to read it. Writing is settings.manage,
+// matching the gate the branding screen itself uses.
+router.get(
+  "/chapters/:id/branding",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const chapter = await prisma.chapter.findUnique({ where: { id: req.params.id } });
+    if (!chapter) return res.status(404).json({ error: "Chapter not found" });
+
+    res.json({ branding: toBranding(chapter) });
+  })
+);
+
+const brandingSchema = z.object({
+  chapterName: z.string().min(1).max(200).optional(),
+  chapterLetters: z.string().max(20).optional(),
+  // Logos arrive as a data: URI from the client-side resizer (same approach
+  // as avatars — there's no object storage), so this can't be z.string().url().
+  logoUrl: z.string().max(2_000_000).nullable().optional(),
+  logoEmoji: z.string().max(16).nullable().optional(),
+  primaryColor: hexColor.optional(),
+  accentColor: hexColor.optional(),
+  backgroundTintLight: hexColor.nullable().optional(),
+  backgroundTintDark: hexColor.nullable().optional(),
+});
+
+router.patch(
+  "/chapters/:id/branding",
+  requirePermission("settings.manage"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const parsed = brandingSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const before = await prisma.chapter.findUnique({ where: { id: req.params.id } });
+    if (!before) return res.status(404).json({ error: "Chapter not found" });
+
+    // chapterName/chapterLetters are the client's names for Chapter.name and
+    // Chapter.letters — the branding payload is a view over the chapter row,
+    // not a separate record.
+    const { chapterName, chapterLetters, ...rest } = parsed.data;
+    const updated = await prisma.chapter.update({
+      where: { id: req.params.id },
+      data: {
+        ...rest,
+        ...(chapterName !== undefined ? { name: chapterName } : {}),
+        ...(chapterLetters !== undefined ? { letters: chapterLetters } : {}),
+      },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_BRANDING_UPDATE",
+      entityType: "Chapter",
+      entityId: updated.id,
+      before: { name: before.name, primaryColor: before.primaryColor, accentColor: before.accentColor },
+      after: parsed.data,
+    });
+
+    res.json({ branding: toBranding(updated) });
+  })
+);
+
+router.post(
+  "/chapters/:id/branding/reset",
+  requirePermission("settings.manage"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const before = await prisma.chapter.findUnique({ where: { id: req.params.id } });
+    if (!before) return res.status(404).json({ error: "Chapter not found" });
+
+    // Clears the customisations back to null so the app defaults apply
+    // again. Deliberately leaves `name` alone — the chapter's actual name is
+    // identity, not styling, and resetting the palette shouldn't rename the
+    // chapter to "Chappter".
+    const updated = await prisma.chapter.update({
+      where: { id: req.params.id },
+      data: {
+        letters: null,
+        logoUrl: null,
+        logoEmoji: null,
+        primaryColor: null,
+        accentColor: null,
+        backgroundTintLight: null,
+        backgroundTintDark: null,
+      },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_BRANDING_RESET",
+      entityType: "Chapter",
+      entityId: updated.id,
+      before: { primaryColor: before.primaryColor, accentColor: before.accentColor, logoUrl: before.logoUrl },
+    });
+
+    res.json({ branding: toBranding(updated) });
+  })
+);
+
 // ── Invites ────────────────────────────────────────────────────────────────
 
 const createInviteSchema = z.object({
