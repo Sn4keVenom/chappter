@@ -16,6 +16,14 @@
   font-size: var(--text-xl);
   font-weight: 800;
   flex: none;
+  /* Shared by the emoji <span> and the chapter logo <img> (SettingsHomePage
+     .tsx). The fixed square above stretches a non-square logo without
+     object-fit; `contain` letterboxes it at its real aspect ratio instead.
+     line-height:1 removes the inherited leading that otherwise offsets an
+     emoji glyph vertically inside the grid cell. */
+  object-fit: contain;
+  line-height: 1;
+  overflow: hidden;
 }
 
 .chapterBody { min-width: 0; flex: 1; }

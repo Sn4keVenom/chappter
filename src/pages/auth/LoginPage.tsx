@@ -69,7 +69,7 @@ export default function LoginPage() {
           onChange={(e) => setIdentifier(e.target.value)}
           autoComplete="username"
           autoCapitalize="none"
-          placeholder="you@university.edu"
+          placeholder="you@example.com"
         />
         <AuthField
           label="Password"

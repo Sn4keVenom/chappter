@@ -22,7 +22,10 @@
 .grid { display: grid; gap: var(--space-4); }
 
 .statValue { font-size: var(--text-2xl); font-weight: 800; }
-.statRow { display: flex; align-items: baseline; gap: var(--space-3); }
+/* center, not baseline: the rank badge is 12px text in a pill next to a 28px
+   number, so baseline-aligning them drops the pill ~6px below the number's
+   optical centre and reads as two different rows. */
+.statRow { display: flex; align-items: center; gap: var(--space-3); }
 
 .badgeGrid { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 

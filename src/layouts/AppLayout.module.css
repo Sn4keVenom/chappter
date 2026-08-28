@@ -46,6 +46,16 @@
   background: color-mix(in srgb, var(--color-header-text) 16%, transparent);
   font-size: var(--text-base);
   flex: none;
+  /* The same class is used for BOTH an emoji <span> and a chapter logo <img>
+     (see AppLayout.tsx). The width/height above force a square, so without
+     object-fit a non-square uploaded logo is stretched to fit it — which
+     reads as "the icon looks wrong/off-centre". `contain` letterboxes it
+     inside the square at its real aspect ratio instead. No-op for the span.
+     line-height:1 collapses the inherited body line-height, which otherwise
+     adds asymmetric leading above/below an emoji glyph inside the grid cell. */
+  object-fit: contain;
+  line-height: 1;
+  overflow: hidden;
 }
 
 .brandName {
@@ -185,6 +195,10 @@
     color: var(--color-on-primary);
     font-size: var(--text-lg);
     flex: none;
+    /* See .brandMark above — same span-or-img duality, same fix. */
+    object-fit: contain;
+    line-height: 1;
+    overflow: hidden;
   }
 
   .sidebarName {

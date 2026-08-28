@@ -145,6 +145,7 @@ export default function SignUpPage() {
           value={form.email}
           onChange={(e) => set("email", e.target.value)}
           error={errors.email}
+          hint="Use a personal email, not your school address — you'll lose access to a school account after you graduate."
           autoComplete="email"
           autoCapitalize="none"
         />

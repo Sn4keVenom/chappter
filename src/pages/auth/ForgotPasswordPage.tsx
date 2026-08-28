@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
           autoCapitalize="none"
-          placeholder="you@university.edu"
+          placeholder="you@example.com"
         />
         <AuthSubmit disabled={!email.trim() || busy}>{busy ? "Sending…" : "Send reset code"}</AuthSubmit>
       </form>
