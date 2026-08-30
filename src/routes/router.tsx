@@ -94,6 +94,7 @@ export const router = createBrowserRouter([
               { path: "chapter", lazy: page(() => import("../pages/settings/ChapterSettingsPage")) },
               { path: "modules", lazy: page(() => import("../pages/settings/ModulesPage")) },
               { path: "permissions", lazy: page(() => import("../pages/settings/PermissionsPage")) },
+              { path: "achievements", lazy: page(() => import("../pages/settings/AchievementsPage")) },
             ],
           },
 

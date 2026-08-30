@@ -1,11 +1,15 @@
 // src/pages/admin/DuesPage.tsx
 //
-// Exec+ dues overview: a summary by status, the searchable per-member list,
-// and the two actions an officer needs — record a payment, or waive a balance.
+// dues.manage overview: a summary by status, the searchable per-member list,
+// and the actions an officer needs — bill everyone from the chapter
+// defaults, manage one member's amount/plan/due date, record a payment, or
+// waive a balance. Gated on dues.manage rather than the Exec role tier, so
+// the Treasurer office can run dues without also holding Exec (see
+// backend/lib/permissionDefaults.ts).
 
 import { useMemo, useState } from "react";
 
-import { getAllDues, recordPayment, waiveDues } from "../../api/dues";
+import { getAllDues, initializeSemesterDues, recordPayment, updateMemberDues, waiveDues } from "../../api/dues";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
@@ -18,7 +22,8 @@ import { ChipGroup, Input, Select, Textarea } from "../../components/ui/Form";
 import { DataTable, type Column } from "../../components/ui/DataTable";
 import { EmptyState, ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
 import { duesStatusTone } from "../../theme/semantic";
-import { formatCurrency, type DuesStatus } from "../../types";
+import { formatCurrency, type DuesPlan, type DuesStatus } from "../../types";
+import { titleCaseEnum } from "../../utils/format";
 
 /** Methods an officer can record by hand. STRIPE/PYLI are set by their own
  *  payment flows and are never entered manually. */
@@ -27,11 +32,23 @@ type ManualMethod = "CASH" | "VENMO" | "CHECK" | "OTHER";
 type Row = Awaited<ReturnType<typeof getAllDues>>["records"][number];
 type Pending = { row: Row; action: "payment" | "waive" } | null;
 
+/** "" stands for "use the chapter default" in both the bill-everyone dialog
+ * (no override given) and the per-member one (clear an override, fall back
+ * to the default again) — kept as a real Select option rather than an empty
+ * value the officer has to know to leave alone. */
+type PlanChoice = DuesPlan | "";
+
 const STATUSES: (DuesStatus | "ALL")[] = ["ALL", "UNPAID", "PARTIAL", "PAID", "WAIVED"];
 const METHODS: ManualMethod[] = ["CASH", "VENMO", "CHECK", "OTHER"];
 
+/** ISO timestamp → the plain YYYY-MM-DD an <input type="date"> expects. */
+function toDateInputValue(iso: string | null | undefined): string {
+  return iso ? iso.slice(0, 10) : "";
+}
+
 export default function DuesPage() {
-  const { isExecOrAbove } = usePermissions();
+  const { can } = usePermissions();
+  const canManage = can("dues.manage");
 
   const { data, loading, error, reload } = useAsync(() => getAllDues(), []);
 
@@ -45,6 +62,17 @@ export default function DuesPage() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const [billOpen, setBillOpen] = useState(false);
+  const [billAmount, setBillAmount] = useState("");
+  const [billPlan, setBillPlan] = useState<PlanChoice>("");
+  const [billDueDate, setBillDueDate] = useState("");
+  const [billResult, setBillResult] = useState<string | null>(null);
+
+  const [manageRow, setManageRow] = useState<Row | null>(null);
+  const [manageAmount, setManageAmount] = useState("");
+  const [managePlan, setManagePlan] = useState<PlanChoice>("");
+  const [manageDueDate, setManageDueDate] = useState("");
+
   const rows = useMemo(() => {
     let list = data?.records ?? [];
     if (status !== "ALL") list = list.filter((row) => row.status === status);
@@ -57,10 +85,10 @@ export default function DuesPage() {
     return list;
   }, [data, status, query]);
 
-  if (!isExecOrAbove) {
+  if (!canManage) {
     return (
       <div className="page">
-        <RequireAccess message="Dues management is available to Exec and above." />
+        <RequireAccess message="Dues management is available to the Treasurer, Exec, and Super Admin." />
       </div>
     );
   }
@@ -108,6 +136,61 @@ export default function DuesPage() {
     }
   }
 
+  async function submitBill() {
+    if (!data?.currentSemesterId) return;
+    setBusy(true);
+    setActionError(null);
+    setBillResult(null);
+    try {
+      const { created, total } = await initializeSemesterDues({
+        semesterId: data.currentSemesterId,
+        amountOwed: billAmount.trim() ? Number(billAmount) : undefined,
+        plan: billPlan || undefined,
+        dueDate: billDueDate ? new Date(billDueDate).toISOString() : undefined,
+      });
+      setBillResult(
+        created === total
+          ? `Billed all ${total} member${total === 1 ? "" : "s"}.`
+          : `Billed ${created} of ${total} — the rest already had a dues record this semester.`
+      );
+      setBillAmount("");
+      setBillPlan("");
+      setBillDueDate("");
+      await reload({ silent: true });
+    } catch (e: any) {
+      setActionError(e?.message ?? "Couldn't bill members — please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openManage(row: Row) {
+    setManageAmount(String(row.amountOwed));
+    setManagePlan(row.plan ?? "");
+    setManageDueDate(toDateInputValue(row.dueDate));
+    setManageRow(row);
+  }
+
+  async function submitManage() {
+    if (!manageRow || !manageAmount.trim()) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await updateMemberDues(manageRow.userId, {
+        semesterId: manageRow.semesterId,
+        amountOwed: Number(manageAmount),
+        plan: managePlan || null,
+        dueDate: manageDueDate ? new Date(manageDueDate).toISOString() : null,
+      });
+      setManageRow(null);
+      await reload({ silent: true });
+    } catch (e: any) {
+      setActionError(e?.message ?? "Couldn't update this member's dues.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const columns: Column<Row>[] = [
     {
       key: "name",
@@ -126,6 +209,12 @@ export default function DuesPage() {
       ),
     },
     {
+      key: "plan",
+      header: "Plan",
+      secondary: true,
+      render: (row) => (row.plan ? titleCaseEnum(row.plan) : "—"),
+    },
+    {
       key: "paid",
       header: "Paid",
       numeric: true,
@@ -135,7 +224,31 @@ export default function DuesPage() {
 
   return (
     <div className="page">
-      <PageHeader title="Dues" subtitle="Record payments and waive balances." />
+      <PageHeader
+        title="Dues"
+        subtitle="Bill from the chapter defaults, then manage individual members."
+        actions={
+          <Button
+            variant="primary"
+            onClick={() => {
+              setBillResult(null);
+              setBillOpen(true);
+            }}
+            disabled={!data?.currentSemesterId}
+          >
+            Bill everyone
+          </Button>
+        }
+      />
+
+      {!data?.currentSemesterId ? (
+        <ErrorBanner message="No semester spans today — set one in Chapter Settings before billing." />
+      ) : null}
+      {billResult ? (
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--color-success)", marginBottom: "var(--space-3)" }}>
+          {billResult}
+        </p>
+      ) : null}
 
       {actionError ? <ErrorBanner message={actionError} /> : null}
 
@@ -186,6 +299,9 @@ export default function DuesPage() {
         rowKey={(row) => row.id}
         rowActions={(row) => (
           <>
+            <Button size="sm" variant="secondary" onClick={() => openManage(row)}>
+              Manage
+            </Button>
             <Button
               size="sm"
               variant="secondary"
@@ -279,6 +395,97 @@ export default function DuesPage() {
             autoFocus
           />
         )}
+      </Dialog>
+
+      <Dialog
+        open={billOpen}
+        onClose={() => setBillOpen(false)}
+        title="Bill everyone"
+        subtitle="Creates a dues record for every Active/PNM member who doesn't already have one this semester. Leave a field blank to use the chapter's configured default."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setBillOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={submitBill} busy={busy}>
+              Bill everyone
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Amount"
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          value={billAmount}
+          onChange={(e) => setBillAmount(e.target.value)}
+          placeholder="Chapter default"
+          hint="Leave blank to bill the amount set in Chapter Settings."
+          autoFocus
+        />
+        <Select
+          label="Plan"
+          value={billPlan}
+          onChange={(e) => setBillPlan(e.target.value as PlanChoice)}
+          hint="Individual members can be moved onto a different plan afterward."
+        >
+          <option value="">Chapter default</option>
+          <option value="FULL">Full</option>
+          <option value="MONTHLY">Monthly</option>
+        </Select>
+        <Input
+          label="Due date"
+          type="date"
+          value={billDueDate}
+          onChange={(e) => setBillDueDate(e.target.value)}
+        />
+      </Dialog>
+
+      <Dialog
+        open={manageRow !== null}
+        onClose={() => setManageRow(null)}
+        title="Manage dues"
+        subtitle={manageRow ? `${manageRow.user.firstName} ${manageRow.user.lastName} — ${manageRow.semester.label}` : undefined}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setManageRow(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={submitManage} busy={busy} disabled={!manageAmount.trim()}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Amount owed"
+          required
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          min="0"
+          value={manageAmount}
+          onChange={(e) => setManageAmount(e.target.value)}
+          autoFocus
+        />
+        <Select
+          label="Plan"
+          value={managePlan}
+          onChange={(e) => setManagePlan(e.target.value as PlanChoice)}
+          hint="Move this one member onto instalments without changing anyone else."
+        >
+          <option value="">No plan set</option>
+          <option value="FULL">Full</option>
+          <option value="MONTHLY">Monthly</option>
+        </Select>
+        <Input
+          label="Due date"
+          type="date"
+          value={manageDueDate}
+          onChange={(e) => setManageDueDate(e.target.value)}
+        />
       </Dialog>
     </div>
   );

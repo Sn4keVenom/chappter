@@ -27,6 +27,10 @@ export async function getAllDues(params?: {
 }): Promise<{
   records: (DuesRecord & { user: { id: string; firstName: string; lastName: string; email: string } })[];
   summary: { status: string; _count: { _all: number }; _sum: { amountOwed: number; amountPaid: number } }[];
+  /** The semester spanning today, if one exists — the one thing "bill
+   * everyone" needs before any DuesRecord exists to read a semester off of. */
+  currentSemesterId: string | null;
+  currentSemesterLabel: string | null;
 }> {
   const { data } = await apiClient.get("/dues", { params });
   return data;

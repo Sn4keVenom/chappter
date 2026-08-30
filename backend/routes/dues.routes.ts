@@ -78,7 +78,23 @@ router.get(
       _sum: { amountOwed: true, amountPaid: true },
     });
 
-    res.json({ records, summary });
+    // No route anywhere hands the client a bare semester id — every other
+    // dues action reads one off an EXISTING record's own `semester` field.
+    // The one place that breaks down is "bill everyone" the very first time,
+    // before any DuesRecord exists for anyone to read a semester off of.
+    // Piggybacking it onto this response (which the Dues admin screen
+    // already loads on open) avoids a whole extra route for one id.
+    const now = new Date();
+    const currentSemester = await prisma.semester.findFirst({
+      where: { startDate: { lte: now }, endDate: { gte: now } },
+    });
+
+    res.json({
+      records,
+      summary,
+      currentSemesterId: currentSemester?.id ?? null,
+      currentSemesterLabel: currentSemester?.label ?? null,
+    });
   })
 );
 

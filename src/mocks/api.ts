@@ -1688,6 +1688,8 @@ export function getMyDues(): DuesRecord[] {
 export function getAllDues(params: { semesterId?: string; status?: string }): {
   records: (DuesRecord & { user: { id: string; firstName: string; lastName: string; email: string } })[];
   summary: { status: string; _count: { _all: number }; _sum: { amountOwed: number; amountPaid: number } }[];
+  currentSemesterId: string | null;
+  currentSemesterLabel: string | null;
 } {
   if (!can(getCurrentDemoUserId(), "dues.manage")) throw new DemoApiError(403, "Not authorized to view dues");
   let list = db.duesRecords.filter((d) => d.semesterId === (params.semesterId ?? db.semester.id));
@@ -1711,7 +1713,11 @@ export function getAllDues(params: { semesterId?: string; status?: string }): {
     };
   }).filter((s) => s._count._all > 0);
 
-  return { records, summary };
+  // Mirrors the real backend's addition — one "current" semester exists in
+  // this mock world by construction, unlike the real schema's date-ranged
+  // Semester rows, but the shape agrees so screens don't special-case Demo
+  // Mode to get the id they need for "bill everyone".
+  return { records, summary, currentSemesterId: db.semester.id, currentSemesterLabel: db.semester.label };
 }
 
 function recalcDuesStatus(record: db.MockDuesRecord): void {

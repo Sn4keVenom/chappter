@@ -13,6 +13,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 
 import { usePermissions } from "../hooks/usePermissions";
+import type { Permission } from "../types";
 import styles from "./SettingsLayout.module.css";
 
 export interface SettingsSection {
@@ -22,6 +23,11 @@ export interface SettingsSection {
   description: string;
   adminOnly?: boolean;
   superAdminOnly?: boolean;
+  /** A specific permission gate, for a section that isn't role-tier-shaped —
+   * e.g. achievements.manage, which Regent/Vice Regent hold by OFFICE and
+   * may not otherwise have settings.manage (adminOnly) at all. Checked
+   * before adminOnly/superAdminOnly. */
+  permission?: Permission;
 }
 
 /** Shared with SettingsHomePage so the mobile list and desktop nav agree. */
@@ -60,11 +66,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     description: "Edit what each role can do",
     superAdminOnly: true,
   },
+  {
+    to: "/settings/achievements",
+    label: "Achievements",
+    icon: "🏆",
+    description: "Badges members can earn, and the thresholds for each",
+    permission: "achievements.manage",
+  },
 ];
 
 export function useVisibleSettingsSections(): SettingsSection[] {
   const { can, isSuperAdmin } = usePermissions();
   return SETTINGS_SECTIONS.filter((section) => {
+    if (section.permission) return can(section.permission);
     if (section.superAdminOnly) return isSuperAdmin;
     if (section.adminOnly) return can("settings.manage");
     return true;
