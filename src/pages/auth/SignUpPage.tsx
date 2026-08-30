@@ -7,18 +7,27 @@
 // auth/pendingSignup.ts) → prepareEmailAddressVerification → /verify-email,
 // which does the atomic claim once a session actually exists (see
 // VerifyEmailPage.tsx and its "why the claim isn't here" note).
+//
+// The role-number field itself is filled in automatically where possible:
+// once both names and an Active/Alumni status are in, a debounced call to
+// lookup-role-number tries to resolve them to an unclaimed roster row (see
+// that route's doc comment for the exact matching rule). It only ever
+// overwrites a value THIS lookup put there — the moment the person edits
+// the field by hand, autofill backs off for good, even if they later change
+// their name/status again.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useSignUp } from "@clerk/clerk-react";
 
-import { verifyRoleNumber } from "../../api/auth";
+import { lookupRoleNumber, verifyRoleNumber } from "../../api/auth";
 import { stashPendingSignup } from "../../auth/pendingSignup";
 import { ChoiceList, type Choice } from "../../components/ui/Form";
 import { clerkErrorMessage } from "../../auth/clerkError";
 import { AuthBanner, AuthField, AuthLinks, AuthSubmit } from "./AuthForm";
 
 const MIN_PASSWORD_LENGTH = 10;
+const ROLE_NUMBER_LOOKUP_DEBOUNCE_MS = 500;
 
 const STATUS_OPTIONS: Choice<"PNM" | "ACTIVE" | "ALUMNI">[] = [
   { value: "PNM", label: "PNM", hint: "Prospective member — no role number yet" },
@@ -45,9 +54,48 @@ export default function SignUpPage() {
   const [banner, setBanner] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // "auto" means the current roleNumber value came from lookup-role-number,
+  // not the person's own typing — see roleNumberSource's ref below for why
+  // this needs to be readable synchronously from inside a debounced effect.
+  const [roleNumberSource, setRoleNumberSource] = useState<"auto" | "manual" | null>(null);
+  const roleNumberSourceRef = useRef(roleNumberSource);
+  roleNumberSourceRef.current = roleNumberSource;
+
   function set<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
+    if (key === "roleNumber") setRoleNumberSource("manual");
     setForm((f) => ({ ...f, [key]: value }));
   }
+
+  // Auto-fill the role number once we have enough to look it up. Debounced
+  // so it doesn't fire on every keystroke, and it never overwrites a value
+  // the person typed themselves (roleNumberSourceRef guards that at the
+  // point the response comes back, not just when the request goes out —
+  // someone could start typing mid-flight).
+  useEffect(() => {
+    if (form.status === "PNM") return;
+    const firstName = form.firstName.trim();
+    const lastName = form.lastName.trim();
+    if (!firstName || !lastName) return;
+    if (roleNumberSourceRef.current === "manual") return;
+
+    const status = form.status as "ACTIVE" | "ALUMNI";
+    const timer = setTimeout(() => {
+      lookupRoleNumber({ firstName, lastName, status })
+        .then((result) => {
+          if (roleNumberSourceRef.current === "manual") return; // edited while in flight
+          if (result.found) {
+            setForm((f) => ({ ...f, roleNumber: String(result.roleNumber) }));
+            setRoleNumberSource("auto");
+          }
+        })
+        .catch(() => {
+          // Silent — this is a convenience, not a validation step. The
+          // person can still type their own number; verifyRoleNumber at
+          // submit time is the real check.
+        });
+    }, ROLE_NUMBER_LOOKUP_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [form.firstName, form.lastName, form.status]);
 
   function validate(): Record<string, string> {
     const next: Record<string, string> = {};
@@ -192,7 +240,13 @@ export default function SignUpPage() {
             value={form.roleNumber}
             onChange={(e) => set("roleNumber", e.target.value)}
             error={errors.roleNumber}
-            hint={!errors.roleNumber ? "We'll check this against your chapter's roster." : undefined}
+            hint={
+              errors.roleNumber
+                ? undefined
+                : roleNumberSource === "auto"
+                  ? "Matched to your roster entry — change it if that's wrong."
+                  : "We'll check this against your chapter's roster. Enter your first and last name above and we'll try to fill this in for you."
+            }
           />
         ) : null}
 

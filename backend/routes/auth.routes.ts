@@ -271,4 +271,49 @@ router.post(
   })
 );
 
+const lookupRoleNumberSchema = z.object({
+  firstName: z.string().min(1).max(100),
+  lastName: z.string().min(1).max(100),
+  status: z.enum(["ACTIVE", "ALUMNI"]),
+});
+
+// ── POST /auth/lookup-role-number — public, no auth ────────────────────────
+// The reverse of verify-role-number above: given a name instead of a number,
+// so the sign-up form can fill the role-number field in FOR the person
+// rather than making them go find it themselves. Only returns a number when
+// exactly one unclaimed roster row matches first+last name — the same
+// ambiguity-averse rule lib/rosterClaim.ts uses for its own name-only
+// matches, because two rows sharing a name should never resolve to a guess.
+// A miss (zero or multiple matches) is silent: the field just stays empty
+// and the person types their own number, same as before this existed.
+//
+// This is a stronger enumeration vector than verify-role-number — it hands
+// back the number instead of just confirming a guessed one — so it shares
+// that endpoint's tight rate limit (server.ts) on top of the general /auth
+// one, and never reveals *why* it came up empty.
+router.post(
+  "/auth/lookup-role-number",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = lookupRoleNumberSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { firstName, lastName, status } = parsed.data;
+
+    const matches = await prisma.chapterRosterEntry.findMany({
+      where: {
+        status,
+        claimedByUserId: null,
+        firstName: { equals: firstName, mode: "insensitive" },
+        lastName: { equals: lastName, mode: "insensitive" },
+      },
+      select: { roleNumber: true },
+      take: 2, // only need to know "more than one" — never fetch the whole set
+    });
+
+    if (matches.length === 1) {
+      return res.json({ found: true, roleNumber: matches[0].roleNumber });
+    }
+    res.json({ found: false });
+  })
+);
+
 export default router;

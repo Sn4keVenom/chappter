@@ -41,3 +41,22 @@ export async function verifyRoleNumber(payload: {
   const { data } = await apiClient.post<VerifyRoleNumberResult>("/auth/verify-role-number", payload);
   return data;
 }
+
+export type LookupRoleNumberResult = { found: true; roleNumber: number } | { found: false };
+
+/**
+ * Reverse of verifyRoleNumber: given a name instead of a number, so the
+ * sign-up form can fill the role-number field in rather than making the
+ * person go find their own number. Only ever resolves when the name
+ * unambiguously matches one unclaimed roster row — see the route's doc
+ * comment in auth.routes.ts. A miss just means the field stays empty; it's
+ * not an error the form needs to show.
+ */
+export async function lookupRoleNumber(payload: {
+  firstName: string;
+  lastName: string;
+  status: "ACTIVE" | "ALUMNI";
+}): Promise<LookupRoleNumberResult> {
+  const { data } = await apiClient.post<LookupRoleNumberResult>("/auth/lookup-role-number", payload);
+  return data;
+}

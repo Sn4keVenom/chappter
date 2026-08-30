@@ -147,9 +147,20 @@ app.use(
 );
 // /auth/verify-role-number is a name+number enumeration vector — no account
 // is required to call it, so it gets a tighter cap layered on top of the
-// general /auth limiter above.
+// general /auth limiter above. /auth/lookup-role-number shares the cap: it's
+// the reverse lookup (name -> number instead of number -> yes/no) and is if
+// anything a more valuable target to brute-force.
 app.use(
   "/api/v1/auth/verify-role-number",
+  rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 8,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+  })
+);
+app.use(
+  "/api/v1/auth/lookup-role-number",
   rateLimit({
     windowMs: 60 * 60 * 1000,
     limit: 8,
