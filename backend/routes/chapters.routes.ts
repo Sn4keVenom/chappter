@@ -270,11 +270,47 @@ router.post(
 
 // ── Invites ────────────────────────────────────────────────────────────────
 
+/** lastUsedAt isn't a stored column — it's the most recent redemption's
+ * timestamp, derived on read rather than duplicated onto ChapterInvite and
+ * kept in sync by hand. One query for the whole list (GET), or a findFirst
+ * for a single invite (every other route below) — invite lists are small
+ * (a chapter has a handful, not thousands), so this is never the query that
+ * needs to scale. */
+async function attachLastUsed<T extends { id: string }>(invites: T[]): Promise<(T & { lastUsedAt: string | null })[]> {
+  if (invites.length === 0) return [];
+  const latest = await prisma.chapterInviteRedemption.groupBy({
+    by: ["inviteId"],
+    where: { inviteId: { in: invites.map((i) => i.id) } },
+    _max: { redeemedAt: true },
+  });
+  const byInvite = new Map(latest.map((l) => [l.inviteId, l._max.redeemedAt]));
+  return invites.map((invite) => ({
+    ...invite,
+    lastUsedAt: byInvite.get(invite.id)?.toISOString() ?? null,
+  }));
+}
+async function attachLastUsedOne<T extends { id: string }>(invite: T): Promise<T & { lastUsedAt: string | null }> {
+  return (await attachLastUsed([invite]))[0];
+}
+
+// Read aloud and typed by hand like the auto-generated ones, so the same
+// character rules apply to a custom code as to a generated one.
+const inviteCode = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .min(4, "Code must be between 4 and 24 characters.")
+  .max(24, "Code must be between 4 and 24 characters.")
+  .regex(/^[A-Z0-9-]+$/, "Code can only contain letters, numbers, and dashes.");
+
 const createInviteSchema = z.object({
+  code: inviteCode.optional(),
+  label: z.string().max(100).nullable().optional(),
   role: z.enum(["EXEC", "MEMBER", "PNM", "ALUMNI"]).default("MEMBER"),
   status: z.enum(["ACTIVE", "PNM", "ALUMNI", "INACTIVE"]).default("PNM"),
   maxUses: z.number().int().positive().nullable().optional(),
   expiresAt: z.string().datetime().nullable().optional(),
+  active: z.boolean().optional(),
 });
 
 router.post(
@@ -286,17 +322,27 @@ router.post(
     const parsed = createInviteSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const invite = await prisma.chapterInvite.create({
-      data: {
-        chapterId: req.params.id,
-        code: generateInviteCode(),
-        role: parsed.data.role,
-        status: parsed.data.status,
-        maxUses: parsed.data.maxUses ?? undefined,
-        expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined,
-        createdById: req.user!.membershipId!,
-      },
-    });
+    let invite;
+    try {
+      invite = await prisma.chapterInvite.create({
+        data: {
+          chapterId: req.params.id,
+          code: parsed.data.code ?? generateInviteCode(),
+          label: parsed.data.label,
+          role: parsed.data.role,
+          status: parsed.data.status,
+          maxUses: parsed.data.maxUses ?? undefined,
+          expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : undefined,
+          active: parsed.data.active ?? true,
+          createdById: req.user!.membershipId!,
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res.status(409).json({ error: `Code "${parsed.data.code}" is already in use.` });
+      }
+      throw e;
+    }
 
     await writeAuditLog({
       actorId: req.user!.id,
@@ -306,7 +352,7 @@ router.post(
       after: invite,
     });
 
-    res.status(201).json({ invite });
+    res.status(201).json({ invite: await attachLastUsedOne(invite) });
   })
 );
 
@@ -320,7 +366,76 @@ router.get(
       where: { chapterId: req.params.id },
       orderBy: { createdAt: "desc" },
     });
-    res.json({ invites });
+    res.json({ invites: await attachLastUsed(invites) });
+  })
+);
+
+// ── PATCH /chapters/:id/invites/:inviteId ─────────────────────────────────
+// Edits a LIVE invite's configuration. Archived (revokedAt set) invites are
+// read-only here — restore first — because editing an archived code's
+// role/status and then having someone redeem an old printed copy of it
+// would silently grant the NEW configuration, not the one they were shown.
+const updateInviteSchema = createInviteSchema.partial();
+
+router.patch(
+  "/chapters/:id/invites/:inviteId",
+  requirePermission("chapters.manageInvites"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const parsed = updateInviteSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const before = await prisma.chapterInvite.findUnique({ where: { id: req.params.inviteId } });
+    if (!before || before.chapterId !== req.params.id) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+    if (before.revokedAt) {
+      return res.status(409).json({ error: "Archived invites can't be edited — restore it first." });
+    }
+    if (
+      parsed.data.maxUses !== undefined &&
+      parsed.data.maxUses !== null &&
+      parsed.data.maxUses < before.useCount
+    ) {
+      return res.status(400).json({
+        error: `This code has already been used ${before.useCount} times — max uses can't be lower.`,
+      });
+    }
+
+    let updated;
+    try {
+      updated = await prisma.chapterInvite.update({
+        where: { id: before.id },
+        data: {
+          ...(parsed.data.code !== undefined ? { code: parsed.data.code } : {}),
+          ...(parsed.data.label !== undefined ? { label: parsed.data.label } : {}),
+          ...(parsed.data.role !== undefined ? { role: parsed.data.role } : {}),
+          ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
+          ...(parsed.data.maxUses !== undefined ? { maxUses: parsed.data.maxUses } : {}),
+          ...(parsed.data.expiresAt !== undefined
+            ? { expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null }
+            : {}),
+          ...(parsed.data.active !== undefined ? { active: parsed.data.active } : {}),
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res.status(409).json({ error: `Code "${parsed.data.code}" is already in use.` });
+      }
+      throw e;
+    }
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_INVITE_UPDATE",
+      entityType: "ChapterInvite",
+      entityId: updated.id,
+      before: { role: before.role, status: before.status, maxUses: before.maxUses, active: before.active },
+      after: parsed.data,
+    });
+
+    res.json({ invite: await attachLastUsedOne(updated) });
   })
 );
 
@@ -347,7 +462,70 @@ router.delete(
       entityId: invite.id,
     });
 
-    res.json({ invite: revoked });
+    res.json({ invite: await attachLastUsedOne(revoked) });
+  })
+);
+
+// ── POST /chapters/:id/invites/:inviteId/restore ──────────────────────────
+router.post(
+  "/chapters/:id/invites/:inviteId/restore",
+  requirePermission("chapters.manageInvites"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const invite = await prisma.chapterInvite.findUnique({ where: { id: req.params.inviteId } });
+    if (!invite || invite.chapterId !== req.params.id) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+
+    const restored = await prisma.chapterInvite.update({
+      where: { id: invite.id },
+      data: { revokedAt: null },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_INVITE_RESTORE",
+      entityType: "ChapterInvite",
+      entityId: invite.id,
+    });
+
+    res.json({ invite: await attachLastUsedOne(restored) });
+  })
+);
+
+// ── POST /chapters/:id/invites/:inviteId/regenerate ───────────────────────
+// Issues a new code STRING for an existing invite — the old one stops
+// working immediately, but role/status/maxUses/useCount are untouched.
+// Anyone holding a printed flyer or an old link is cut off, which is the
+// entire point; the client warns before calling this.
+router.post(
+  "/chapters/:id/invites/:inviteId/regenerate",
+  requirePermission("chapters.manageInvites"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    if (!requireOwnChapter(req, res)) return;
+
+    const invite = await prisma.chapterInvite.findUnique({ where: { id: req.params.inviteId } });
+    if (!invite || invite.chapterId !== req.params.id) {
+      return res.status(404).json({ error: "Invite not found" });
+    }
+    if (invite.revokedAt) {
+      return res.status(409).json({ error: "Archived invites can't be regenerated — restore it first." });
+    }
+
+    const updated = await prisma.chapterInvite.update({
+      where: { id: invite.id },
+      data: { code: generateInviteCode(), regeneratedAt: new Date() },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "CHAPTER_INVITE_REGENERATE",
+      entityType: "ChapterInvite",
+      entityId: invite.id,
+    });
+
+    res.json({ invite: await attachLastUsedOne(updated) });
   })
 );
 
@@ -601,6 +779,12 @@ router.post(
     if (!invite || invite.revokedAt) {
       return res.status(404).json({ error: "Invite code not found or revoked" });
     }
+    // Paused, not archived — a temporary "off" switch (see the active column
+    // doc comment on ChapterInvite) that an admin can flip back on, unlike
+    // revokedAt above which is permanent.
+    if (!invite.active) {
+      return res.status(400).json({ error: "This invite code is currently paused" });
+    }
     if (invite.expiresAt && invite.expiresAt < new Date()) {
       return res.status(400).json({ error: "This invite code has expired" });
     }
@@ -630,7 +814,7 @@ router.post(
     try {
       membership = await prisma.$transaction(async (tx) => {
         const claim = await tx.chapterInvite.updateMany({
-          where: { id: invite.id, revokedAt: null, ...usageGuard },
+          where: { id: invite.id, revokedAt: null, active: true, ...usageGuard },
           data: { useCount: { increment: 1 } },
         });
         if (claim.count === 0) {

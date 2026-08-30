@@ -255,6 +255,7 @@ model User {
   createdEvents        Event[]               @relation("EventCreatedBy")
   auditLogs            AuditLog[]            @relation("AuditActor")
   uploadedDocuments    Document[]            @relation("DocumentUploadedBy")
+  eventDelegations     EventDelegate[]
   feedbackReports      FeedbackReport[]      @relation("FeedbackSubmittedBy")
 
   @@index([activeChapterId])
@@ -402,12 +403,22 @@ model ChapterInvite {
   id          String       @id @default(cuid())
   chapterId   String
   code        String       @unique
+  // Admin-facing name, e.g. "Fall 2026 Rush" — falls back to the code itself
+  // in the UI when unset, so this is purely cosmetic, never used for lookup.
+  label       String?
   role        UserRole     @default(MEMBER)
   status      MemberStatus @default(PNM) // status a redeemer starts as
   maxUses     Int?         // null = unlimited
   useCount    Int          @default(0)
   expiresAt   DateTime?
+  // Admin "paused" switch — independent of archiving (revokedAt below). A
+  // paused code can be flipped back on with one tap; archiving is permanent.
+  // Checked at redemption the same way revokedAt/expiresAt/maxUses already are.
+  active      Boolean      @default(true)
   revokedAt   DateTime?
+  // Set whenever the code STRING is reissued (see POST .../regenerate) —
+  // distinct from createdAt, which never changes once the invite exists.
+  regeneratedAt DateTime?
   createdById String
   createdAt   DateTime     @default(now())
 
@@ -547,6 +558,21 @@ model CommitteeMembership {
 // Events, RSVPs, Attendance
 // ─────────────────────────────────────────────────────────────────────────
 
+// A member the event's organizer/committee chair has delegated to display
+// the check-in code, without granting them attendance-management access to
+// any OTHER event (see requireCommitteeScope in rbac.ts, which is what
+// actually gates who can create a delegation in the first place).
+model EventDelegate {
+  eventId String
+  userId  String
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId])
+}
+
 model Event {
   id                  String        @id @default(cuid())
   title               String
@@ -574,6 +600,7 @@ model Event {
   rsvps       Rsvp[]
   attendances Attendance[]
   ledgerEntries PointsLedger[]
+  delegates   EventDelegate[]
 
   @@index([startTime])
   @@index([category])

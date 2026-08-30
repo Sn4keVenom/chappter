@@ -188,6 +188,65 @@ router.post(
   })
 );
 
+// ── POST /dues/pay-pyli — self-service payment ─────────────────────────────
+// Pyli is the chapter's external payment provider (see docs/DEMO_MODE.md and
+// src/api/dues.ts's doc comment) — not a real payment integration, this
+// mirrors a Pyli checkout completing instantly from the chapter's point of
+// view. No permission gate: any member can pay their OWN dues this way, no
+// officer approval needed — the one thing that keeps this from being "pay
+// anyone's dues" is that it always acts on req.user's own record.
+const payPyliSchema = z.object({
+  semesterId: z.string(),
+  amount: z.number().positive(),
+  plan: z.enum(["FULL", "MONTHLY"]),
+});
+
+router.post(
+  "/dues/pay-pyli",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = payPyliSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const duesRecord = await prisma.duesRecord.findUnique({
+      where: { userId_semesterId: { userId: req.user!.id, semesterId: parsed.data.semesterId } },
+    });
+    if (!duesRecord) return res.status(404).json({ error: "No dues record for this semester yet" });
+    if (duesRecord.status === "WAIVED") {
+      return res.status(400).json({ error: "Dues are waived — no payment needed" });
+    }
+
+    const payment = await prisma.payment.create({
+      data: {
+        duesRecordId: duesRecord.id,
+        amount: parsed.data.amount,
+        method: "PYLI",
+        externalRef: `pyli_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+        recordedById: null, // self-initiated, not an officer entry — Payment.recordedById's own doc comment
+      },
+    });
+
+    // Recorded even for a partial payment, same as the manual payment route
+    // — choosing a plan is a statement of intent ("I'm paying monthly"), not
+    // a claim that this one instalment settles the balance.
+    await prisma.duesRecord.update({ where: { id: duesRecord.id }, data: { plan: parsed.data.plan } });
+    await recalcDuesStatus(duesRecord.id);
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "DUES_PAYMENT_PYLI",
+      entityType: "Payment",
+      entityId: payment.id,
+      after: { amount: parsed.data.amount, plan: parsed.data.plan },
+    });
+
+    const updated = await prisma.duesRecord.findUnique({
+      where: { id: duesRecord.id },
+      include: { semester: { select: { id: true, label: true } } },
+    });
+    res.status(201).json({ payment, duesRecord: updated });
+  })
+);
+
 // ── POST /dues/:userId/payment — manual payment record ───────────────────
 const paymentSchema = z.object({
   semesterId: z.string(),

@@ -113,6 +113,11 @@ router.get(
         rsvps: { where: { userId }, select: { status: true } },
         attendances: { where: { userId }, select: { pointsAwarded: true, late: true } },
         _count: { select: { attendances: true } },
+        // Delegate names aren't sensitive within a chapter (same tier as
+        // committee membership) — always included rather than gated per
+        // viewer; the detail page itself only renders the section for
+        // whoever canManageEvent() anyway.
+        delegates: { include: { user: { select: { id: true, firstName: true, lastName: true } } } },
       },
     });
 
@@ -147,6 +152,11 @@ router.get(
         checkedInCount: event._count.attendances,
         myRsvpStatus: event.rsvps[0]?.status ?? null,
         myAttendance: event.attendances[0] ?? null,
+        attendanceDelegates: event.delegates.map((d) => ({
+          userId: d.user.id,
+          firstName: d.user.firstName,
+          lastName: d.user.lastName,
+        })),
       },
     });
   })
@@ -360,6 +370,89 @@ router.post(
     }
 
     res.status(201).json({ attendance });
+  })
+);
+
+// ── Check-in delegates ─────────────────────────────────────────────────────
+// A delegate can display THIS event's check-in code (GET /events/:id/
+// checkin-token) without gaining attendance-management access to any other
+// event — narrower and more delegable than the general access
+// requireCommitteeScope grants for the rest of an event's management.
+//
+// Gated the same way GET /events/:id/checkin-token already is: Exec+, or the
+// chair of the event's own committee. Mirrors mocks/api.ts
+// addEventDelegate/removeEventDelegate's canManageDelegates, minus its extra
+// Scribe carve-out — kept consistent with the neighbouring checkin-token
+// route rather than widening this one specific action beyond it.
+
+async function eventDelegateResponse(eventId: string) {
+  const delegates = await prisma.eventDelegate.findMany({
+    where: { eventId },
+    include: { user: { select: { id: true, firstName: true, lastName: true } } },
+    orderBy: { userId: "asc" },
+  });
+  return delegates.map((d) => ({ userId: d.user.id, firstName: d.user.firstName, lastName: d.user.lastName }));
+}
+
+const delegateSchema = z.object({ userId: z.string().min(1) });
+
+router.post(
+  "/events/:id/delegates",
+  requireCommitteeScope(async (req) => {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    return event?.committeeId ?? null;
+  }),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = delegateSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const user = await prisma.user.findUnique({ where: { id: parsed.data.userId } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    await prisma.eventDelegate.upsert({
+      where: { eventId_userId: { eventId: event.id, userId: user.id } },
+      update: {},
+      create: { eventId: event.id, userId: user.id },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "EVENT_DELEGATE_ADD",
+      entityType: "Event",
+      entityId: event.id,
+      after: { userId: user.id },
+    });
+
+    res.status(201).json({ delegates: await eventDelegateResponse(event.id) });
+  })
+);
+
+router.delete(
+  "/events/:id/delegates/:userId",
+  requireCommitteeScope(async (req) => {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    return event?.committeeId ?? null;
+  }),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    await prisma.eventDelegate.deleteMany({
+      where: { eventId: event.id, userId: req.params.userId },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "EVENT_DELEGATE_REMOVE",
+      entityType: "Event",
+      entityId: event.id,
+      before: { userId: req.params.userId },
+    });
+
+    res.json({ delegates: await eventDelegateResponse(event.id) });
   })
 );
 
