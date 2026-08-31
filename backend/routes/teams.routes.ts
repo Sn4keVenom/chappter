@@ -51,7 +51,11 @@ interface TeamRow {
  * a handful, not hundreds), so N+1 here is a non-issue. */
 async function loadTeamDetail(team: TeamRow, semesterId: string | null) {
   const memberships = await prisma.chapterMembership.findMany({
-    where: { teamId: team.id },
+    // user.deletedAt: null — a soft-deleted account keeps its team membership
+    // (deletion never touches ChapterMembership; see lib/deleteUser.ts), so
+    // exclude it here or it still pads memberCount and totalPoints. Matches
+    // the individual leaderboard (GET /points/leaderboard).
+    where: { teamId: team.id, user: { deletedAt: null } },
     include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
   });
 

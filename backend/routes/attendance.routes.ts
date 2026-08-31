@@ -327,7 +327,11 @@ router.get(
     // every ${...} interpolation — it is never string-concatenated. status
     // lives on ChapterMembership now, not User (see schema.prisma doc
     // comment), so the leaderboard is joined through it and scoped to the
-    // caller's own chapter.
+    // caller's own chapter. u."deletedAt" IS NULL keeps soft-deleted accounts
+    // off the board — deletion sets User.deletedAt but deliberately leaves
+    // ChapterMembership.status ACTIVE (see lib/deleteUser.ts), so without this
+    // a deleted member keeps their rank, and a re-signup shows up twice. Same
+    // filter the roster list uses (GET /users in users.routes.ts).
     const rows = await prisma.$queryRaw<
       { userId: string; total: bigint; firstName: string; lastName: string; avatarUrl: string | null }[]
     >`
@@ -342,7 +346,7 @@ router.get(
         ON cm."userId" = u.id AND cm."chapterId" = ${req.user!.chapterId}
       LEFT JOIN "PointsLedger" pl
         ON pl."userId" = u.id AND pl."semesterId" = ${semesterId}
-      WHERE cm.status IN ('ACTIVE', 'PNM')
+      WHERE cm.status IN ('ACTIVE', 'PNM') AND u."deletedAt" IS NULL
       GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl"
       ORDER BY total DESC
     `;
