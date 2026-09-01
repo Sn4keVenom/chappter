@@ -27,6 +27,7 @@ import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/Dialog";
 import { EmptyState, ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
+import { Avatar } from "../../components/ui/Avatar";
 import type { FamilyMemberSummary } from "../../types";
 import styles from "./ProfilePage.module.css";
 
@@ -42,10 +43,13 @@ function FamilyRow({
   return (
     <div className={styles.row}>
       <Link to={`/members/${member.userId}`} className={styles.rowBody} style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
-        <span className={styles.avatar} style={{ width: 40, height: 40, fontSize: "var(--text-sm)" }} aria-hidden="true">
-          {member.firstName[0]}
-          {member.lastName[0]}
-        </span>
+        <Avatar
+          avatarUrl={member.avatarUrl}
+          firstName={member.firstName}
+          lastName={member.lastName}
+          className={styles.avatar}
+          style={{ width: 40, height: 40, fontSize: "var(--text-sm)" }}
+        />
         <span className={styles.rowBody}>
           <span className={styles.rowTitle}>
             {member.firstName} {member.lastName}

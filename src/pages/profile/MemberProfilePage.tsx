@@ -25,6 +25,7 @@ import { Button, ButtonLink } from "../../components/ui/Button";
 import { Dialog, ConfirmDialog } from "../../components/ui/Dialog";
 import { Input, Select } from "../../components/ui/Form";
 import { ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
+import { Avatar } from "../../components/ui/Avatar";
 import { userRoleTone } from "../../theme/semantic";
 import { fullName, type ExecOffice, type UserRole } from "../../types";
 import { formatShortDate, titleCaseEnum } from "../../utils/format";
@@ -125,10 +126,12 @@ export default function MemberProfilePage() {
       {actionError ? <ErrorBanner message={actionError} /> : null}
 
       <div className={styles.hero}>
-        <span className={styles.avatar} aria-hidden="true">
-          {member.firstName[0]}
-          {member.lastName[0]}
-        </span>
+        <Avatar
+          avatarUrl={member.avatarUrl}
+          firstName={member.firstName}
+          lastName={member.lastName}
+          className={styles.avatar}
+        />
         <div className={styles.heroBody}>
           <p className={styles.name}>{fullName(member)}</p>
           <p className={styles.role}>

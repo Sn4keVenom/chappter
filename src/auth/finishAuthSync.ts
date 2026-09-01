@@ -41,6 +41,7 @@ export async function finishAuthSync(clerkUser: ClerkUserLike, extra?: { phone?:
     firstName: user.firstName,
     lastName: user.lastName,
     hasChapter: user.hasChapter,
+    avatarUrl: user.avatarUrl,
     chapterId: user.chapterId,
     pendingJoinRequest: user.pendingJoinRequest,
     role: user.role,

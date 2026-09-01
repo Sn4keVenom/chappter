@@ -27,11 +27,8 @@ import { useThemeStore } from "../theme/useThemeStore";
 import { mobileBarItems, navSections, type NavContext, type NavItem } from "../navigation/navModel";
 import { DEMO_MODE } from "../config/demo";
 import { DemoRoleSwitcher } from "../components/DemoRoleSwitcher";
+import { Avatar } from "../components/ui/Avatar";
 import styles from "./AppLayout.module.css";
-
-function initials(first?: string, last?: string): string {
-  return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase() || "?";
-}
 
 function NavLinkRow({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   return (
@@ -55,9 +52,12 @@ function UserCard({ onClick }: { onClick?: () => void }) {
   const user = useAuthStore((s) => s.user);
   const content = (
     <>
-      <span className={styles.userAvatar} aria-hidden="true">
-        {initials(user?.firstName, user?.lastName)}
-      </span>
+      <Avatar
+        avatarUrl={user?.avatarUrl}
+        firstName={user?.firstName}
+        lastName={user?.lastName}
+        className={styles.userAvatar}
+      />
       <span className={styles.userInfo}>
         <span className={styles.userName}>
           {user?.firstName} {user?.lastName}
@@ -183,9 +183,12 @@ export default function AppLayout() {
           aria-expanded={drawerOpen}
           aria-haspopup="dialog"
         >
-          <span className={styles.avatarButton} aria-hidden="true">
-            {initials(user?.firstName, user?.lastName)}
-          </span>
+          <Avatar
+            avatarUrl={user?.avatarUrl}
+            firstName={user?.firstName}
+            lastName={user?.lastName}
+            className={styles.avatarButton}
+          />
         </button>
       </header>
 

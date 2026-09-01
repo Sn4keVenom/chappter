@@ -155,6 +155,7 @@ export default function EditProfilePage() {
           ...currentUser,
           firstName: updated.firstName,
           lastName: updated.lastName,
+          avatarUrl: updated.avatarUrl,
           major: updated.major,
           graduationYear: updated.graduationYear,
         });

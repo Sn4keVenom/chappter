@@ -62,6 +62,7 @@ export default function JoinChapterPage() {
         firstName: user.firstName,
         lastName: user.lastName,
         hasChapter: user.hasChapter,
+        avatarUrl: user.avatarUrl,
         chapterId: user.chapterId,
         role: user.role,
         office: user.office,

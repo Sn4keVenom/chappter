@@ -14,6 +14,7 @@ export interface AppUser {
   // creation. RootNavigator routes to OnboardingNavigator instead of the
   // main app while this is false.
   hasChapter: boolean;
+  avatarUrl?: string | null;
   chapterId?: string | null;
   pendingJoinRequest?: ChapterJoinRequest | null;
   role?: UserRole;

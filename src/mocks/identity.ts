@@ -40,6 +40,7 @@ export function toAppUser(user: MockUser): AppUser {
     // JoinRequestsScreen read user.chapterId directly and silently no-op
     // (stuck spinner) without it.
     hasChapter: true,
+    avatarUrl: user.avatarUrl ?? null,
     chapterId: DEMO_CHAPTER_ID,
     roleNumber: user.roleNumber ?? null,
     major: user.major ?? null,

@@ -22,6 +22,7 @@ import { Button, ButtonLink } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { ChoiceList } from "../../components/ui/Form";
 import { EmptyState, ErrorBanner, LoadingState } from "../../components/ui/Feedback";
+import { Avatar } from "../../components/ui/Avatar";
 import { duesStatusTone } from "../../theme/semantic";
 import { formatCurrency, fullName, type DuesPlan, type DuesRecord } from "../../types";
 import { formatShortDate, titleCaseEnum } from "../../utils/format";
@@ -176,9 +177,12 @@ export default function ProfilePage() {
 
       {me ? (
         <div className={styles.hero}>
-          <span className={styles.avatar} aria-hidden="true">
-            {me.firstName[0]}
-          </span>
+          <Avatar
+            avatarUrl={me.avatarUrl}
+            firstName={me.firstName}
+            lastName={me.lastName}
+            className={styles.avatar}
+          />
           <div className={styles.heroBody}>
             <p className={styles.name}>{fullName(me)}</p>
             {me.username ? <p className={styles.username}>@{me.username}</p> : null}
