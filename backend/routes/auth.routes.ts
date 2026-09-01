@@ -145,7 +145,17 @@ router.post(
             lastName: body.lastName,
             email: body.email,
             ...(body.phone ? { phone: body.phone } : {}),
-            ...(body.avatarUrl ? { avatarUrl: body.avatarUrl } : {}),
+            // Deliberately NOT syncing avatarUrl here. clerkUser.imageUrl is
+            // never empty (Clerk always generates a default), so the old
+            // `body.avatarUrl ? {...} : {}` guard was truthy on literally
+            // every sync — and finishAuthSync.ts runs this on every session
+            // restore, i.e. every reload. That silently overwrote a photo
+            // uploaded via PATCH /users/me (EditProfilePage.tsx's own,
+            // Clerk-independent avatar flow) back to Clerk's generic one on
+            // the very next reload: "shows up in Edit Profile, gone on
+            // reload." avatarUrl is only ever meant to be touched by that
+            // self-service flow once a row exists — see create below for
+            // the one time Clerk's image is actually the right default.
           },
           create: {
             authProviderId,
@@ -154,6 +164,9 @@ router.post(
             email: body.email,
             username,
             phone: body.phone,
+            // A brand-new row has no photo of its own yet, so Clerk's is a
+            // reasonable starting point — this is the only sync that should
+            // ever set it from here.
             avatarUrl: body.avatarUrl,
           },
         });
