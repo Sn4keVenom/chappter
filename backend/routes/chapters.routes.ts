@@ -859,7 +859,17 @@ router.post(
 
 // ── Join requests ───────────────────────────────────────────────────────────
 
-const joinRequestSchema = z.object({ message: z.string().max(500).optional() });
+const joinRequestSchema = z.object({
+  message: z.string().max(500).optional(),
+  // Carries the status a person picked at sign-up (Active/Alumni/PNM)
+  // through to approval when they land on this generic "browse and
+  // request" path instead of the roster-verified claim-role-number one —
+  // see JoinChapterPage.tsx's doc comment for when that happens (lost a
+  // roster-claim race, name mismatch, etc.). Without it, approval had
+  // nothing to go on and fell back to the schema defaults (role MEMBER,
+  // status PNM) regardless of what was actually picked.
+  status: z.enum(["ACTIVE", "ALUMNI", "PNM"]).optional(),
+});
 
 router.post(
   "/chapters/:id/join-requests",
@@ -895,7 +905,12 @@ router.post(
     let joinRequest;
     try {
       joinRequest = await prisma.chapterJoinRequest.create({
-        data: { chapterId: chapter.id, userId: req.user!.id, message: parsed.data.message },
+        data: {
+          chapterId: chapter.id,
+          userId: req.user!.id,
+          message: parsed.data.message,
+          memberStatus: parsed.data.status,
+        },
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -964,13 +979,22 @@ router.patch(
             userId: joinRequest.userId,
             chapterId: joinRequest.chapterId,
             invitedById: req.user!.membershipId,
-            // Only set for requests auto-filed by claim-role-number
-            // (roster-verified signup) — an ordinary browse/invite-adjacent
-            // request leaves these at the schema defaults (role MEMBER,
-            // status PNM), same as today.
+            // memberStatus is set either by claim-role-number (roster-
+            // verified signup) or by a plain join request that carried the
+            // status the person picked at sign-up (see joinRequestSchema
+            // above) — either way, it's what they actually chose, so it
+            // drives both role and status here. Left unset only for a
+            // request with no status signal at all (e.g. someone who just
+            // browsed the chapter list with no prior sign-up context), which
+            // keeps the schema defaults: role MEMBER, status PNM.
             ...(joinRequest.memberStatus
               ? {
-                  role: joinRequest.memberStatus === "ALUMNI" ? "ALUMNI" : "MEMBER",
+                  role:
+                    joinRequest.memberStatus === "ALUMNI"
+                      ? "ALUMNI"
+                      : joinRequest.memberStatus === "PNM"
+                        ? "PNM"
+                        : "MEMBER",
                   status: joinRequest.memberStatus,
                   roleNumber: joinRequest.roleNumber,
                 }

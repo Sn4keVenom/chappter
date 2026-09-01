@@ -15,10 +15,17 @@ export async function redeemInviteCode(code: string): Promise<User> {
   return data.user;
 }
 
-export async function requestToJoinChapter(chapterId: string, message?: string): Promise<ChapterJoinRequest> {
+export async function requestToJoinChapter(
+  chapterId: string,
+  message?: string,
+  // The status picked at sign-up, forwarded through when this is a
+  // fallback from a roster-claim that didn't go through — see
+  // JoinChapterPage.tsx. Omitted for a genuinely cold "browse and request".
+  status?: "ACTIVE" | "ALUMNI" | "PNM"
+): Promise<ChapterJoinRequest> {
   const { data } = await apiClient.post<{ joinRequest: ChapterJoinRequest }>(
     `/chapters/${chapterId}/join-requests`,
-    { message }
+    { message, status }
   );
   return data.joinRequest;
 }

@@ -71,12 +71,21 @@ export default function VerifyEmailPage() {
           navigate("/pending");
           return;
         } catch (e: any) {
-          navigate("/join", { state: { error: e?.message ?? "That role number was just claimed by someone else — you can still request to join below." } });
+          navigate("/join", {
+            state: {
+              error: e?.message ?? "That role number was just claimed by someone else — you can still request to join below.",
+              status: pending.status,
+            },
+          });
           return;
         }
       }
 
-      navigate("/join");
+      // pending.status also rides along here for the same reason — this is
+      // PNM's normal path (never a bug: PNM has no roster claim to attempt),
+      // but it also covers the defensive edge case of an Active/Alumni pick
+      // with no roleNumber, so that choice isn't silently dropped either.
+      navigate("/join", { state: pending?.status ? { status: pending.status } : undefined });
     } catch (e: any) {
       setBanner(clerkErrorMessage(e, "That code didn't work. Check it and try again."));
     } finally {

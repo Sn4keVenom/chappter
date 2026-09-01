@@ -29,10 +29,16 @@ export default function JoinChapterPage() {
 
   const [code, setCode] = useState(params.get("code")?.toUpperCase() ?? "");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(
-    (location.state as { error?: string } | null)?.error ?? null
-  );
+  const locationState = location.state as { error?: string; status?: "ACTIVE" | "ALUMNI" | "PNM" } | null;
+  const [error, setError] = useState<string | null>(locationState?.error ?? null);
   const [requested, setRequested] = useState<string | null>(null);
+  // The status picked at sign-up (VerifyEmailPage forwards it here when a
+  // roster claim didn't happen or didn't stick) — carried through to
+  // requestJoin so approval doesn't fall back to "member but also PNM"
+  // regardless of what was actually chosen. Absent for a cold browse/request
+  // with no prior sign-up context, which is the one case that's supposed to
+  // land as PNM by default.
+  const pendingStatus = locationState?.status;
 
   const { data: chapters, loading } = useAsync(() => listChapters().catch(() => []), []);
 
@@ -77,7 +83,7 @@ export default function JoinChapterPage() {
     setBusy(true);
     setError(null);
     try {
-      await requestToJoinChapter(chapterId);
+      await requestToJoinChapter(chapterId, undefined, pendingStatus);
       setRequested(chapterId);
     } catch (e: any) {
       setError(e?.message ?? "Couldn't send your request. Please try again.");
@@ -119,6 +125,12 @@ export default function JoinChapterPage() {
       <h3 style={{ margin: "var(--space-8) 0 var(--space-3)", fontSize: "var(--text-md)" }}>
         Or request to join
       </h3>
+      {pendingStatus && pendingStatus !== "PNM" ? (
+        <p style={{ fontSize: "var(--text-xs)", opacity: 0.8, marginBottom: "var(--space-3)" }}>
+          Requesting as {pendingStatus === "ALUMNI" ? "an alumni member" : "an active member"}, as you picked at
+          sign-up.
+        </p>
+      ) : null}
 
       {loading ? (
         <Spinner label="Loading chapters" />
