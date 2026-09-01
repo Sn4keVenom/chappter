@@ -8,7 +8,6 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { adjustPoints, getLeaderboard, getMemberProfile } from "../../api/users";
-import { getMyDues } from "../../api/dues";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
 import RequireAccess from "../../components/RequireAccess";
@@ -27,18 +26,17 @@ export default function AdjustPointsPage() {
   const { isExecOrAbove } = usePermissions();
 
   const { data, loading } = useAsync(async () => {
-    // The leaderboard reports the semester LABEL but not its id, and there is
-    // no dedicated "current semester" endpoint. Every DuesRecord carries the
-    // id, so the caller's own dues record is the cheapest way to obtain it —
-    // the same approach the mobile app used.
-    const [member, board, dues] = await Promise.all([
-      getMemberProfile(userId),
-      getLeaderboard(),
-      getMyDues().catch(() => []),
-    ]);
+    // The leaderboard is the one permission-appropriate place to learn the
+    // current semester's id: GET /dues also returns one, but requires
+    // dues.manage, which an Exec adjusting points may not hold. This used to
+    // read the ACTOR's own dues record instead — which left the button
+    // permanently disabled for a Super Admin (or anyone) with no dues record
+    // of their own, since there was then nothing to read a semester id off
+    // of, regardless of what was picked in the form.
+    const [member, board] = await Promise.all([getMemberProfile(userId), getLeaderboard()]);
     return {
       member,
-      semesterId: dues[0]?.semesterId ?? null,
+      semesterId: board.semesterId,
       entry: board.leaderboard.find((e) => e.userId === userId),
     };
   }, [userId]);

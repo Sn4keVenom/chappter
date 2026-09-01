@@ -15,7 +15,7 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
-import { AuthedRequest, requireRole, requireCommitteeScope, writeAuditLog } from "../middleware/rbac";
+import { AuthedRequest, requireRole, requireCommitteeScope, isAtLeast, writeAuditLog } from "../middleware/rbac";
 
 const router = Router();
 
@@ -203,6 +203,16 @@ router.post(
     const { userId, role } = parsed.data;
     const committeeId = req.params.id;
 
+    // A chair manages everyone ELSE's role on this committee — demoting
+    // themselves is exec-territory (it can leave the committee headless, or
+    // strip a chair of the ability to manage their own committee).
+    // requireCommitteeScope above already lets a mere chair through, so the
+    // self-downgrade case has to be caught here. Self-promotion (already
+    // CHAIR, re-adding as CHAIR) is a no-op and stays allowed.
+    if (userId === req.user!.id && role !== "CHAIR" && !isAtLeast(req.user!.role, "EXEC")) {
+      return res.status(403).json({ error: "You can't remove yourself as head — ask an Exec." });
+    }
+
     const committee = await prisma.committee.findUnique({
       where: { id: committeeId },
       include: { channel: { select: { id: true } } },
@@ -244,6 +254,14 @@ router.delete(
   requireCommitteeScope(async (req) => req.params.id),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const { id: committeeId, userId } = req.params;
+
+    // Same reasoning as the self-downgrade guard in POST .../members above:
+    // a chair (who reaches this route via requireCommitteeScope, not an
+    // Exec role) shouldn't be able to remove themselves from their own
+    // committee.
+    if (userId === req.user!.id && !isAtLeast(req.user!.role, "EXEC")) {
+      return res.status(403).json({ error: "You can't remove yourself from a committee you chair — ask an Exec." });
+    }
 
     const committee = await prisma.committee.findUnique({
       where: { id: committeeId },

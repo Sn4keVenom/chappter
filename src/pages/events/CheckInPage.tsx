@@ -9,16 +9,19 @@
 //   member             — enters the code shown on the organizer's screen
 //
 // ── What changed from mobile, and why ────────────────────────────────────
-// The mobile app scanned the QR with expo-camera. On the web, camera access
-// requires HTTPS, an explicit permission prompt, and a barcode-detection API
-// that Safari still doesn't ship — so a scanner would be unreliable exactly
-// where it's needed (a phone at an event). Typing the six-or-so characters
-// printed under the QR is quick, works everywhere, and needs no permission.
-// The QR is still rendered, so a native camera app can read it and open the
-// link directly.
+// The mobile app scanned the QR with expo-camera. On the web there's no
+// in-app scanner (camera access needs HTTPS, an explicit permission prompt,
+// and a barcode-detection API Safari still doesn't ship) — but a phone's
+// own camera app already scans any QR system-wide with no permission dance,
+// so the QR encodes a real link into THIS page with the token attached
+// (checkInLink() below), not the bare token. Opened, it auto-submits the
+// same request MemberView's form would — no typing needed, matching how the
+// mobile app's scan worked. Typing the code by hand (under the QR, and in
+// the form below) is the fallback for when scanning isn't convenient — e.g.
+// the code is projected on a screen across the room.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 import { getCheckInToken, getEventRoster, selfCheckIn } from "../../api/attendance";
 import { getEvent } from "../../api/events";
@@ -34,6 +37,10 @@ import styles from "./CheckInPage.module.css";
 
 /** The server's token is valid 60s; refresh at 55 to avoid a race at the edge. */
 const REFRESH_MS = 55_000;
+
+function checkInLink(eventId: string, token: string): string {
+  return `${window.location.origin}/events/${eventId}/check-in?token=${encodeURIComponent(token)}`;
+}
 
 function OrganizerView({ eventId }: { eventId: string }) {
   const [token, setToken] = useState<string | null>(null);
@@ -100,7 +107,7 @@ function OrganizerView({ eventId }: { eventId: string }) {
       {token ? (
         <>
           <div className={styles.qrPanel}>
-            <QRCode value={token} size={220} alt="Check-in QR code" />
+            <QRCode value={checkInLink(eventId, token)} size={220} alt="Check-in QR code" />
             <p className={styles.codeText}>{token}</p>
           </div>
           <p className={styles.countdown} role="status">
@@ -123,29 +130,59 @@ function OrganizerView({ eventId }: { eventId: string }) {
 }
 
 function MemberView({ eventId }: { eventId: string }) {
+  const [params, setParams] = useSearchParams();
+  // Captured once, from whatever the URL held on the very first render —
+  // deliberately NOT re-derived from `params` on every render, since the
+  // auto-submit effect below deletes the token from the URL almost
+  // immediately, and this needs to keep remembering "this visit started
+  // from a scan" after that happens.
+  const [autoSubmitting, setAutoSubmitting] = useState(() => params.get("token") != null);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ points: number; late: boolean; already: boolean } | null>(null);
+  // A ref, not state, because this must run exactly once even though
+  // `submit` (called from the effect below) changes on every render.
+  const autoSubmitted = useRef(false);
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (!code.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await selfCheckIn(eventId, code.trim());
-      setResult({
-        points: response.attendance.pointsAwarded,
-        late: response.attendance.late,
-        already: Boolean(response.alreadyCheckedIn),
-      });
-    } catch (e: any) {
-      setError(e?.message ?? "That code didn't work. Ask the organizer for the current one.");
-    } finally {
-      setBusy(false);
-    }
-  }
+  const submit = useCallback(
+    async (token: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const response = await selfCheckIn(eventId, token.trim());
+        setResult({
+          points: response.attendance.pointsAwarded,
+          late: response.attendance.late,
+          already: Boolean(response.alreadyCheckedIn),
+        });
+      } catch (e: any) {
+        setError(e?.message ?? "That code didn't work. Ask the organizer for the current one.");
+        // Let a failed auto-submit (an expired or already-used scan) fall
+        // through to the manual form instead of being stuck on a loading
+        // state forever.
+        setAutoSubmitting(false);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [eventId]
+  );
+
+  useEffect(() => {
+    const fromLink = params.get("token");
+    if (!fromLink || autoSubmitted.current) return;
+    autoSubmitted.current = true;
+    // Clear it from the URL immediately — a scanned link left in the
+    // address bar would otherwise re-submit (now-expired) on every refresh,
+    // and would resubmit the stale token if the manual retry below succeeds.
+    setParams((p) => {
+      p.delete("token");
+      return p;
+    }, { replace: true });
+    setCode(fromLink);
+    void submit(fromLink);
+  }, [params, setParams, submit]);
 
   if (result) {
     return (
@@ -167,10 +204,25 @@ function MemberView({ eventId }: { eventId: string }) {
     );
   }
 
+  // Scanned the QR: skip straight to "checking you in" rather than flashing
+  // the manual-entry form for a frame before the effect above fires.
+  if (autoSubmitting && !error) {
+    return (
+      <div className={styles.wrap}>
+        <LoadingState label="Checking you in…" />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.wrap}>
       <Card className={styles.form}>
-        <form onSubmit={submit}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (code.trim() && !busy) void submit(code);
+          }}
+        >
           <Input
             label="Check-in code"
             hint="Enter the code shown on the organizer's screen. It changes every minute."

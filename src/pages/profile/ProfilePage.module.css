@@ -46,6 +46,13 @@
 .row {
   display: flex;
   align-items: center;
+  /* Without this, a row with several fixed-size trailing items (a status
+     badge plus one or two buttons — see CommitteeDetailPage's member list)
+     squeezes .rowBody's min-width:0 name down to almost nothing on a narrow
+     viewport instead of giving it room, which reads as the badge/buttons
+     overlapping the name. Wrapping lets the trailing items drop to their
+     own line under the name instead. */
+  flex-wrap: wrap;
   gap: var(--space-3);
   padding: var(--space-3) 0;
   border-bottom: 1px solid var(--color-divider);
@@ -55,7 +62,12 @@
 .row:last-child { border-bottom: none; }
 .row:hover { text-decoration: none; }
 
-.rowBody { flex: 1; min-width: 0; }
+/* min-width was 0, which (combined with flex-wrap above) let this shrink to
+   nothing rather than ever forcing the row's trailing items to wrap — a
+   flex item allowed to reach zero width always "fits", so wrap never
+   triggered. A real floor makes room for the name and pushes badges/buttons
+   to their own line once a row is genuinely too crowded for one. */
+.rowBody { flex: 1; min-width: 8rem; }
 /* Both are <span>s (inline by default) with only whitespace between them in
    JSX, which React collapses to nothing — without an explicit block display
    they run together on one line with no space at all, e.g. "Bylaws3 files"

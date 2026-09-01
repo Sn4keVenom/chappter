@@ -4,7 +4,7 @@
 
 import { apiClient } from "./client";
 import type {
-  User, UserSummary, DashboardData, LeaderboardEntry, LedgerEntry, ExecOffice, MemberStatus, UserRole
+  User, UserSummary, DashboardData, LeaderboardResult, LedgerEntry, ExecOffice, MemberStatus, UserRole
 } from "../types";
 
 export async function getMe(): Promise<User> {
@@ -95,9 +95,7 @@ export async function updateMyProfile(payload: {
   return data.user;
 }
 
-export async function getLeaderboard(params?: {
-  semesterId?: string;
-}): Promise<{ leaderboard: LeaderboardEntry[]; semesterLabel: string | null }> {
+export async function getLeaderboard(params?: { semesterId?: string }): Promise<LeaderboardResult> {
   const { data } = await apiClient.get("/points/leaderboard", { params });
   return data;
 }

@@ -592,6 +592,12 @@ export interface PointsSummary {
   semesterLabel: string | null;
 }
 
+export interface LeaderboardResult {
+  leaderboard: LeaderboardEntry[];
+  semesterId: string | null;
+  semesterLabel: string | null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Teams (gamification — NOT committees, no leaders, one team per member)
 // ─────────────────────────────────────────────────────────────────────────

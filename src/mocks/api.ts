@@ -213,6 +213,16 @@ export function createEvent(payload: {
   committeeId?: string | null;
 }): EventDetail {
   const userId = getCurrentDemoUserId();
+  // Mirrors requireCommitteeScope on the real POST /events: Exec+ (i.e.
+  // events.create, the role-tier permission) can create anything; anyone
+  // else needs the event scoped to a specific committee they chair. This
+  // had no check at all before — any demo user, including a PNM, could
+  // create any event for any committee.
+  if (!can(userId, "events.create")) {
+    if (!payload.committeeId || !committeeManageAccess(userId, payload.committeeId)) {
+      throw new DemoApiError(403, "Not permitted");
+    }
+  }
   const event: db.MockEvent = {
     id: db.nextId("e"),
     title: payload.title,
@@ -943,8 +953,8 @@ export function reviewJoinRequest(joinRequestId: string, approve: boolean): db.M
   return request;
 }
 
-export function getLeaderboard(): { leaderboard: LeaderboardEntry[]; semesterLabel: string | null } {
-  return { leaderboard: leaderboardRows(), semesterLabel: db.semester.label };
+export function getLeaderboard(): { leaderboard: LeaderboardEntry[]; semesterId: string; semesterLabel: string | null } {
+  return { leaderboard: leaderboardRows(), semesterId: db.semester.id, semesterLabel: db.semester.label };
 }
 
 export function getPointsLedger(
@@ -1346,7 +1356,8 @@ export function addCommitteeMember(
   const c = db.committees.find((x) => x.id === committeeId);
   const u = db.findUser(payload.userId);
   if (!c || !u) throw new DemoApiError(404, "Committee or user not found");
-  if (!can(getCurrentDemoUserId(), "committees.manage") && !committeeManageAccess(getCurrentDemoUserId(), committeeId)) {
+  const isExecOrAbove = can(getCurrentDemoUserId(), "committees.manage");
+  if (!isExecOrAbove && !committeeManageAccess(getCurrentDemoUserId(), committeeId)) {
     throw new DemoApiError(403, "Not authorized to manage this committee's members");
   }
   // UPSERT, matching POST /committees/:id/members on the real backend — the
@@ -1355,6 +1366,12 @@ export function addCommitteeMember(
   // only handled the create half, so promoting an existing member to CHAIR
   // silently did nothing in Demo Mode while working against the real API.
   const role = payload.role ?? "MEMBER";
+  // A chair (reaching here only via committeeManageAccess, not the
+  // committees.manage role-tier permission) can't demote themselves out of
+  // being head — see the same guard on the real POST /committees/:id/members.
+  if (payload.userId === getCurrentDemoUserId() && role !== "CHAIR" && !isExecOrAbove) {
+    throw new DemoApiError(403, "You can't remove yourself as head — ask an Exec.");
+  }
   const existing = db.committeeMemberships.find((m) => m.committeeId === committeeId && m.userId === payload.userId);
   if (existing) {
     existing.role = role;
@@ -1380,8 +1397,14 @@ export function addCommitteeMember(
 }
 
 export function removeCommitteeMember(committeeId: string, userId: string): void {
-  if (!can(getCurrentDemoUserId(), "committees.manage") && !committeeManageAccess(getCurrentDemoUserId(), committeeId)) {
+  const isExecOrAbove = can(getCurrentDemoUserId(), "committees.manage");
+  if (!isExecOrAbove && !committeeManageAccess(getCurrentDemoUserId(), committeeId)) {
     throw new DemoApiError(403, "Not authorized to manage this committee's members");
+  }
+  // Same reasoning as addCommitteeMember's self-downgrade guard: a chair
+  // can't remove themselves from their own committee.
+  if (userId === getCurrentDemoUserId() && !isExecOrAbove) {
+    throw new DemoApiError(403, "You can't remove yourself from a committee you chair — ask an Exec.");
   }
   const idx = db.committeeMemberships.findIndex((m) => m.committeeId === committeeId && m.userId === userId);
   if (idx >= 0) db.committeeMemberships.splice(idx, 1);

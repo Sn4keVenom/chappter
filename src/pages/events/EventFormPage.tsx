@@ -18,6 +18,7 @@ import { getEvent } from "../../api/events";
 import { listCommittees } from "../../api/committees";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
+import { useAuthStore } from "../../store/useAuthStore";
 import RequireAccess from "../../components/RequireAccess";
 import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/ui/Card";
@@ -41,7 +42,15 @@ export default function EventFormPage() {
   const { eventId } = useParams();
   const navigate = useNavigate();
   const { can } = usePermissions();
+  const committeeChairOf = useAuthStore((s) => s.user?.committeeChairOf ?? []);
   const isEditing = Boolean(eventId);
+  const hasBroadAccess = can("events.create");
+  // POST /events already lets a committee chair create an event scoped to
+  // their own committee (requireCommitteeScope in events.routes.ts) — the
+  // permission gate below was blanket events.create, which only Exec+ holds
+  // by default, so a chair could never reach this form at all even though
+  // the backend was ready for them the whole time.
+  const chairOnly = !hasBroadAccess && committeeChairOf.length > 0;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -70,6 +79,16 @@ export default function EventFormPage() {
     });
   }, []);
 
+  // A chair creating a NEW event can only ever submit for a committee they
+  // chair (the backend's requireCommitteeScope rejects anything else, and a
+  // blank/"chapter-wide" committeeId isn't allowed for them either — see the
+  // hasBroadAccess/chairOnly split above). Pre-select it when there's only
+  // one to choose from, so the common case needs no extra tap.
+  useEffect(() => {
+    if (isEditing || !chairOnly || committeeId) return;
+    if (committeeChairOf.length === 1) setCommitteeId(committeeChairOf[0]);
+  }, [isEditing, chairOnly, committeeChairOf, committeeId]);
+
   useEffect(() => {
     if (!existing) return;
     setTitle(existing.title);
@@ -83,7 +102,7 @@ export default function EventFormPage() {
     setCommitteeId(existing.committeeId ?? "");
   }, [existing]);
 
-  if (!can("events.create") && !isEditing) {
+  if (!hasBroadAccess && !chairOnly && !isEditing) {
     return (
       <div className="page">
         <RequireAccess message="You don't have permission to create events." />
@@ -109,6 +128,11 @@ export default function EventFormPage() {
     }
     const points = Number(pointValue);
     if (!Number.isFinite(points) || points < 0) errors.pointValue = "Points must be zero or more.";
+    // Not just a nicer error than the backend's 403: a chair might chair
+    // several committees, so this can't be pre-filled and skipped entirely.
+    if (chairOnly && !isEditing && !committeeId) {
+      errors.committeeId = "Choose which of your committees this event is for.";
+    }
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   }
@@ -228,16 +252,39 @@ export default function EventFormPage() {
           {committees.length > 0 ? (
             <Select
               label="Committee"
-              hint="Leave as chapter-wide unless this event belongs to one committee."
+              hint={
+                fieldErrors.committeeId
+                  ? undefined
+                  : chairOnly
+                    ? "You can create events for a committee you chair."
+                    : "Leave as chapter-wide unless this event belongs to one committee."
+              }
+              error={fieldErrors.committeeId}
               value={committeeId}
               onChange={(e) => setCommitteeId(e.target.value)}
             >
-              <option value="">Chapter-wide</option>
-              {committees.map((committee) => (
-                <option key={committee.id} value={committee.id}>
-                  {committee.name}
+              {/* A chair-only creator has no "chapter-wide" option — the
+                  backend requires a committee they actually chair. A
+                  disabled placeholder (rather than just omitting an empty
+                  option) keeps the visible selection in sync with
+                  committeeId — otherwise, with nothing at value="", the
+                  browser silently selects the first real option while state
+                  stays "", so a chair who chairs 2+ committees could submit
+                  believing they'd picked one when they hadn't. */}
+              {chairOnly ? (
+                <option value="" disabled>
+                  Choose a committee
                 </option>
-              ))}
+              ) : (
+                <option value="">Chapter-wide</option>
+              )}
+              {(chairOnly ? committees.filter((c) => committeeChairOf.includes(c.id)) : committees).map(
+                (committee) => (
+                  <option key={committee.id} value={committee.id}>
+                    {committee.name}
+                  </option>
+                )
+              )}
             </Select>
           ) : null}
 

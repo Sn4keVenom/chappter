@@ -16,7 +16,7 @@
 // QR code and four actions, which a table row cannot hold legibly even on a
 // wide screen — so the cards simply reflow into columns as space allows.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   archiveInvite,
@@ -396,10 +396,34 @@ export default function InvitesPage() {
   const [editing, setEditing] = useState<ChapterInvite | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<ChapterInvite | null>(null);
   const [regenTarget, setRegenTarget] = useState<ChapterInvite | null>(null);
-  const [qrTarget, setQrTarget] = useState<ChapterInvite | null>(null);
+  // Holds an id, not the invite object itself: the QR dialog is typically
+  // left open while someone actually scans and redeems the code, so if this
+  // held a snapshot instead, the use count it shows would freeze at whatever
+  // it was the moment the dialog opened — looking exactly like a stuck "0
+  // uses" no matter how many times the code gets used while it's up.
+  // Deriving it from `invites` below means every refresh of the list (see
+  // showQr's reload call) reaches the open dialog too.
+  const [qrTargetId, setQrTargetId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const invites = data ?? [];
+  const qrTarget = qrTargetId ? (invites.find((i) => i.id === qrTargetId) ?? null) : null;
+
+  function showQr(invite: ChapterInvite) {
+    setQrTargetId(invite.id);
+    // Catch up on any uses that happened since this list last loaded, right
+    // as the person opens the dialog to go check.
+    void reload({ silent: true });
+  }
+
+  // The QR dialog is exactly the screen someone has up WHILE people are
+  // actively scanning it — poll while it's open so the count in front of
+  // them keeps up, instead of only refreshing at the moment it was opened.
+  useEffect(() => {
+    if (!qrTargetId) return;
+    const interval = setInterval(() => void reload({ silent: true }), 4000);
+    return () => clearInterval(interval);
+  }, [qrTargetId, reload]);
 
   const { active, archived } = useMemo(() => {
     const now = new Date();
@@ -505,7 +529,7 @@ export default function InvitesPage() {
                 onArchive={() => setArchiveTarget(invite)}
                 onRestore={() => run(() => restoreInvite(chapterId!, invite.id), "Couldn't restore invite.")}
                 onRegenerate={() => setRegenTarget(invite)}
-                onShowQr={() => setQrTarget(invite)}
+                onShowQr={() => showQr(invite)}
               />
             ))}
           </ul>
@@ -544,7 +568,7 @@ export default function InvitesPage() {
                     run(() => restoreInvite(chapterId!, invite.id), "Couldn't restore invite.")
                   }
                   onRegenerate={() => setRegenTarget(invite)}
-                  onShowQr={() => setQrTarget(invite)}
+                  onShowQr={() => showQr(invite)}
                 />
               ))}
             </ul>
@@ -599,7 +623,7 @@ export default function InvitesPage() {
 
       <Dialog
         open={qrTarget !== null}
-        onClose={() => setQrTarget(null)}
+        onClose={() => setQrTargetId(null)}
         title={qrTarget ? `Invite ${qrTarget.code}` : "Invite"}
         subtitle="Scan this code, or share the link below, to join the chapter."
       >
@@ -607,6 +631,12 @@ export default function InvitesPage() {
           <div className={styles.qrPanel}>
             <QRCode value={inviteLink(qrTarget.code)} size={220} alt={`QR code for invite ${qrTarget.code}`} />
             <p className={styles.qrCaption}>{inviteLink(qrTarget.code)}</p>
+            <p className={styles.qrCaption}>
+              {qrTarget.maxUses != null
+                ? `${qrTarget.useCount}/${qrTarget.maxUses} used`
+                : `${qrTarget.useCount} use${qrTarget.useCount === 1 ? "" : "s"}`}{" "}
+              — updates live while this is open
+            </p>
           </div>
         ) : null}
       </Dialog>

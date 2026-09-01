@@ -316,7 +316,7 @@ router.get(
       const sem = await prisma.semester.findFirst({
         where: { startDate: { lte: now }, endDate: { gte: now } },
       });
-      if (!sem) return res.json({ leaderboard: [], semesterLabel: null });
+      if (!sem) return res.json({ leaderboard: [], semesterId: null, semesterLabel: null });
       semesterId = sem.id;
     }
 
@@ -361,7 +361,13 @@ router.get(
       isMe: row.userId === req.user!.id,
     }));
 
-    res.json({ leaderboard, semesterLabel: semester?.label ?? null });
+    // semesterId is echoed back so callers that resolved "current semester"
+    // via the omitted-param path (rather than passing one) have a real id to
+    // use afterward — see AdjustPointsPage.tsx, which needs one to submit a
+    // points adjustment and has no other permission-appropriate way to learn
+    // it (GET /dues, the other place a semester id is exposed, needs
+    // dues.manage — a plain Exec adjusting points may not have that office).
+    res.json({ leaderboard, semesterId, semesterLabel: semester?.label ?? null });
   })
 );
 

@@ -171,7 +171,15 @@ export default function CommitteeDetailPage() {
           {committee.members.length === 0 ? (
             <EmptyState icon="👥" title="No members yet" />
           ) : (
-            committee.members.map((member) => (
+            committee.members.map((member) => {
+              const isSelfRow = member.userId === currentUser?.id;
+              // A chair manages the roster of everyone ELSE — demoting or
+              // removing themselves is exec-territory (it can leave a
+              // committee headless, or lock the chair out of managing their
+              // own committee). Exec+ keeps full control, including over a
+              // row that happens to be their own.
+              const canManageRow = isExecOrAbove || (isChair && !isSelfRow);
+              return (
               <div key={member.userId} className={profileStyles.row}>
                 <Link to={`/members/${member.userId}`} className={profileStyles.rowBody}>
                   <span className={profileStyles.rowTitle}>
@@ -181,7 +189,7 @@ export default function CommitteeDetailPage() {
                 <Badge tone={member.role === "CHAIR" ? "accent" : "neutral"} uppercase>
                   {member.role === "CHAIR" ? "Head" : member.role}
                 </Badge>
-                {canManage ? (
+                {canManageRow ? (
                   <>
                     {/* POST /committees/:id/members upserts, so re-adding an
                         existing member with a different role is exactly how
@@ -219,7 +227,8 @@ export default function CommitteeDetailPage() {
                   </>
                 ) : null}
               </div>
-            ))
+              );
+            })
           )}
         </Card>
       </Section>
