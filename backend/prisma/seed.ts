@@ -135,7 +135,7 @@ async function main() {
     "Community Service",
     "Professional Development",
     "Alumni",
-    "Social Media/Website/App",
+    "Marketing",
   ];
 
   for (const name of COMMITTEE_NAMES) {
