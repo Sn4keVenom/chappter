@@ -12,11 +12,13 @@ import RequireAccess from "../../components/RequireAccess";
 import { PageHeader } from "../../components/PageHeader";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
+import { Button } from "../../components/ui/Button";
 import { ChipGroup, Select } from "../../components/ui/Form";
 import { EmptyState, ErrorBanner, LoadingState } from "../../components/ui/Feedback";
 import { feedbackStatusTone } from "../../theme/semantic";
 import { formatFullDate } from "../../utils/format";
-import type { FeedbackStatus } from "../../types";
+import { downloadCsv } from "../../utils/csv";
+import type { FeedbackReport, FeedbackStatus } from "../../types";
 
 const TYPE_ICON: Record<string, string> = { BUG: "🐛", FEATURE_REQUEST: "💡", GENERAL: "💬" };
 const STATUSES: FeedbackStatus[] = ["OPEN", "IN_REVIEW", "RESOLVED", "CLOSED"];
@@ -41,10 +43,52 @@ export default function FeedbackListPage() {
   }
 
   const canManage = can("feedback.manage");
+  const reports = data ?? [];
+
+  function exportCsv() {
+    const header = [
+      "Type",
+      "Status",
+      "Message",
+      "Submitted by",
+      "Platform",
+      "App version",
+      "Submitted",
+      "ID",
+    ];
+    const rows = reports.map((report: FeedbackReport) => [
+      report.type.replace("_", " "),
+      report.status.replace("_", " "),
+      report.message,
+      report.submittedBy
+        ? `${report.submittedBy.firstName} ${report.submittedBy.lastName}`
+        : "Anonymous",
+      report.platform,
+      report.appVersion,
+      formatFullDate(report.createdAt),
+      report.id,
+    ]);
+    const stamp = new Date().toISOString().slice(0, 10);
+    const scope = status === "ALL" ? "all" : status.toLowerCase();
+    downloadCsv(`feedback-${scope}-${stamp}`, [header, ...rows]);
+  }
 
   return (
     <div className="page page-narrow">
-      <PageHeader title="Feedback" subtitle="Bug reports and feature requests from members." />
+      <PageHeader
+        title="Feedback"
+        subtitle="Bug reports and feature requests from members."
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={exportCsv}
+            disabled={loading || reports.length === 0}
+          >
+            Export CSV
+          </Button>
+        }
+      />
 
       {error ? <ErrorBanner message={error} onRetry={() => reload()} /> : null}
       {actionError ? <ErrorBanner message={actionError} /> : null}
@@ -63,13 +107,13 @@ export default function FeedbackListPage() {
 
       {loading ? (
         <LoadingState />
-      ) : (data ?? []).length === 0 ? (
+      ) : reports.length === 0 ? (
         <Card>
           <EmptyState icon="💬" title="No feedback" body="Nothing matches the current filter." />
         </Card>
       ) : (
         <div style={{ display: "grid", gap: "var(--space-3)" }}>
-          {(data ?? []).map((report) => (
+          {reports.map((report) => (
             <Card key={report.id}>
               <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}>
                 <span aria-hidden="true">{TYPE_ICON[report.type] ?? "💬"}</span>
