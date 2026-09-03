@@ -1185,7 +1185,17 @@ export function getMemberAttendanceHistory(userId: string): { records: Attendanc
 
 const activeCheckInTokens = new Map<string, { eventId: string; expiresAt: number }>();
 
-export function getCheckInToken(eventId: string): { token: string; expiresAt: number } {
+// Same alphabet as the real backend's short check-in code (chapters.routes.ts
+// invite codes too) — visually unambiguous, since it's meant to be read off
+// a screen and typed by hand.
+const CHECKIN_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function randomCheckInCode(): string {
+  let code = "";
+  for (let i = 0; i < 6; i++) code += CHECKIN_CODE_ALPHABET[Math.floor(Math.random() * CHECKIN_CODE_ALPHABET.length)];
+  return code;
+}
+
+export function getCheckInToken(eventId: string): { token: string; code: string; expiresAt: number } {
   const event = db.findEvent(eventId);
   if (!event) throw new DemoApiError(404, "Event not found");
   if (!canAccessCheckIn(getCurrentDemoUserId(), event)) {
@@ -1194,10 +1204,13 @@ export function getCheckInToken(eventId: string): { token: string; expiresAt: nu
   const token = `demo-checkin:${eventId}:${db.nextId("tok")}`;
   const expiresAt = Date.now() + 60_000;
   activeCheckInTokens.set(token, { eventId, expiresAt });
-  return { token, expiresAt };
+  return { token, code: randomCheckInCode(), expiresAt };
 }
 
-export function selfCheckIn(eventId: string, token: string): { attendance: AttendanceRecord; alreadyCheckedIn?: boolean } {
+export function selfCheckIn(
+  eventId: string,
+  credential: { token?: string; code?: string }
+): { attendance: AttendanceRecord; alreadyCheckedIn?: boolean } {
   const userId = getCurrentDemoUserId();
   const event = db.findEvent(eventId);
   if (!event) throw new DemoApiError(404, "Event not found");
@@ -1207,12 +1220,12 @@ export function selfCheckIn(eventId: string, token: string): { attendance: Atten
     return { attendance: toAttendanceRecord(existing), alreadyCheckedIn: true };
   }
 
-  // Demo mode is lenient about the scanned payload — any non-empty code
-  // checks you in, since testing a real two-device QR handoff isn't
-  // possible for someone evaluating the app solo. A token minted by
-  // getCheckInToken() above for THIS event is still preferred/validated
-  // when present.
-  if (!token || !token.trim()) {
+  // Demo mode is lenient about the scanned/typed payload — either a
+  // non-empty token or a non-empty code checks you in, since testing a
+  // real two-device QR handoff isn't possible for someone evaluating the
+  // app solo. Real validation is the real backend's job.
+  const submitted = credential.token?.trim() || credential.code?.trim();
+  if (!submitted) {
     throw new DemoApiError(400, "Invalid or expired check-in code");
   }
 
@@ -1446,6 +1459,30 @@ export function getTeam(id: string): Team {
   const t = db.findTeam(id);
   if (!t) throw new DemoApiError(404, "Team not found");
   return toTeam(t);
+}
+
+export function createTeam(payload: { name: string; color?: string | null }): Team {
+  if (!can(getCurrentDemoUserId(), "teams.manage")) throw new DemoApiError(403, "Not authorized to manage teams");
+  const name = payload.name.trim();
+  if (!name) throw new DemoApiError(400, "Give the team a name.");
+  if (db.teams.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+    throw new DemoApiError(409, "A team with that name already exists");
+  }
+  const team: db.MockTeam = { id: db.nextId("team"), name, color: payload.color?.trim() || "#5B6CC0" };
+  db.teams.push(team);
+  return toTeam(team);
+}
+
+/** Members return to no team, same as the real DELETE /teams/:id (ON DELETE
+ * SET NULL) — not reassigned to another team first. */
+export function deleteTeam(id: string): void {
+  if (!can(getCurrentDemoUserId(), "teams.manage")) throw new DemoApiError(403, "Not authorized to manage teams");
+  const idx = db.teams.findIndex((t) => t.id === id);
+  if (idx < 0) throw new DemoApiError(404, "Team not found");
+  db.teams.splice(idx, 1);
+  for (const u of db.users) {
+    if (u.teamId === id) u.teamId = null;
+  }
 }
 
 export function getTeamLeaderboard(): { leaderboard: TeamLeaderboardEntry[]; semesterLabel: string | null } {

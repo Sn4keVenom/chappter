@@ -71,7 +71,7 @@ route("post", "/events/:id/rsvp", (p, _q, body) => {
   api.setRsvp(p.id, body.status);
   return {};
 });
-route("post", "/events/:id/checkin", (p, _q, body) => api.selfCheckIn(p.id, body.token));
+route("post", "/events/:id/checkin", (p, _q, body) => api.selfCheckIn(p.id, body));
 route("post", "/events/:id/attendance/:userId", (p, _q, body) => api.manualMarkAttendance(p.id, p.userId, body));
 route("post", "/events/:id/delegates", (p, _q, body) => ({ delegates: api.addEventDelegate(p.id, body.userId) }));
 route("delete", "/events/:id/delegates/:userId", (p) => ({ delegates: api.removeEventDelegate(p.id, p.userId) }));
@@ -103,7 +103,12 @@ route("get", "/attendance/history", (_p, q) => api.getMyAttendanceHistory(q));
 // Teams (Feature 2 — gamification groupings, not committees)
 route("get", "/teams/leaderboard", () => api.getTeamLeaderboard());
 route("get", "/teams", () => ({ teams: api.listTeams() }));
+route("post", "/teams", (_p, _q, body) => ({ team: api.createTeam(body) }));
 route("get", "/teams/:id", (p) => ({ team: api.getTeam(p.id) }));
+route("delete", "/teams/:id", (p) => {
+  api.deleteTeam(p.id);
+  return { deleted: true };
+});
 route("post", "/teams/:id/members", (p, _q, body) => ({ team: api.addTeamMember(p.id, body.userId) }));
 route("delete", "/teams/:id/members/:userId", (p) => ({ team: api.removeTeamMember(p.id, p.userId) }));
 

@@ -12,6 +12,17 @@ export async function listTeams(): Promise<Team[]> {
   return data.teams;
 }
 
+export async function createTeam(payload: { name: string; color?: string | null }): Promise<Team> {
+  const { data } = await apiClient.post<{ team: Team }>("/teams", payload);
+  return data.team;
+}
+
+/** Members return to no team (schema.prisma: ON DELETE SET NULL) — this
+ * doesn't reassign anyone first. */
+export async function deleteTeam(id: string): Promise<void> {
+  await apiClient.delete(`/teams/${id}`);
+}
+
 export async function getTeam(id: string): Promise<Team> {
   const { data } = await apiClient.get<{ team: Team }>(`/teams/${id}`);
   return data.team;

@@ -5,26 +5,29 @@
 // someone here moves them off any previous team.
 
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { addTeamMember, getTeam, removeTeamMember } from "../api/teams";
+import { addTeamMember, deleteTeam, getTeam, removeTeamMember } from "../api/teams";
 import { getRoster } from "../api/users";
 import { useAsync } from "../hooks/useAsync";
 import { usePermissions } from "../hooks/usePermissions";
 import { PageHeader, Section } from "../components/PageHeader";
 import { Card, CardLabel } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
-import { Dialog } from "../components/ui/Dialog";
+import { Dialog, ConfirmDialog } from "../components/ui/Dialog";
 import { Input } from "../components/ui/Form";
 import { EmptyState, ErrorBanner, ErrorState, LoadingState } from "../components/ui/Feedback";
 import profileStyles from "./profile/ProfilePage.module.css";
 
 export default function TeamPage() {
   const { teamId = "" } = useParams();
+  const navigate = useNavigate();
   const { isExecOrAbove } = usePermissions();
   const { data: team, loading, error, reload } = useAsync(() => getTeam(teamId), [teamId]);
 
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -63,9 +66,32 @@ export default function TeamPage() {
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    setActionError(null);
+    try {
+      await deleteTeam(teamId);
+      navigate("/points?view=team", { replace: true });
+    } catch (e: any) {
+      setActionError(e?.message ?? "Couldn't delete the team.");
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="page page-narrow">
-      <PageHeader title={team.name} backTo="/points?view=team" backLabel="Team standings" />
+      <PageHeader
+        title={team.name}
+        backTo="/points?view=team"
+        backLabel="Team standings"
+        actions={
+          isExecOrAbove ? (
+            <Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}>
+              Delete team
+            </Button>
+          ) : undefined
+        }
+      />
 
       {actionError ? <ErrorBanner message={actionError} /> : null}
 
@@ -162,6 +188,17 @@ export default function TeamPage() {
           </div>
         )}
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={handleDelete}
+        title="Delete this team?"
+        body={`${team.name} will be removed. Its ${team.memberCount} member${team.memberCount === 1 ? "" : "s"} return to no team — nothing about their individual points changes.`}
+        confirmLabel="Delete"
+        destructive
+        busy={deleting}
+      />
     </div>
   );
 }
