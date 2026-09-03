@@ -71,6 +71,8 @@ import auditLogRouter from "./routes/auditlog.routes";
 import teamsRouter from "./routes/teams.routes";
 import financeRouter from "./routes/finance.routes";
 import achievementsRouter from "./routes/achievements.routes";
+import semestersRouter from "./routes/semesters.routes";
+import brotherOfWeekRouter from "./routes/brotherOfWeek.routes";
 
 const app = express();
 const isProduction = process.env.NODE_ENV === "production";
@@ -207,6 +209,8 @@ app.use("/api/v1", auditLogRouter);
 app.use("/api/v1", teamsRouter);
 app.use("/api/v1", financeRouter);
 app.use("/api/v1", achievementsRouter);
+app.use("/api/v1", semestersRouter);
+app.use("/api/v1", brotherOfWeekRouter);
 
 // ── 11. 404 for anything unmatched ──────────────────────────────────────────
 app.use((req, res) => {

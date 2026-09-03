@@ -123,6 +123,12 @@ export const router = createBrowserRouter([
               { path: "admin/expenses", lazy: page(() => import("../pages/admin/ExpensesPage")) },
               { path: "admin/feedback", lazy: page(() => import("../pages/admin/FeedbackListPage")) },
               { path: "admin/audit-log", lazy: page(() => import("../pages/admin/AuditLogPage")) },
+              { path: "admin/squads", lazy: page(() => import("../pages/admin/SquadsPage")) },
+              { path: "admin/semesters", lazy: page(() => import("../pages/admin/SemestersPage")) },
+              {
+                path: "admin/attendance-report",
+                lazy: page(() => import("../pages/admin/AttendanceReportPage")),
+              },
             ],
           },
         ],
