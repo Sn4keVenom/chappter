@@ -590,6 +590,13 @@ model Event {
   checkInWindowEnd    DateTime?
   lateThresholdMinutes Int          @default(15)
   checkInTokenSecret  String        // rotating QR signing secret, not exposed directly to clients
+  // Short human-typeable alternative to the QR/token above — same 60s
+  // rotation, generated alongside it (GET .../checkin-token), for the "read
+  // it off the organizer's screen and type it in" path scanning a QR is bad
+  // at (a projector across a room, no camera handy). Nullable: unset until
+  // the first checkin-token request for this event.
+  checkInCode         String?
+  checkInCodeExpiresAt DateTime?
   committeeId         String?
   createdById         String
   createdAt           DateTime      @default(now())

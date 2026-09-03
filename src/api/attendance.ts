@@ -50,18 +50,23 @@ export async function getMemberAttendanceHistory(
 
 export async function getCheckInToken(
   eventId: string
-): Promise<{ token: string; expiresAt: number }> {
+): Promise<{ token: string; code: string; expiresAt: number }> {
   const { data } = await apiClient.get(`/events/${eventId}/checkin-token`);
   return data;
 }
 
+/**
+ * Either credential works: `token` is what a scanned QR/link carries (long,
+ * never typed by a person); `code` is the short 6-character alternative
+ * read off the organizer's screen and typed in by hand. Exactly one.
+ */
 export async function selfCheckIn(
   eventId: string,
-  token: string
+  credential: { token: string } | { code: string }
 ): Promise<{
   attendance: AttendanceRecord;
   alreadyCheckedIn?: boolean;
 }> {
-  const { data } = await apiClient.post(`/events/${eventId}/checkin`, { token });
+  const { data } = await apiClient.post(`/events/${eventId}/checkin`, credential);
   return data;
 }

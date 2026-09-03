@@ -236,6 +236,17 @@ router.post(
 
 // ── GET /events/:id/checkin-token — officer issues/refreshes signed QR ──
 
+// Uppercase alphanumeric minus visually ambiguous characters (0/O, 1/I) —
+// same alphabet chapters.routes.ts uses for invite codes, for the same
+// reason: this gets read aloud and typed in by hand, not just scanned.
+const CHECKIN_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function generateCheckInCode(): string {
+  const bytes = crypto.randomBytes(6);
+  let code = "";
+  for (let i = 0; i < 6; i++) code += CHECKIN_CODE_ALPHABET[bytes[i] % CHECKIN_CODE_ALPHABET.length];
+  return code;
+}
+
 router.get(
   "/events/:id/checkin-token",
   requireCommitteeScope(async (req) => {
@@ -248,56 +259,90 @@ router.get(
 
     // Short-lived signed token: eventId + expiry, HMAC'd with the event's
     // per-event secret so a screenshot can't be replayed past its window.
-    const expiresAt = Date.now() + 60_000; // 60s rotation, matches QrDisplay refresh interval
+    // The QR (checkInLink() in CheckInPage.tsx) encodes THIS — its length
+    // doesn't matter to a person, they never read it, only a camera does.
+    const expiresAt = Date.now() + 60_000; // 60s rotation, matches CheckInPage's refresh interval
     const payload = `${event.id}.${expiresAt}`;
     const signature = crypto
       .createHmac("sha256", event.checkInTokenSecret)
       .update(payload)
       .digest("hex");
 
-    res.json({ token: `${payload}.${signature}`, expiresAt });
+    // Short code: the human-typeable alternative, read off the organizer's
+    // screen — genuinely 6 characters, unlike the token above. Its security
+    // is the same shape as the token's (opaque, rotates every 60s, single
+    // use per person) but from a much smaller alphabet, which is the actual
+    // tradeoff being made here: fine for "don't let someone across the room
+    // who wasn't looking at the screen guess it," not meant to survive a
+    // sustained brute-force attempt the way a full HMAC digest would.
+    // Stored (not derived) because there's no way to keep it this short AND
+    // stateless the way the HMAC token is.
+    const checkInCode = generateCheckInCode();
+    await prisma.event.update({
+      where: { id: event.id },
+      data: { checkInCode, checkInCodeExpiresAt: new Date(expiresAt) },
+    });
+
+    res.json({ token: `${payload}.${signature}`, code: checkInCode, expiresAt });
   })
 );
 
 // ── POST /events/:id/checkin — member self check-in via scanned token ───
+// Accepts either credential: `token` (from the QR / a scanned link) or
+// `code` (typed in by hand off the organizer's screen) — exactly one is
+// required. Both funnel into the same attendance-recording logic below
+// once whichever one was sent is confirmed valid.
 
-const checkinSchema = z.object({ token: z.string() });
+const checkinSchema = z
+  .object({ token: z.string().optional(), code: z.string().optional() })
+  .refine((d) => d.token || d.code, { message: "Missing token or code" });
 
 router.post(
   "/events/:id/checkin",
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = checkinSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: "Missing token" });
+      return res.status(400).json({ error: "Missing token or code" });
     }
 
     const event = await prisma.event.findUnique({ where: { id: req.params.id } });
     if (!event) return res.status(404).json({ error: "Event not found" });
 
-    const [eventId, expiresAtStr, signature] = parsed.data.token.split(".");
-    const expectedSig = crypto
-      .createHmac("sha256", event.checkInTokenSecret)
-      .update(`${eventId}.${expiresAtStr}`)
-      .digest("hex");
+    let credentialValid = false;
 
-    // timingSafeEqual throws if buffer lengths differ (e.g. a malformed or
-    // truncated token) — that would otherwise reach the process as an
-    // unhandled error rather than the intended 400, so it's guarded here
-    // rather than relying solely on asyncHandler as the last line of defense.
-    let signaturesMatch = false;
-    try {
-      signaturesMatch = crypto.timingSafeEqual(
-        Buffer.from(signature ?? "", "hex"),
-        Buffer.from(expectedSig, "hex")
-      );
-    } catch {
-      signaturesMatch = false;
+    if (parsed.data.token) {
+      const [eventId, expiresAtStr, signature] = parsed.data.token.split(".");
+      const expectedSig = crypto
+        .createHmac("sha256", event.checkInTokenSecret)
+        .update(`${eventId}.${expiresAtStr}`)
+        .digest("hex");
+
+      // timingSafeEqual throws if buffer lengths differ (e.g. a malformed or
+      // truncated token) — that would otherwise reach the process as an
+      // unhandled error rather than the intended 400, so it's guarded here
+      // rather than relying solely on asyncHandler as the last line of defense.
+      let signaturesMatch = false;
+      try {
+        signaturesMatch = crypto.timingSafeEqual(
+          Buffer.from(signature ?? "", "hex"),
+          Buffer.from(expectedSig, "hex")
+        );
+      } catch {
+        signaturesMatch = false;
+      }
+
+      credentialValid = eventId === event.id && signaturesMatch && Date.now() <= Number(expiresAtStr);
+    } else if (parsed.data.code) {
+      const submitted = parsed.data.code.trim().toUpperCase();
+      credentialValid =
+        !!event.checkInCode &&
+        submitted.length === event.checkInCode.length &&
+        crypto.timingSafeEqual(Buffer.from(submitted), Buffer.from(event.checkInCode)) &&
+        !!event.checkInCodeExpiresAt &&
+        Date.now() <= event.checkInCodeExpiresAt.getTime();
     }
 
-    const tokenValid =
-      eventId === event.id && signaturesMatch && Date.now() <= Number(expiresAtStr);
-
-    if (!tokenValid) {
+    if (!credentialValid) {
       return res.status(400).json({ error: "Check-in code expired or invalid — ask an officer to add you manually." });
     }
 

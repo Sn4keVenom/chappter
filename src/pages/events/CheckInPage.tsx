@@ -43,7 +43,12 @@ function checkInLink(eventId: string, token: string): string {
 }
 
 function OrganizerView({ eventId }: { eventId: string }) {
+  // token drives the QR (a camera reads it, nobody types it — length is
+  // irrelevant there); code is the short, human-typeable alternative shown
+  // as text underneath, for "read it off the screen and type it in" when
+  // scanning isn't convenient. Both come from the same rotation.
   const [token, setToken] = useState<string | null>(null);
+  const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [checkedIn, setCheckedIn] = useState<number | null>(null);
@@ -62,6 +67,7 @@ function OrganizerView({ eventId }: { eventId: string }) {
       const result = await getCheckInToken(eventId);
       if (!mounted.current) return;
       setToken(result.token);
+      setCode(result.code);
       setExpiresAt(result.expiresAt);
       setError(null);
     } catch (e: any) {
@@ -104,11 +110,11 @@ function OrganizerView({ eventId }: { eventId: string }) {
     <div className={styles.wrap}>
       {error ? <ErrorBanner message={error} onRetry={fetchToken} /> : null}
 
-      {token ? (
+      {token && code ? (
         <>
           <div className={styles.qrPanel}>
             <QRCode value={checkInLink(eventId, token)} size={220} alt="Check-in QR code" />
-            <p className={styles.codeText}>{token}</p>
+            <p className={styles.codeText}>{code}</p>
           </div>
           <p className={styles.countdown} role="status">
             {/* aria-live via role=status: a screen-reader user hears the code
@@ -146,11 +152,11 @@ function MemberView({ eventId }: { eventId: string }) {
   const autoSubmitted = useRef(false);
 
   const submit = useCallback(
-    async (token: string) => {
+    async (credential: { token: string } | { code: string }) => {
       setBusy(true);
       setError(null);
       try {
-        const response = await selfCheckIn(eventId, token.trim());
+        const response = await selfCheckIn(eventId, credential);
         setResult({
           points: response.attendance.pointsAwarded,
           late: response.attendance.late,
@@ -180,8 +186,10 @@ function MemberView({ eventId }: { eventId: string }) {
       p.delete("token");
       return p;
     }, { replace: true });
-    setCode(fromLink);
-    void submit(fromLink);
+    // Deliberately not pre-filling the code field with the (long) token —
+    // if this fails, the fallback is typing the short code shown on the
+    // organizer's screen, not this URL's token.
+    void submit({ token: fromLink });
   }, [params, setParams, submit]);
 
   if (result) {
@@ -220,7 +228,7 @@ function MemberView({ eventId }: { eventId: string }) {
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (code.trim() && !busy) void submit(code);
+            if (code.trim() && !busy) void submit({ code: code.trim() });
           }}
         >
           <Input
