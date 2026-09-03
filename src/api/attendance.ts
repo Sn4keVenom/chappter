@@ -4,7 +4,25 @@
 // the attendance-specific operations.
 
 import { apiClient } from "./client";
-import type { RosterEntry, AttendanceRecord } from "../types";
+import type { RosterEntry, AttendanceRecord, EventCategory } from "../types";
+
+export interface AttendanceCategoryReport {
+  semesterLabel: string | null;
+  categories: EventCategory[];
+  members: {
+    userId: string;
+    firstName: string;
+    lastName: string;
+    counts: Record<EventCategory, number>;
+  }[];
+}
+
+/** The scribe's "how many of each category has each person attended" view —
+ * counts only, scoped to a semester (defaults to current). */
+export async function getAttendanceCategoryReport(semesterId?: string): Promise<AttendanceCategoryReport> {
+  const { data } = await apiClient.get("/attendance/category-report", { params: { semesterId } });
+  return data;
+}
 
 export async function getEventRoster(eventId: string): Promise<{
   roster: RosterEntry[];

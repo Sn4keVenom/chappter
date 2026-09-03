@@ -17,7 +17,14 @@ import { Router, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
-import { AuthedRequest, requireRole, requireCommitteeScope, writeAuditLog, isAtLeast } from "../middleware/rbac";
+import {
+  AuthedRequest,
+  requireRole,
+  requireCommitteeScope,
+  requirePermission,
+  writeAuditLog,
+  isAtLeast,
+} from "../middleware/rbac";
 
 const router = Router();
 
@@ -474,6 +481,74 @@ router.post(
     });
 
     res.status(201).json({ entry });
+  })
+);
+
+// ── GET /attendance/category-report — attendance.viewReport ──────────────
+// "A way for scribe to view the committee based attendance of each person
+// ... how many of each category has been attended by each user." Counts
+// only — no pass/fail threshold, since none was specified; the scribe can
+// eyeball who's at 0 in a category.
+//
+// Scoped by event START TIME falling inside the semester's date range, not
+// PointsLedger.semesterId — a 0-point event still counts toward "did they
+// show up to a brotherhood event," and 0-point attendance never gets a
+// ledger entry at all (see the check-in routes above).
+router.get(
+  "/attendance/category-report",
+  requirePermission("attendance.viewReport"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const chapterId = req.user!.chapterId!;
+    const now = new Date();
+
+    let semester = req.query.semesterId
+      ? await prisma.semester.findUnique({ where: { id: String(req.query.semesterId) } })
+      : await prisma.semester.findFirst({ where: { startDate: { lte: now }, endDate: { gte: now } } });
+
+    if (!semester) {
+      return res.json({ semesterLabel: null, categories: [], members: [] });
+    }
+
+    const memberships = await prisma.chapterMembership.findMany({
+      where: { chapterId, status: { in: ["ACTIVE", "PNM"] }, user: { deletedAt: null } },
+      include: { user: { select: { id: true, firstName: true, lastName: true } } },
+      orderBy: [{ user: { lastName: "asc" } }, { user: { firstName: "asc" } }],
+    });
+
+    // Events aren't chapter-scoped by a direct column (committee is
+    // optional — a chapter-wide event has none), so scope through the
+    // membership list instead: only count attendance from users who are
+    // actually in this chapter, same effect without needing a join that a
+    // nullable committee relation can't reliably provide.
+    const memberIds = new Set(memberships.map((m) => m.userId));
+    const relevantAttendance = await prisma.attendance.findMany({
+      where: {
+        userId: { in: [...memberIds] },
+        event: { startTime: { gte: semester.startDate, lte: semester.endDate } },
+      },
+      include: { event: { select: { category: true } } },
+    });
+
+    const CATEGORIES = ["BROTHERHOOD", "SERVICE", "PROFESSIONAL", "RUSH", "ADMIN"] as const;
+    const counts = new Map<string, Record<(typeof CATEGORIES)[number], number>>();
+    for (const membership of memberships) {
+      counts.set(membership.userId, { BROTHERHOOD: 0, SERVICE: 0, PROFESSIONAL: 0, RUSH: 0, ADMIN: 0 });
+    }
+    for (const a of relevantAttendance) {
+      const row = counts.get(a.userId);
+      if (row) row[a.event.category as (typeof CATEGORIES)[number]] += 1;
+    }
+
+    res.json({
+      semesterLabel: semester.label,
+      categories: CATEGORIES,
+      members: memberships.map((m) => ({
+        userId: m.userId,
+        firstName: m.user.firstName,
+        lastName: m.user.lastName,
+        counts: counts.get(m.userId),
+      })),
+    });
   })
 );
 
