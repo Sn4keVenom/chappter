@@ -237,6 +237,7 @@ model User {
   updatedAt       DateTime @updatedAt
 
   activeChapter        Chapter?              @relation("UserActiveChapter", fields: [activeChapterId], references: [id])
+  brotherOfWeekOfChapters Chapter[]          @relation("ChapterBrotherOfWeek")
   chapterMemberships   ChapterMembership[]
   inviteRedemptions    ChapterInviteRedemption[]
   joinRequests         ChapterJoinRequest[]
@@ -315,6 +316,14 @@ model Chapter {
   // (that's memberships above), just whichever users have this chapter
   // selected as their current context.
   usersActiveHere User[]              @relation("UserActiveChapter")
+
+  // Exactly one holder at a time, or none — awarding it to someone new
+  // clears the previous holder in the same write (see routes/
+  // brotherOfWeek.routes.ts), so this FK is the whole state; there's no
+  // separate "history" table (spec only asked that award/revoke work, not
+  // that past holders be tracked).
+  brotherOfWeekUserId String?
+  brotherOfWeek       User?   @relation("ChapterBrotherOfWeek", fields: [brotherOfWeekUserId], references: [id])
 
   @@index([name])
 }

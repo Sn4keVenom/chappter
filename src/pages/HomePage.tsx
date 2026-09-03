@@ -8,14 +8,20 @@
 // Data comes from a single GET /users/me/dashboard, unchanged from the mobile
 // app — one round trip for everything on the page.
 
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { getDashboard } from "../api/users";
+import { getDashboard, getRoster } from "../api/users";
+import { awardBrotherOfWeek, getBrotherOfWeek } from "../api/brotherOfWeek";
 import { useAsync } from "../hooks/useAsync";
+import { usePermissions } from "../hooks/usePermissions";
 import { PageHeader, Section } from "../components/PageHeader";
 import { Card, CardLabel, CardLink } from "../components/ui/Card";
+import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button, ButtonLink } from "../components/ui/Button";
+import { Dialog } from "../components/ui/Dialog";
+import { Input } from "../components/ui/Form";
 import { EmptyState, ErrorBanner, LoadingState } from "../components/ui/Feedback";
 import { eventCategoryColor, duesStatusTone } from "../theme/semantic";
 import { useAuthStore } from "../store/useAuthStore";
@@ -24,6 +30,126 @@ import { formatCurrency } from "../types";
 import { formatEventWhen, formatRelativeDays } from "../utils/format";
 import type { EventSummary } from "../types";
 import styles from "./HomePage.module.css";
+
+/** "There should only be one person with brother of the week, so once it is
+ * awarded, it is removed from the previous person" — awarded by Super
+ * Admin, Regent/Vice Regent, OR the current holder passing the title on.
+ * Self-contained: fetches independently of the main dashboard call so a
+ * re-award doesn't need to reload everything else on the page. */
+function BrotherOfWeekCard() {
+  const { isSuperAdmin, can } = usePermissions();
+  const currentUser = useAuthStore((s) => s.user);
+  const { data: holder, loading, reload } = useAsync(() => getBrotherOfWeek(), []);
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canAward = isSuperAdmin || can("brotherOfWeek.award") || holder?.id === currentUser?.id;
+
+  const { data: candidates, loading: searching } = useAsync(
+    () => (pickerOpen ? getRoster({ q: query, limit: 15 }).then((r) => r.users) : Promise.resolve([])),
+    [query, pickerOpen]
+  );
+
+  async function award(userId: string) {
+    setPickerOpen(false);
+    setBusy(true);
+    setError(null);
+    try {
+      await awardBrotherOfWeek(userId);
+      await reload({ silent: true });
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't award Brother of the Week.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) return null;
+
+  return (
+    <Card>
+      <CardLabel>🏆 Brother of the Week</CardLabel>
+      {error ? <ErrorBanner message={error} /> : null}
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
+        {holder ? (
+          <>
+            <Avatar
+              avatarUrl={holder.avatarUrl}
+              firstName={holder.firstName}
+              lastName={holder.lastName}
+              className={styles.botwAvatar}
+            />
+            <Link to={`/members/${holder.id}`} style={{ fontWeight: 700 }}>
+              {holder.firstName} {holder.lastName}
+            </Link>
+          </>
+        ) : (
+          <p style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)" }}>No one yet this week.</p>
+        )}
+      </div>
+      {canAward ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          block
+          busy={busy}
+          style={{ marginTop: "var(--space-3)" }}
+          onClick={() => setPickerOpen(true)}
+        >
+          {holder ? "Pass the title on" : "Award it"}
+        </Button>
+      ) : null}
+
+      <Dialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        title="Award Brother of the Week"
+        subtitle={holder ? `Replaces ${holder.firstName} ${holder.lastName} as the current holder.` : undefined}
+        footer={
+          <Button variant="secondary" onClick={() => setPickerOpen(false)}>
+            Cancel
+          </Button>
+        }
+      >
+        <Input
+          label="Search members"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Name or email"
+          autoComplete="off"
+          autoFocus
+        />
+        {searching ? (
+          <LoadingState label="Searching…" />
+        ) : (
+          <div style={{ maxHeight: 280, overflowY: "auto", marginTop: "var(--space-3)" }}>
+            {(candidates ?? []).map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "var(--space-2) 0",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                }}
+                onClick={() => award(candidate.id)}
+              >
+                {candidate.firstName} {candidate.lastName}
+              </button>
+            ))}
+          </div>
+        )}
+      </Dialog>
+    </Card>
+  );
+}
 
 function EventRow({ event }: { event: EventSummary }) {
   return (
@@ -142,6 +268,8 @@ export default function HomePage() {
               </CardLink>
             ) : null}
           </div>
+
+          <BrotherOfWeekCard />
 
           <Card>
             <CardLabel>Quick actions</CardLabel>
