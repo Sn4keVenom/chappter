@@ -41,7 +41,16 @@ const syncSchema = z.object({
   // Only present when the client already collected one (email/password
   // sign-up — see SignUpScreen). OAuth sign-ins (Google/Apple) don't have a
   // Clerk username, so this is optional and auto-suggested below on create.
-  username: z.string().min(3).max(30).regex(/^[a-zA-Z0-9_.]+$/).optional(),
+  // No upper bound: max(30) here was a stricter, arbitrary second gate on
+  // top of Clerk's own — a username Clerk's signUp.create() had already
+  // accepted at sign-up could still fail here on the very next step
+  // (finishAuthSync's call right after email verification), with nothing
+  // in the UI to explain why. Clerk is the actual source of truth on what a
+  // valid username is; this only needs to not be MORE restrictive than
+  // that. min(3) and the character class match standard convention
+  // (letters, digits, underscore, hyphen, period — the same set most
+  // identity providers, Clerk included, accept).
+  username: z.string().min(3).regex(/^[a-zA-Z0-9_.-]+$/).optional(),
   phone: z.string().optional(),
   avatarUrl: z.string().url().optional(),
 });
