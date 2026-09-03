@@ -63,7 +63,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     to: "/settings/permissions",
     label: "Permissions",
     icon: "🔑",
-    description: "Edit what each role can do",
+    description: "Edit what each role or exec office can do",
     superAdminOnly: true,
   },
   {

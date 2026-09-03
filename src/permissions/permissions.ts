@@ -230,5 +230,33 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
   { label: "Chapter Administration", permissions: ["users.manage", "settings.manage", "modules.manage", "permissions.manage", "chapters.manage", "chapters.manageInvites"] },
 ];
 
+// PERMISSION_GROUPS leaves out five permissions that only ever make sense
+// scoped to a specific named office, never handed to an entire role tier at
+// once (e.g. you wouldn't want every EXEC member able to post a chapter-wide
+// announcement) — see their DEFAULT_OFFICE_PRESETS entries above. The office
+// editor needs them too, since scoping to one office is exactly the case
+// they're for, so it gets its own group list rather than reusing
+// PERMISSION_GROUPS verbatim.
+export const OFFICE_PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] = [
+  ...PERMISSION_GROUPS,
+  {
+    label: "Office-Specific",
+    permissions: ["messaging.manageChannels", "messaging.announce", "achievements.manage", "teams.rename", "brotherOfWeek.award"],
+  },
+];
+
 export const ASSIGNABLE_ROLES: UserRole[] = ["SUPER_ADMIN", "EXEC", "MEMBER", "PNM", "ALUMNI"];
 export const EDITABLE_PRESET_ROLES: UserRole[] = ["EXEC", "MEMBER", "PNM", "ALUMNI"];
+
+// Mirrors backend/lib/permissionDefaults.ts EDITABLE_OFFICES — every named
+// exec office is editable here (unlike roles, there's no "SUPER_ADMIN can't
+// be edited" case to exclude for offices).
+export const EDITABLE_OFFICES: ExecOffice[] = [
+  "REGENT",
+  "VICE_REGENT",
+  "TREASURER",
+  "SCRIBE",
+  "MARSHAL",
+  "CORRESPONDING_SECRETARY",
+  "NEW_MEMBER_EDUCATOR",
+];
