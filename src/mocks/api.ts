@@ -60,6 +60,7 @@ import type {
   ChapterBranding,
   ChapterDocument,
   DocumentCategory,
+  DocumentFolder,
   ExternalLink,
   FeedbackType,
   FeedbackStatus,
@@ -2032,27 +2033,33 @@ export function listExpenses(params: { committeeId?: string; status?: string }):
 
 export function submitExpense(payload: {
   committeeId: string;
-  amount: number;
+  amount: number | string; // multipart bodies flatten every field to a string — see parseBody in mocks/router.ts
   description: string;
   date: string;
   receiptLabel?: string;
+  /** Present only when submitted with a real receipt photo attached
+   * (SubmitExpensePage.tsx) — Demo Mode has no real object storage (same
+   * gap as document uploads), so this only ever contributes its filename
+   * as the label, never an actual stored/downloadable file. */
+  file?: File;
 }): Expense {
   const userId = getCurrentDemoUserId();
   if (!isExecOrAbove(userId) && !committeeChairOf(userId).includes(payload.committeeId)) {
     throw new DemoApiError(403, "Only this committee's chair can submit an expense against its budget");
   }
   if (!db.committees.some((c) => c.id === payload.committeeId)) throw new DemoApiError(404, "Committee not found");
-  if (payload.amount <= 0) throw new DemoApiError(400, "Amount must be greater than zero");
+  const amount = Number(payload.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new DemoApiError(400, "Amount must be greater than zero");
   if (!payload.description.trim()) throw new DemoApiError(400, "Description is required");
 
   const expense: db.MockExpense = {
     id: db.nextId("exp"),
     committeeId: payload.committeeId,
     submittedById: userId,
-    amount: payload.amount,
+    amount,
     description: payload.description.trim(),
     date: payload.date,
-    receiptLabel: payload.receiptLabel ?? null,
+    receiptLabel: payload.file?.name ?? payload.receiptLabel ?? null,
     status: "SUBMITTED",
     createdAt: new Date().toISOString(),
   };
@@ -2151,32 +2158,109 @@ export function updateChapterSettings(payload: Partial<ChapterSettings>): Chapte
 
 // ── Documents & external links (spec §8) ────────────────────────────────
 
-export function listDocuments(params: { category?: DocumentCategory }): ChapterDocument[] {
+/** Attaches the CURRENT folder {id,name} — never stored on the row itself,
+ * so a rename shows up on every document in that folder immediately. */
+function toChapterDocument(raw: Omit<ChapterDocument, "folder">): ChapterDocument {
+  const folder = raw.folderId ? db.findFolder(raw.folderId) : undefined;
+  return { ...raw, folder: folder ? { id: folder.id, name: folder.name } : null };
+}
+
+export function listDocuments(params: { category?: DocumentCategory; folderId?: string }): ChapterDocument[] {
   let list = db.documents.slice();
   if (params.category) list = list.filter((d) => d.category === params.category);
-  return list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+  if (params.folderId) list = list.filter((d) => d.folderId === params.folderId);
+  return list.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)).map(toChapterDocument);
+}
+
+export function listDocumentFolders(): DocumentFolder[] {
+  return db.documentFolders
+    .slice()
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name))
+    .map((f) => ({
+      id: f.id,
+      name: f.name,
+      order: f.order,
+      documentCount: db.documents.filter((d) => d.folderId === f.id).length,
+    }));
+}
+
+export function createDocumentFolder(name: string): DocumentFolder {
+  if (!can(getCurrentDemoUserId(), "documents.upload")) {
+    throw new DemoApiError(403, "Not authorized to manage document folders");
+  }
+  const trimmed = name.trim();
+  if (!trimmed) throw new DemoApiError(400, "Give the folder a name.");
+  if (db.documentFolders.some((f) => f.name.toLowerCase() === trimmed.toLowerCase())) {
+    throw new DemoApiError(409, `A folder named "${trimmed}" already exists`);
+  }
+  const maxOrder = db.documentFolders.reduce((max, f) => Math.max(max, f.order), -1);
+  const folder: db.MockDocumentFolder = { id: db.nextFolderId(), name: trimmed, order: maxOrder + 1 };
+  db.documentFolders.push(folder);
+  return { ...folder, documentCount: 0 };
+}
+
+export function renameDocumentFolder(id: string, name: string): DocumentFolder {
+  if (!can(getCurrentDemoUserId(), "documents.upload")) {
+    throw new DemoApiError(403, "Not authorized to manage document folders");
+  }
+  const folder = db.findFolder(id);
+  if (!folder) throw new DemoApiError(404, "Folder not found");
+  const trimmed = name.trim();
+  if (!trimmed) throw new DemoApiError(400, "Give the folder a name.");
+  if (db.documentFolders.some((f) => f.id !== id && f.name.toLowerCase() === trimmed.toLowerCase())) {
+    throw new DemoApiError(409, `A folder named "${trimmed}" already exists`);
+  }
+  folder.name = trimmed;
+  return { ...folder, documentCount: db.documents.filter((d) => d.folderId === id).length };
+}
+
+/** Documents inside aren't deleted — they fall back to "no folder," same as
+ * the real DELETE /document-folders/:id (schema.prisma: onDelete SetNull). */
+export function deleteDocumentFolder(id: string): void {
+  if (!can(getCurrentDemoUserId(), "documents.upload")) {
+    throw new DemoApiError(403, "Not authorized to manage document folders");
+  }
+  const idx = db.documentFolders.findIndex((f) => f.id === id);
+  if (idx < 0) throw new DemoApiError(404, "Folder not found");
+  db.documentFolders.splice(idx, 1);
+  for (const doc of db.documents) {
+    if (doc.folderId === id) doc.folderId = null;
+  }
 }
 
 export function uploadDocument(payload: {
-  category: DocumentCategory;
   name: string;
-  fileLabel: string;
+  folderId?: string;
+  category?: DocumentCategory;
+  file?: File;
 }): ChapterDocument {
   if (!can(getCurrentDemoUserId(), "documents.upload")) {
     throw new DemoApiError(403, "Not authorized to upload documents");
   }
+  if (payload.folderId && !db.findFolder(payload.folderId)) {
+    throw new DemoApiError(404, "Folder not found");
+  }
   const user = getCurrentDemoUser();
-  const doc: ChapterDocument = {
+  // Demo Mode has no real object storage (see lib/uploads.ts's real
+  // counterpart) — storedFileName stays unset, same as any pre-upload-
+  // feature row, so the UI correctly shows this as "nothing to download"
+  // rather than pretending a file exists that was never actually kept
+  // anywhere. name/size/type ARE real, straight off the picked File.
+  const raw: Omit<ChapterDocument, "folder"> = {
     id: db.nextDocumentId(),
-    category: payload.category,
+    category: payload.category ?? null,
+    folderId: payload.folderId ?? null,
     name: payload.name,
-    fileLabel: payload.fileLabel,
+    fileLabel: payload.file?.name ?? payload.name,
     sizeLabel: null,
+    mimeType: payload.file?.type ?? null,
+    sizeBytes: payload.file?.size ?? null,
+    storedFileName: null,
     uploadedBy: { id: user.id, firstName: user.firstName, lastName: user.lastName },
     uploadedAt: new Date().toISOString(),
   };
-  db.documents.push(doc);
-  return doc;
+  db.documents.push(raw);
+  return toChapterDocument(raw);
 }
 
 export function deleteDocument(id: string): void {

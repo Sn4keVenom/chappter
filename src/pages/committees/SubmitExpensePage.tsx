@@ -1,10 +1,13 @@
 // src/pages/committees/SubmitExpensePage.tsx
 //
-// Committee chairs submit an expense against their committee's budget. The
-// receipt is a label rather than a file: there is no object storage behind
-// this yet, and pretending otherwise would lose people's receipts.
+// Committee chairs submit an expense against their committee's budget, with
+// a real receipt photo — lib/uploads.ts on the backend, local disk under a
+// Docker volume (self-hosted, single-box, not object storage). The typed
+// "Receipt reference" field stays as a fallback note for anyone who'd
+// rather point at where the receipt already lives (emailed to treasurer,
+// etc.) than attach a photo here.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { getCommittee } from "../../api/committees";
@@ -17,9 +20,12 @@ import { Input, Textarea } from "../../components/ui/Form";
 import { ErrorBanner, LoadingState } from "../../components/ui/Feedback";
 import { formatCurrency } from "../../types";
 
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // matches lib/uploads.ts's server-side cap
+
 export default function SubmitExpensePage() {
   const { committeeId = "" } = useParams();
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, loading } = useAsync(async () => {
     const [committee, budget] = await Promise.all([
@@ -33,9 +39,22 @@ export default function SubmitExpensePage() {
   const [description, setDescription] = useState("");
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [receiptLabel, setReceiptLabel] = useState("");
+  const [receiptPhoto, setReceiptPhoto] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  function handlePhotoPick(event: React.ChangeEvent<HTMLInputElement>) {
+    const picked = event.target.files?.[0];
+    event.target.value = ""; // lets picking the same file again re-fire onChange
+    if (!picked) return;
+    if (picked.size > MAX_UPLOAD_BYTES) {
+      setError("That photo is too large — choose one under 15MB.");
+      return;
+    }
+    setError(null);
+    setReceiptPhoto(picked);
+  }
 
   if (loading) {
     return (
@@ -65,6 +84,7 @@ export default function SubmitExpensePage() {
         description: description.trim(),
         date: new Date(date).toISOString(),
         receiptLabel: receiptLabel.trim() || undefined,
+        receiptPhoto: receiptPhoto ?? undefined,
       });
       navigate(`/committees/${committeeId}`, { replace: true });
     } catch (e: any) {
@@ -126,12 +146,34 @@ export default function SubmitExpensePage() {
             onChange={(e) => setDate(e.target.value)}
             error={fieldErrors.date}
           />
+          <input
+            ref={fileInputRef}
+            type="file"
+            onChange={handlePhotoPick}
+            accept="image/*,.pdf"
+            style={{ display: "none" }}
+          />
+          <div style={{ marginBottom: "var(--space-4)" }}>
+            <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
+              {receiptPhoto ? "Change receipt photo" : "Attach receipt photo"}
+            </Button>
+            {receiptPhoto ? (
+              <p style={{ marginTop: "var(--space-2)", fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
+                {receiptPhoto.name}
+              </p>
+            ) : null}
+          </div>
           <Input
             label="Receipt reference"
             value={receiptLabel}
             onChange={(e) => setReceiptLabel(e.target.value)}
-            hint="Uploading a file isn't supported yet — note where the receipt is (e.g. 'emailed to treasurer')."
+            hint={
+              receiptPhoto
+                ? "Not needed — the attached photo is the receipt."
+                : "No photo? Note where the receipt is instead (e.g. 'emailed to treasurer')."
+            }
             placeholder="receipt_target_0822.jpg"
+            disabled={Boolean(receiptPhoto)}
           />
 
           <div style={{ display: "grid", gap: "var(--space-2)", marginTop: "var(--space-6)" }}>

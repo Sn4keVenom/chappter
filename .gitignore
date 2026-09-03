@@ -15,6 +15,10 @@ android/
 # Backend build output
 backend/dist/
 
+# Local-disk upload storage (lib/uploads.ts) — the real thing lives in the
+# uploads_data Docker volume in production, never in the repo.
+backend/uploads/
+
 # Env files
 .env
 .env.local

@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 
-import { listExpenses, updateExpenseStatus } from "../../api/finance";
+import { listExpenses, openExpenseReceipt, updateExpenseStatus } from "../../api/finance";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
 import { PageHeader } from "../../components/PageHeader";
@@ -26,12 +26,25 @@ export default function ExpensesPage() {
   const { isTreasurerOrAdmin } = usePermissions();
   const [status, setStatus] = useState<ReimbursementStatus | "ALL">("SUBMITTED");
   const [busy, setBusy] = useState<string | null>(null);
+  const [openingReceipt, setOpeningReceipt] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, loading, error, reload } = useAsync(
     () => listExpenses(status === "ALL" ? {} : { status }),
     [status]
   );
+
+  async function viewReceipt(id: string) {
+    setOpeningReceipt(id);
+    setActionError(null);
+    try {
+      await openExpenseReceipt(id);
+    } catch (e: any) {
+      setActionError(e?.message ?? "Couldn't open that receipt.");
+    } finally {
+      setOpeningReceipt(null);
+    }
+  }
 
   async function update(id: string, next: ReimbursementStatus) {
     setBusy(id);
@@ -87,8 +100,21 @@ export default function ExpensesPage() {
               <p style={{ marginTop: "var(--space-2)", fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>
                 {expense.committeeName} · {expense.submittedBy.firstName} {expense.submittedBy.lastName} ·{" "}
                 {formatFullDate(expense.date)}
-                {expense.receiptLabel ? ` · receipt: ${expense.receiptLabel}` : ""}
+                {expense.receiptLabel && !expense.receiptStoredFileName ? ` · receipt: ${expense.receiptLabel}` : ""}
               </p>
+
+              {expense.receiptStoredFileName ? (
+                <div style={{ marginTop: "var(--space-3)" }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    busy={openingReceipt === expense.id}
+                    onClick={() => viewReceipt(expense.id)}
+                  >
+                    🧾 View receipt
+                  </Button>
+                </div>
+              ) : null}
 
               {isTreasurerOrAdmin && expense.status !== "REIMBURSED" && expense.status !== "REJECTED" ? (
                 <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)", flexWrap: "wrap" }}>

@@ -64,6 +64,14 @@ services:
       CORS_ORIGIN: https://${APP_HOSTNAME}
       NODE_ENV: production
       PORT: "4000"
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      # Document/receipt uploads — plain local disk, not object storage. A
+      # named volume (not bind-mounted to a host path) so it survives an
+      # image rebuild the same way db_data does; back it up separately from
+      # backup.sh's pg_dump (see that script's own note) since it's not in
+      # Postgres at all.
+      - uploads_data:/app/uploads
     expose:
       - "4000"
     logging: &json_logs
@@ -116,3 +124,4 @@ volumes:
   db_data:
   caddy_data:
   caddy_config:
+  uploads_data:

@@ -899,18 +899,46 @@ model ChapterSettings {
 // Documents & external links
 // ─────────────────────────────────────────────────────────────────────────
 
-model Document {
-  id           String           @id @default(cuid())
-  category     DocumentCategory
-  name         String
-  fileLabel    String           // placeholder filename — no real object storage yet, see docs/DEMO_MODE.md
-  sizeLabel    String?
-  uploadedById String
-  uploadedAt   DateTime         @default(now())
+// Chapter-managed folders documents can be filed into — the "categories
+// should be able to be added/removed... add folders" feature. Deliberately
+// flat (no parent/child nesting) rather than a full folder tree: it covers
+// the actual ask (an admin-editable, renameable set of buckets) without the
+// extra complexity of arbitrary depth, which nothing has asked for yet.
+// Coexists with the legacy fixed DocumentCategory enum below rather than
+// replacing it — Document.category stays for any pre-existing row that only
+// ever had that, and is now optional since a new upload only needs a
+// folderId, not both.
+model DocumentFolder {
+  id        String     @id @default(cuid())
+  name      String
+  order     Int        @default(0)
+  createdAt DateTime   @default(now())
+  documents Document[]
 
-  uploadedBy User @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  @@unique([name])
+}
+
+model Document {
+  id           String            @id @default(cuid())
+  category     DocumentCategory? // legacy fixed set — see DocumentFolder's doc comment above
+  folderId     String?
+  name         String
+  fileLabel    String            // human-readable filename shown to members
+  // Real file, once lib/uploads.ts is behind this row — null means either a
+  // pre-upload-feature row (fileLabel was always just a typed-in placeholder
+  // then) or an ExternalLink-style entry with nothing to actually download.
+  storedFileName String?
+  mimeType       String?
+  sizeBytes      Int?
+  sizeLabel      String?
+  uploadedById   String
+  uploadedAt     DateTime          @default(now())
+
+  uploadedBy User            @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+  folder     DocumentFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
   @@index([category])
+  @@index([folderId])
 }
 
 model ExternalLink {
@@ -980,9 +1008,14 @@ model Expense {
   amount              Decimal             @db.Decimal(10, 2)
   description         String
   date                DateTime // when the expense was incurred, not when filed
-  // Placeholder filename only — there's no object storage (same gap as
-  // Document.fileLabel and avatars). A real build needs signed-URL uploads.
+  // receiptLabel is the human-readable filename; receiptStoredFileName is
+  // the real file on disk (lib/uploads.ts) once one's attached — same
+  // pattern as Document.fileLabel/storedFileName. Null storedFileName means
+  // either a pre-upload-feature row (receiptLabel was a typed note like
+  // "emailed to treasurer") or one that genuinely has no photo attached.
   receiptLabel        String?
+  receiptStoredFileName String?
+  receiptMimeType     String?
   status              ReimbursementStatus @default(SUBMITTED)
   reimbursementMethod PaymentMethod?
   reimbursementNote   String?

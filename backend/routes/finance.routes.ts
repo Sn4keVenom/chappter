@@ -38,6 +38,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requirePermission, writeAuditLog } from "../middleware/rbac";
+import { uploadSingleFile, storedFileFrom, uploadedFilePath, deleteUploadedFile } from "../lib/uploads";
 
 const router = Router();
 
@@ -204,6 +205,8 @@ function toExpense(e: ExpenseRow) {
     description: e.description,
     date: e.date.toISOString(),
     receiptLabel: e.receiptLabel,
+    receiptStoredFileName: e.receiptStoredFileName,
+    receiptMimeType: e.receiptMimeType,
     status: e.status,
     reimbursementMethod: e.reimbursementMethod,
     reimbursementNote: e.reimbursementNote,
@@ -258,26 +261,41 @@ const submitSchema = z.object({
   receiptLabel: z.string().max(200).optional(),
 });
 
+// A receipt photo is optional — uploadSingleFile passes through untouched
+// for a plain JSON request (no file field at all), so this route still
+// works exactly as before for anyone submitting without one.
 router.post(
   "/expenses",
+  uploadSingleFile,
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = submitSchema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success) {
+      await deleteUploadedFile(req.file?.filename);
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
 
     const committee = await prisma.committee.findUnique({ where: { id: parsed.data.committeeId } });
-    if (!committee) return res.status(404).json({ error: "Committee not found" });
+    if (!committee) {
+      await deleteUploadedFile(req.file?.filename);
+      return res.status(404).json({ error: "Committee not found" });
+    }
 
     const allowed =
       req.user!.role === "SUPER_ADMIN" ||
       req.user!.permissions?.has("finance.manage") ||
       (await chairsCommittee(req.user!.id, parsed.data.committeeId));
     if (!allowed) {
+      await deleteUploadedFile(req.file?.filename);
       return res.status(403).json({ error: "Only this committee's head can submit expenses against it." });
     }
 
     const date = new Date(parsed.data.date);
-    if (Number.isNaN(date.getTime())) return res.status(400).json({ error: "Invalid date" });
+    if (Number.isNaN(date.getTime())) {
+      await deleteUploadedFile(req.file?.filename);
+      return res.status(400).json({ error: "Invalid date" });
+    }
 
+    const stored = req.file ? storedFileFrom(req.file) : null;
     const expense = await prisma.expense.create({
       data: {
         committeeId: parsed.data.committeeId,
@@ -285,12 +303,36 @@ router.post(
         amount: parsed.data.amount,
         description: parsed.data.description,
         date,
-        receiptLabel: parsed.data.receiptLabel,
+        // An attached photo's own filename takes over as the label — the
+        // typed receiptLabel note stays for whoever isn't attaching one.
+        receiptLabel: stored?.originalName ?? parsed.data.receiptLabel,
+        receiptStoredFileName: stored?.storedName,
+        receiptMimeType: stored?.mimeType,
       },
       include: expenseInclude,
     });
 
     res.status(201).json({ expense: toExpense(expense) });
+  })
+);
+
+// ── GET /expenses/:id/receipt — the submitter, or finance.manage ──────────
+router.get(
+  "/expenses/:id/receipt",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const expense = await prisma.expense.findUnique({ where: { id: req.params.id } });
+    if (!expense) return res.status(404).json({ error: "Expense not found" });
+
+    const canView =
+      req.user!.role === "SUPER_ADMIN" ||
+      req.user!.permissions?.has("finance.manage") ||
+      expense.submittedById === req.user!.id;
+    if (!canView) return res.status(403).json({ error: "Not permitted" });
+    if (!expense.receiptStoredFileName) return res.status(404).json({ error: "No receipt attached." });
+
+    res.download(uploadedFilePath(expense.receiptStoredFileName), expense.receiptLabel ?? "receipt", (err) => {
+      if (err && !res.headersSent) res.status(404).json({ error: "File not found on disk." });
+    });
   })
 );
 

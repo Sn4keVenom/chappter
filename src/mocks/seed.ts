@@ -718,18 +718,51 @@ export const chapterBranding: ChapterBranding = {
 
 // ── Documents & external links ──────────────────────────────────────────
 
-export const documents: ChapterDocument[] = [
-  { id: "doc1", category: "CONSTITUTION", name: "Chapter Constitution (2024 revision)", fileLabel: "constitution_2024.pdf", sizeLabel: "412 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-120) },
-  { id: "doc2", category: "BYLAWS", name: "Chapter Bylaws", fileLabel: "bylaws_current.pdf", sizeLabel: "268 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-120) },
-  { id: "doc3", category: "MEETING_MINUTES", name: "Chapter Meeting — Week 1 Minutes", fileLabel: "minutes_week1.pdf", sizeLabel: "88 KB", uploadedBy: { id: "u15", firstName: "Emma", lastName: "Chavez" }, uploadedAt: daysFromNow(-20) },
-  { id: "doc4", category: "MEETING_MINUTES", name: "Chapter Meeting — Week 3 Minutes", fileLabel: "minutes_week3.pdf", sizeLabel: "91 KB", uploadedBy: { id: "u15", firstName: "Emma", lastName: "Chavez" }, uploadedAt: daysFromNow(-2) },
-  { id: "doc5", category: "RECRUITMENT", name: "Rush Info Night Slide Deck", fileLabel: "rush_info_night.pptx", sizeLabel: "2.1 MB", uploadedBy: { id: "u4", firstName: "Priya", lastName: "Patel" }, uploadedAt: daysFromNow(-10) },
-  { id: "doc6", category: "FORMS", name: "Expense Reimbursement Form", fileLabel: "reimbursement_form.pdf", sizeLabel: "64 KB", uploadedBy: { id: "u3", firstName: "Jordan", lastName: "Blake" }, uploadedAt: daysFromNow(-60) },
-  { id: "doc7", category: "OFFICER_RESOURCES", name: "Exec Board Transition Guide", fileLabel: "transition_guide.pdf", sizeLabel: "530 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-200) },
+// Chapter-managed, addable/removable folders — matches the real backend's
+// DocumentFolder seed exactly (same names/ids) so Demo Mode and a fresh
+// real deployment look identical on first launch.
+export interface MockDocumentFolder {
+  id: string;
+  name: string;
+  order: number;
+}
+
+export const documentFolders: MockDocumentFolder[] = [
+  { id: "folder_constitution", name: "Constitution", order: 0 },
+  { id: "folder_bylaws", name: "Bylaws", order: 1 },
+  { id: "folder_meeting_minutes", name: "Meeting Minutes", order: 2 },
+  { id: "folder_recruitment", name: "Recruitment", order: 3 },
+  { id: "folder_forms", name: "Forms", order: 4 },
+  { id: "folder_officer_resources", name: "Officer Resources", order: 5 },
+  { id: "folder_other", name: "Other", order: 6 },
+];
+let folderIdCounter = 1;
+
+export function findFolder(id: string): MockDocumentFolder | undefined {
+  return documentFolders.find((f) => f.id === id);
+}
+
+export function nextFolderId(): string {
+  return `folder_custom${folderIdCounter++}`;
+}
+
+// `folder` (the joined {id,name}) is deliberately NOT stored here — it's
+// derived at read time from folderId + the current documentFolders array
+// (see api.ts's toChapterDocument), same "derived, not stored" reasoning
+// as CommitteeBudget.spent elsewhere: a folder rename must be reflected on
+// every document in it immediately, not just ones created after the rename.
+export const documents: Omit<ChapterDocument, "folder">[] = [
+  { id: "doc1", category: "CONSTITUTION", folderId: "folder_constitution", name: "Chapter Constitution (2024 revision)", fileLabel: "constitution_2024.pdf", sizeLabel: "412 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-120) },
+  { id: "doc2", category: "BYLAWS", folderId: "folder_bylaws", name: "Chapter Bylaws", fileLabel: "bylaws_current.pdf", sizeLabel: "268 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-120) },
+  { id: "doc3", category: "MEETING_MINUTES", folderId: "folder_meeting_minutes", name: "Chapter Meeting — Week 1 Minutes", fileLabel: "minutes_week1.pdf", sizeLabel: "88 KB", uploadedBy: { id: "u15", firstName: "Emma", lastName: "Chavez" }, uploadedAt: daysFromNow(-20) },
+  { id: "doc4", category: "MEETING_MINUTES", folderId: "folder_meeting_minutes", name: "Chapter Meeting — Week 3 Minutes", fileLabel: "minutes_week3.pdf", sizeLabel: "91 KB", uploadedBy: { id: "u15", firstName: "Emma", lastName: "Chavez" }, uploadedAt: daysFromNow(-2) },
+  { id: "doc5", category: "RECRUITMENT", folderId: "folder_recruitment", name: "Rush Info Night Slide Deck", fileLabel: "rush_info_night.pptx", sizeLabel: "2.1 MB", uploadedBy: { id: "u4", firstName: "Priya", lastName: "Patel" }, uploadedAt: daysFromNow(-10) },
+  { id: "doc6", category: "FORMS", folderId: "folder_forms", name: "Expense Reimbursement Form", fileLabel: "reimbursement_form.pdf", sizeLabel: "64 KB", uploadedBy: { id: "u3", firstName: "Jordan", lastName: "Blake" }, uploadedAt: daysFromNow(-60) },
+  { id: "doc7", category: "OFFICER_RESOURCES", folderId: "folder_officer_resources", name: "Exec Board Transition Guide", fileLabel: "transition_guide.pdf", sizeLabel: "530 KB", uploadedBy: { id: "u1", firstName: "Marcus", lastName: "Reyes" }, uploadedAt: daysFromNow(-200) },
 ];
 let documentIdCounter = documents.length + 1;
 
-export function findDocument(id: string): ChapterDocument | undefined {
+export function findDocument(id: string): Omit<ChapterDocument, "folder"> | undefined {
   return documents.find((d) => d.id === id);
 }
 

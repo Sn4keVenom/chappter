@@ -37,9 +37,36 @@ export async function submitExpense(payload: {
   description: string;
   date: string;
   receiptLabel?: string;
+  /** A real photo — multipart, not JSON, when present. See uploadDocument
+   * in api/documents.ts for why Content-Type has to be cleared explicitly. */
+  receiptPhoto?: File;
 }): Promise<Expense> {
-  const { data } = await apiClient.post<{ expense: Expense }>("/expenses", payload);
+  const { receiptPhoto, ...fields } = payload;
+  if (!receiptPhoto) {
+    const { data } = await apiClient.post<{ expense: Expense }>("/expenses", fields);
+    return data.expense;
+  }
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) form.append(key, String(value));
+  }
+  form.append("file", receiptPhoto);
+  const { data } = await apiClient.post<{ expense: Expense }>("/expenses", form, {
+    headers: { "Content-Type": undefined },
+  });
   return data.expense;
+}
+
+/**
+ * Opens an expense's receipt photo in a new tab — same reasoning as
+ * openDocumentFile in api/documents.ts: the download route needs the same
+ * Bearer auth every other call gets, which a raw browser navigation
+ * wouldn't send.
+ */
+export async function openExpenseReceipt(expenseId: string): Promise<void> {
+  const response = await apiClient.get(`/expenses/${expenseId}/receipt`, { responseType: "blob" });
+  const url = URL.createObjectURL(response.data);
+  window.open(url, "_blank", "noopener");
 }
 
 export async function updateExpenseStatus(

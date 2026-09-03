@@ -205,7 +205,14 @@ route("patch", "/modules/:key", (p, _q, body) => ({ module: api.setModuleEnabled
 route("get", "/settings", () => ({ settings: api.getChapterSettings() }));
 route("patch", "/settings", (_p, _q, body) => ({ settings: api.updateChapterSettings(body) }));
 
-// Documents & external links (spec §8)
+// Documents, folders & external links (spec §8)
+route("get", "/document-folders", () => ({ folders: api.listDocumentFolders() }));
+route("post", "/document-folders", (_p, _q, body) => ({ folder: api.createDocumentFolder(body.name) }));
+route("patch", "/document-folders/:id", (p, _q, body) => ({ folder: api.renameDocumentFolder(p.id, body.name) }));
+route("delete", "/document-folders/:id", (p) => {
+  api.deleteDocumentFolder(p.id);
+  return { deleted: true };
+});
 route("get", "/documents", (_p, q) => ({ documents: api.listDocuments(q) }));
 route("post", "/documents", (_p, _q, body) => ({ document: api.uploadDocument(body) }));
 route("delete", "/documents/:id", (p) => {
@@ -245,6 +252,16 @@ function parseBody(data: unknown): any {
     } catch {
       return {};
     }
+  }
+  // A real file upload (documents/receipts — see api/documents.ts
+  // uploadDocument) sends FormData, not JSON. Flatten it to a plain object
+  // so route handlers can read `body.name`/`body.file` etc. like any other
+  // field — a File entry survives this untouched (still a real File, just
+  // reachable by property access instead of FormData.get()).
+  if (typeof FormData !== "undefined" && data instanceof FormData) {
+    const obj: Record<string, unknown> = {};
+    for (const [key, value] of data.entries()) obj[key] = value;
+    return obj;
   }
   return data;
 }

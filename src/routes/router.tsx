@@ -77,7 +77,7 @@ export const router = createBrowserRouter([
               // Documents
               { path: "documents", lazy: page(() => import("../pages/documents/DocumentsPage")) },
               {
-                path: "documents/:category",
+                path: "documents/folders/:folderId",
                 lazy: page(() => import("../pages/documents/DocumentCategoryPage")),
               },
 

@@ -225,14 +225,32 @@ export type DocumentCategory =
   | "OFFICER_RESOURCES"
   | "OTHER";
 
+// Chapter-managed, addable/removable buckets documents are filed into —
+// replaces what used to be the fixed 7-value DocumentCategory set above
+// (still present on ChapterDocument.category for any pre-existing row, but
+// no longer required for a new one). See schema.prisma's DocumentFolder
+// doc comment for why both coexist rather than one replacing the other.
+export interface DocumentFolder {
+  id: string;
+  name: string;
+  order: number;
+  documentCount: number;
+}
+
 export interface ChapterDocument {
   id: string;
-  category: DocumentCategory;
+  category: DocumentCategory | null;
+  folderId: string | null;
+  folder: { id: string; name: string } | null;
   name: string;
-  // Demo mode stores only a placeholder label (e.g. "bylaws_2026.pdf") — no
-  // real file storage. See docs/DEMO_MODE.md for the production gap.
   fileLabel: string;
   sizeLabel?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  // Present only once a real file has been attached (lib/uploads.ts on the
+  // backend) — null means a pre-upload-feature row with nothing to
+  // download. Not itself a usable URL; GET /documents/:id/file is.
+  storedFileName?: string | null;
   uploadedBy: { id: string; firstName: string; lastName: string };
   uploadedAt: string;
 }
@@ -708,10 +726,13 @@ export interface Expense {
   amount: number;
   description: string;
   date: string;
-  // Demo mode stores only a placeholder label (e.g. "receipt_1.jpg") — no
-  // real file upload/storage. A production build would need real object
-  // storage (S3/GCS) and a signed-URL upload flow.
   receiptLabel?: string | null;
+  // Present once a real photo has been attached (lib/uploads.ts on the
+  // backend) — null means either a pre-upload-feature row (receiptLabel
+  // was a typed note) or one with nothing attached. GET /expenses/:id/receipt
+  // serves the actual file.
+  receiptStoredFileName?: string | null;
+  receiptMimeType?: string | null;
   status: ReimbursementStatus;
   reimbursementMethod?: PaymentMethod | null;
   reimbursementNote?: string | null;
