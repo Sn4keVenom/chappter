@@ -12,6 +12,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { getLeaderboard } from "../api/users";
 import { createTeam, getTeamLeaderboard } from "../api/teams";
+import { listSemesters, type Semester } from "../api/semesters";
 import { useAsync } from "../hooks/useAsync";
 import { useModulesStore } from "../store/useModulesStore";
 import { usePermissions } from "../hooks/usePermissions";
@@ -20,7 +21,7 @@ import { Card } from "../components/ui/Card";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Dialog } from "../components/ui/Dialog";
-import { Input, SegmentedControl } from "../components/ui/Form";
+import { Input, Select, SegmentedControl } from "../components/ui/Form";
 import { DataTable, type Column } from "../components/ui/DataTable";
 import { EmptyState, ErrorBanner, ErrorState, LoadingState } from "../components/ui/Feedback";
 import type { LeaderboardEntry, TeamLeaderboardEntry } from "../types";
@@ -48,7 +49,9 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 function IndividualBoard() {
-  const { data, loading, error, reload } = useAsync(() => getLeaderboard(), []);
+  const [semesterId, setSemesterId] = useState<string | undefined>(undefined);
+  const { data: semesters } = useAsync(() => listSemesters(), []);
+  const { data, loading, error, reload } = useAsync(() => getLeaderboard({ semesterId }), [semesterId]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState title="Couldn't load the leaderboard" body={error} onRetry={() => reload()} />;
@@ -95,18 +98,45 @@ function IndividualBoard() {
   ];
 
   return (
-    <DataTable
-      caption={`Individual points leaderboard${data?.semesterLabel ? ` for ${data.semesterLabel}` : ""}`}
-      rows={rows}
-      columns={columns}
-      rowKey={(entry) => entry.userId}
-      rowHref={(entry) => `/members/${entry.userId}`}
-      empty={
-        <Card>
-          <EmptyState icon="★" title="No points yet" body="Points appear once members start checking in." />
-        </Card>
-      }
-    />
+    <>
+      {semesters && semesters.length > 1 ? (
+        <div style={{ marginBottom: "var(--space-4)", maxWidth: 260 }}>
+          <Select
+            label="Semester"
+            value={semesterId ?? ""}
+            onChange={(e) => setSemesterId(e.target.value || undefined)}
+          >
+            {/* This option's own label always names the TRUE current
+                semester, not whichever one happens to be selected/viewed —
+                data.semesterLabel would follow the selection instead once
+                a past semester is picked, which read as if "current" had
+                changed to match. */}
+            <option value="">
+              Current{semesters.find((s) => s.isCurrent) ? ` (${semesters.find((s) => s.isCurrent)!.label})` : ""}
+            </option>
+            {semesters
+              .filter((s) => !s.isCurrent)
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+          </Select>
+        </div>
+      ) : null}
+      <DataTable
+        caption={`Individual points leaderboard${data?.semesterLabel ? ` for ${data.semesterLabel}` : ""}`}
+        rows={rows}
+        columns={columns}
+        rowKey={(entry) => entry.userId}
+        rowHref={(entry) => `/members/${entry.userId}`}
+        empty={
+          <Card>
+            <EmptyState icon="★" title="No points yet" body="Points appear once members start checking in." />
+          </Card>
+        }
+      />
+    </>
   );
 }
 
