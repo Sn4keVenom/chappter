@@ -27,7 +27,7 @@ import { Input, Select } from "../../components/ui/Form";
 import { ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
 import { Avatar } from "../../components/ui/Avatar";
 import { userRoleTone } from "../../theme/semantic";
-import { fullName, type ExecOffice, type UserRole } from "../../types";
+import { fullName, type ExecOffice, type MemberStatus, type UserRole } from "../../types";
 import { formatShortDate, titleCaseEnum } from "../../utils/format";
 import styles from "./ProfilePage.module.css";
 
@@ -48,6 +48,8 @@ const OFFICES: ExecOffice[] = [
   "CORRESPONDING_SECRETARY",
   "NEW_MEMBER_EDUCATOR",
 ];
+
+const STATUSES: MemberStatus[] = ["ACTIVE", "PNM", "ALUMNI", "INACTIVE"];
 
 export default function MemberProfilePage() {
   const navigate = useNavigate();
@@ -298,6 +300,33 @@ export default function MemberProfilePage() {
                   {OFFICES.map((office) => (
                     <option key={office} value={office}>
                       {titleCaseEnum(office)}
+                    </option>
+                  ))}
+                </Select>
+              ) : null}
+
+              {isSuperAdmin ? (
+                <Select
+                  label="Status"
+                  hint="Inactive keeps their account and history, and takes them off the points leaderboard — use this for a member on leave, not deletion."
+                  value={member.status ?? "ACTIVE"}
+                  onChange={async (e) => {
+                    setBusy(true);
+                    setActionError(null);
+                    try {
+                      await updateUserFields(userId, { status: e.target.value as MemberStatus });
+                      await reload({ silent: true });
+                    } catch (err: any) {
+                      setActionError(err?.message ?? "Couldn't change the status.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  disabled={busy}
+                >
+                  {STATUSES.map((status) => (
+                    <option key={status} value={status}>
+                      {titleCaseEnum(status)}
                     </option>
                   ))}
                 </Select>
