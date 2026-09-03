@@ -32,6 +32,8 @@ export const DEFAULT_PRESETS: Record<(typeof EDITABLE_ROLES)[number], string[]> 
     "committees.manage",
     "dues.manage", "finance.manage",
     "teams.manage",
+    "attendance.viewReport",
+    "semesters.manage",
     "feedback.view", "feedback.manage",
     "users.manage",
     "chapters.manageInvites", "membership.manageRelationships",
@@ -45,13 +47,14 @@ export const DEFAULT_PRESETS: Record<(typeof EDITABLE_ROLES)[number], string[]> 
 // "default: Super Admin and Scribe" for role-number assignment is
 // expressed here, not as an `office === "SCRIBE"` check in membership.routes.ts.
 export const DEFAULT_OFFICE_PRESETS: Partial<Record<(typeof EDITABLE_OFFICES)[number], string[]>> = {
-  SCRIBE: ["membership.assignRoleNumber"],
+  SCRIBE: ["membership.assignRoleNumber", "attendance.viewReport"],
   // The Treasurer runs dues whether or not they hold the Exec role.
   TREASURER: ["dues.manage", "finance.manage"],
   // Chapter-wide announcements are narrower than Exec — only the two offices
-  // that speak for the chapter. Mirrors src/permissions/permissions.ts.
-  REGENT: ["messaging.announce", "achievements.manage"],
-  VICE_REGENT: ["messaging.announce", "achievements.manage"],
+  // that speak for the chapter. Same reasoning for renaming a team and
+  // awarding Brother of the Week. Mirrors src/permissions/permissions.ts.
+  REGENT: ["messaging.announce", "achievements.manage", "teams.rename", "brotherOfWeek.award"],
+  VICE_REGENT: ["messaging.announce", "achievements.manage", "teams.rename", "brotherOfWeek.award"],
 };
 
 /** Idempotent — safe to call on every boot/seed run, and safe to call

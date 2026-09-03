@@ -91,6 +91,23 @@ export const ALL_PERMISSIONS = [
   "dues.manage",
   "finance.manage",
   "teams.manage",
+  // Renaming a team is narrower than the rest of teams.manage (create/
+  // delete/roster) — granted by office to Regent/Vice Regent, not Exec at
+  // large. Same shape as achievements.manage above.
+  "teams.rename",
+  // Awarding Brother of the Week — office-granted (Regent/Vice Regent); the
+  // current holder can also pass the title on themselves, checked
+  // separately in the route rather than through this permission (spec: "or
+  // any member with the tag").
+  "brotherOfWeek.award",
+  // The scribe's per-category (Brotherhood/Service/Professional/Rush)
+  // attendance breakdown — who's covered which requirement and who hasn't.
+  "attendance.viewReport",
+  // Starting a new semester — the mechanism behind "reset all points":
+  // the leaderboard is already scoped per-semester, so a new one reads as
+  // 0 for everyone while every past semester's ranking stays queryable,
+  // with nothing about Attendance (which isn't semester-scoped) touched.
+  "semesters.manage",
   "feedback.view",
   "feedback.manage",
   "users.manage",

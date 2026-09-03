@@ -52,6 +52,8 @@ export const DEFAULT_ROLE_PRESETS: Record<Exclude<UserRole, "SUPER_ADMIN">, Perm
     "committees.manage",
     "dues.manage", "finance.manage",
     "teams.manage",
+    "attendance.viewReport",
+    "semesters.manage",
     "feedback.view", "feedback.manage",
     "users.manage",
     "chapters.manageInvites", "membership.manageRelationships",
@@ -92,14 +94,23 @@ export function defaultRolePermissions(): Record<UserRole, Permission[]> {
 // bypass in hasPermission() below means it never needs an entry here either.
 
 export const DEFAULT_OFFICE_PRESETS: Partial<Record<ExecOffice, Permission[]>> = {
-  SCRIBE: ["membership.assignRoleNumber"],
+  // membership.assignRoleNumber: who's initiated whom onto the roster.
+  // attendance.viewReport: the per-category breakdown behind "who's
+  // covered brotherhood/service/professional/rush" — the Scribe tracks
+  // attendance day to day, so seeing it broken down by category is the
+  // same job, not a new one.
+  SCRIBE: ["membership.assignRoleNumber", "attendance.viewReport"],
   // The Treasurer runs dues whether or not they hold the Exec role.
   TREASURER: ["dues.manage", "finance.manage"],
   // Announcing to the whole chapter (a pinned message in #general, which the
   // home dashboard surfaces) is deliberately narrower than Exec: the two
-  // offices that speak for the chapter, not every board member.
-  REGENT: ["messaging.announce", "achievements.manage"],
-  VICE_REGENT: ["messaging.announce", "achievements.manage"],
+  // offices that speak for the chapter, not every board member. Same
+  // reasoning for renaming a team and awarding Brother of the Week — both
+  // explicitly scoped to these two offices (plus Super Admin, which bypasses
+  // every permission check regardless — see hasPermission() below) rather
+  // than Exec at large.
+  REGENT: ["messaging.announce", "achievements.manage", "teams.rename", "brotherOfWeek.award"],
+  VICE_REGENT: ["messaging.announce", "achievements.manage", "teams.rename", "brotherOfWeek.award"],
 };
 
 export function defaultOfficePermissions(): Partial<Record<ExecOffice, Permission[]>> {
@@ -189,6 +200,10 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   "dues.manage": "Manage dues",
   "finance.manage": "Manage committee budgets & reimbursements",
   "teams.manage": "Manage teams",
+  "teams.rename": "Rename teams",
+  "brotherOfWeek.award": "Award Brother of the Week",
+  "attendance.viewReport": "View committee-category attendance report",
+  "semesters.manage": "Start a new semester (resets the leaderboard)",
   "feedback.view": "View feedback submissions",
   "feedback.manage": "Manage feedback (update status)",
   "users.manage": "Manage users (roles, offices, status)",
@@ -203,9 +218,9 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
 
 export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] = [
   { label: "Events", permissions: ["events.view", "events.create", "events.edit", "events.delete"] },
-  { label: "Attendance", permissions: ["attendance.view", "attendance.take", "attendance.edit"] },
+  { label: "Attendance", permissions: ["attendance.view", "attendance.take", "attendance.edit", "attendance.viewReport"] },
   { label: "Documents", permissions: ["documents.view", "documents.upload", "documents.delete"] },
-  { label: "Points", permissions: ["points.award", "points.deduct"] },
+  { label: "Points", permissions: ["points.award", "points.deduct", "semesters.manage"] },
   { label: "Messaging", permissions: ["messaging.post", "messaging.moderate"] },
   { label: "Committees", permissions: ["committees.manage"] },
   { label: "Finance", permissions: ["dues.manage", "finance.manage"] },
