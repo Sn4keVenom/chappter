@@ -39,6 +39,20 @@
 
 textarea.control { min-height: 120px; resize: vertical; line-height: 1.5; }
 
+/* type="date"/"time"/"datetime-local" render their own internal widget
+   (the "MM/DD/YYYY" chip) rather than plain text, and mobile Safari in
+   particular doesn't vertically center that widget within the control's
+   box the way it centers real text — with only `padding` set, the date
+   sits visibly lower/off-center compared to a sibling text field at the
+   same padding (reported: "Date of expense bar... not fully aligned").
+   An explicit line-height matching a normal text baseline fixes it without
+   touching every other input type. */
+input[type="date"].control,
+input[type="time"].control,
+input[type="datetime-local"].control {
+  line-height: calc(var(--tap) - 2 * var(--space-3) - 2px);
+}
+
 select.control {
   appearance: none;
   padding-right: var(--space-8);
