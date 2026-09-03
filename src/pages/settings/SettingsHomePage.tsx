@@ -25,7 +25,7 @@ import { switchDemoUser } from "../../mocks/bootstrap";
 import { useState } from "react";
 import styles from "./SettingsHomePage.module.css";
 
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.1.0";
 
 const MODE_LABEL: Record<string, string> = {
   system: "Match device",

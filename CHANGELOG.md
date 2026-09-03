@@ -5,6 +5,42 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [2.1.0] — 2026-09-02
+
+### Added
+- **Squad randomizer** (`src/pages/admin/SquadsPage.tsx`) — splits the
+  active roster into as-even-as-possible squads for a given target size.
+  Stateless/non-persisted by design, kept separate from the persisted
+  Gear Cup Teams feature.
+- **Points reset with preserved history** — resetting points now starts a
+  new `Semester`; the leaderboard reads 0 for everyone while every past
+  semester's ranking stays fully queryable via a new semester picker on
+  the leaderboard. Attendance records are untouched (they aren't
+  semester-scoped). New Admin "Semesters" page to create one.
+- **Team rename** — Regent, Vice Regent, and Super Admin can rename a
+  team after creation (new `teams.rename` permission).
+- **Brother of the Week** — a single-holder tag on the Home page,
+  awarded by Super Admin, Regent, Vice Regent, or the current holder
+  (who can pass it on); awarding to someone new automatically clears the
+  previous holder.
+- **Scribe attendance category report** (`/admin/attendance-report`) —
+  per-member counts of events attended by category (Brotherhood,
+  Service, Professional, Rush, Admin) for a semester, so the scribe can
+  see who hasn't covered a required category yet.
+- **Custom check-in codes** — officers can set a event's check-in code
+  by hand; leaving it blank auto-fills a random 6-character code.
+- **PWA install support** — `manifest.webmanifest`, app icons, and the
+  iOS-specific meta tags needed for a real "Add to Home Screen" install
+  with a proper icon and full-screen launch.
+
+### Fixed
+- The leaderboard's Demo Mode route silently dropped its own query
+  params, so a picked semester was ignored in Demo Mode even though the
+  real API handled it correctly.
+- A semester picker's own "Current" option relabeled itself to whatever
+  semester was currently being viewed instead of naming the true current
+  semester.
+
 ## [1.4.0] — 2026-07-09 — Production Readiness Audit
 
 Full-stack audit ahead of real-chapter deployment. See the audit report
