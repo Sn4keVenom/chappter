@@ -247,6 +247,15 @@ function generateCheckInCode(): string {
   return code;
 }
 
+/** How long a check-in code (custom or auto) stays valid once set — the
+ * event's own check-in window, not a rolling timer, so "set it once" (or
+ * "leave it on the random default") actually means something. Same
+ * boundary POST /events/:id/checkin already uses to decide whether
+ * check-in is open at all. */
+function checkInCodeExpiry(event: { checkInWindowEnd: Date | null; endTime: Date }): Date {
+  return event.checkInWindowEnd ?? event.endTime;
+}
+
 router.get(
   "/events/:id/checkin-token",
   requireCommitteeScope(async (req) => {
@@ -261,7 +270,8 @@ router.get(
     // per-event secret so a screenshot can't be replayed past its window.
     // The QR (checkInLink() in CheckInPage.tsx) encodes THIS — its length
     // doesn't matter to a person, they never read it, only a camera does.
-    const expiresAt = Date.now() + 60_000; // 60s rotation, matches CheckInPage's refresh interval
+    // Rotates every 60s regardless of what's going on with the code below.
+    const expiresAt = Date.now() + 60_000; // matches CheckInPage's refresh interval
     const payload = `${event.id}.${expiresAt}`;
     const signature = crypto
       .createHmac("sha256", event.checkInTokenSecret)
@@ -269,21 +279,70 @@ router.get(
       .digest("hex");
 
     // Short code: the human-typeable alternative, read off the organizer's
-    // screen — genuinely 6 characters, unlike the token above. Its security
-    // is the same shape as the token's (opaque, rotates every 60s, single
-    // use per person) but from a much smaller alphabet, which is the actual
-    // tradeoff being made here: fine for "don't let someone across the room
-    // who wasn't looking at the screen guess it," not meant to survive a
-    // sustained brute-force attempt the way a full HMAC digest would.
-    // Stored (not derived) because there's no way to keep it this short AND
-    // stateless the way the HMAC token is.
-    const checkInCode = generateCheckInCode();
-    await prisma.event.update({
-      where: { id: event.id },
-      data: { checkInCode, checkInCodeExpiresAt: new Date(expiresAt) },
-    });
+    // screen. Sticky, not regenerated on every poll of this endpoint —
+    // POST .../checkin-code (below) is the only thing that changes it, so
+    // an officer's custom code (or the auto-generated default) survives
+    // this page auto-refreshing the QR every 55s. First request for an
+    // event with none yet set gets a random default, same as before this
+    // was customizable.
+    let checkInCode = event.checkInCode;
+    if (!checkInCode || !event.checkInCodeExpiresAt || event.checkInCodeExpiresAt.getTime() < Date.now()) {
+      checkInCode = generateCheckInCode();
+      await prisma.event.update({
+        where: { id: event.id },
+        data: { checkInCode, checkInCodeExpiresAt: checkInCodeExpiry(event) },
+      });
+    }
 
     res.json({ token: `${payload}.${signature}`, code: checkInCode, expiresAt });
+  })
+);
+
+// ── POST /events/:id/checkin-code — set a custom code, or a fresh random
+// one if none is given ─────────────────────────────────────────────────
+// Security tradeoff, deliberately accepted here (not something to copy
+// elsewhere): a custom code is memorable precisely because it's stable for
+// the whole check-in window instead of rotating every 60s like the token
+// does, which trades away some of the token's screenshot/replay
+// resistance for that memorability — reasonable for event attendance among
+// a few dozen people, not for anything higher-stakes.
+const setCheckInCodeSchema = z.object({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9-]{4,12}$/, "Code must be 4-12 characters: letters, numbers, and dashes.")
+    .optional(),
+});
+
+router.post(
+  "/events/:id/checkin-code",
+  requireCommitteeScope(async (req) => {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    return event?.committeeId ?? null;
+  }),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = setCheckInCodeSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const checkInCode = parsed.data.code || generateCheckInCode();
+    await prisma.event.update({
+      where: { id: event.id },
+      data: { checkInCode, checkInCodeExpiresAt: checkInCodeExpiry(event) },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "EVENT_CHECKIN_CODE_SET",
+      entityType: "Event",
+      entityId: event.id,
+      after: { checkInCode, custom: !!parsed.data.code },
+    });
+
+    res.json({ code: checkInCode });
   })
 );
 

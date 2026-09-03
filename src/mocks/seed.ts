@@ -129,6 +129,9 @@ export interface MockEvent {
   checkInWindowEnd?: string | null;
   committeeId?: string | null;
   createdById: string;
+  // Sticky check-in code (custom or auto-generated) — see api.ts
+  // getCheckInToken/setCheckInCode. Undefined until first requested.
+  checkInCode?: string | null;
 }
 
 export interface MockRsvp {

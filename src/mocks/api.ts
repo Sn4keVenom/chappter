@@ -1205,7 +1205,27 @@ export function getCheckInToken(eventId: string): { token: string; code: string;
   const token = `demo-checkin:${eventId}:${db.nextId("tok")}`;
   const expiresAt = Date.now() + 60_000;
   activeCheckInTokens.set(token, { eventId, expiresAt });
-  return { token, code: randomCheckInCode(), expiresAt };
+  // Sticky, same reasoning as the real GET /events/:id/checkin-token: a
+  // custom or previously-generated code shouldn't get silently replaced
+  // every time this page polls for a fresh QR token.
+  if (!event.checkInCode) event.checkInCode = randomCheckInCode();
+  return { token, code: event.checkInCode, expiresAt };
+}
+
+/** Sets a custom code, or (omitted/blank) a fresh random one — mirrors the
+ * real POST /events/:id/checkin-code. */
+export function setCheckInCode(eventId: string, code?: string): { code: string } {
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+  if (!canAccessCheckIn(getCurrentDemoUserId(), event)) {
+    throw new DemoApiError(403, "You don't have access to set this event's check-in code");
+  }
+  const trimmed = code?.trim().toUpperCase();
+  if (trimmed && !/^[A-Z0-9-]{4,12}$/.test(trimmed)) {
+    throw new DemoApiError(400, "Code must be 4-12 characters: letters, numbers, and dashes.");
+  }
+  event.checkInCode = trimmed || randomCheckInCode();
+  return { code: event.checkInCode };
 }
 
 export function selfCheckIn(

@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
-import { getCheckInToken, getEventRoster, selfCheckIn } from "../../api/attendance";
+import { getCheckInToken, getEventRoster, selfCheckIn, setCheckInCode } from "../../api/attendance";
 import { getEvent } from "../../api/events";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -44,15 +44,22 @@ function checkInLink(eventId: string, token: string): string {
 
 function OrganizerView({ eventId }: { eventId: string }) {
   // token drives the QR (a camera reads it, nobody types it — length is
-  // irrelevant there); code is the short, human-typeable alternative shown
-  // as text underneath, for "read it off the screen and type it in" when
-  // scanning isn't convenient. Both come from the same rotation.
+  // irrelevant there) and keeps rotating every 55s; code is the short,
+  // human-typeable alternative shown as text underneath, for "read it off
+  // the screen and type it in" when scanning isn't convenient. Unlike the
+  // token, code is STICKY — set once (an officer's custom word, or the
+  // auto-generated default) and left alone until the check-in window
+  // closes or someone explicitly changes it, so polling for a fresh token
+  // every 55s doesn't also silently swap out a code someone's mid-typing.
   const [token, setToken] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [checkedIn, setCheckedIn] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editingCode, setEditingCode] = useState(false);
+  const [codeInput, setCodeInput] = useState("");
+  const [savingCode, setSavingCode] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -76,6 +83,22 @@ function OrganizerView({ eventId }: { eventId: string }) {
       if (mounted.current) setError(e?.message ?? "Couldn't refresh the check-in code.");
     }
   }, [eventId]);
+
+  async function saveCode(customCode?: string) {
+    setSavingCode(true);
+    setError(null);
+    try {
+      const result = await setCheckInCode(eventId, customCode);
+      if (!mounted.current) return;
+      setCode(result.code);
+      setEditingCode(false);
+      setCodeInput("");
+    } catch (e: any) {
+      if (mounted.current) setError(e?.message ?? "Couldn't set that code.");
+    } finally {
+      if (mounted.current) setSavingCode(false);
+    }
+  }
 
   const fetchCount = useCallback(async () => {
     try {
@@ -114,12 +137,59 @@ function OrganizerView({ eventId }: { eventId: string }) {
         <>
           <div className={styles.qrPanel}>
             <QRCode value={checkInLink(eventId, token)} size={220} alt="Check-in QR code" />
-            <p className={styles.codeText}>{code}</p>
+
+            {editingCode ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)", alignItems: "center" }}>
+                <Input
+                  label="Custom code"
+                  value={codeInput}
+                  onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+                  placeholder="e.g. GEARCUP"
+                  hint="4-12 characters: letters, numbers, dashes. Leave blank for a random one."
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoFocus
+                  style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.1em" }}
+                />
+                <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={savingCode}
+                    onClick={() => {
+                      setEditingCode(false);
+                      setCodeInput("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button variant="primary" size="sm" busy={savingCode} onClick={() => saveCode(codeInput || undefined)}>
+                    {codeInput.trim() ? "Save" : "Use random code"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className={styles.codeText}>{code}</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setCodeInput(code);
+                    setEditingCode(true);
+                  }}
+                >
+                  Set custom code
+                </Button>
+              </>
+            )}
           </div>
           <p className={styles.countdown} role="status">
-            {/* aria-live via role=status: a screen-reader user hears the code
-                rotate rather than silently going stale. */}
-            Code refreshes in {secondsLeft}s
+            {/* aria-live via role=status: a screen-reader user hears when the
+                QR is about to go stale. The code itself doesn't rotate —
+                see the state comment above — so this is about the QR only. */}
+            QR refreshes in {secondsLeft}s
           </p>
         </>
       ) : (

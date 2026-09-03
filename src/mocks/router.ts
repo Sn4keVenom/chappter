@@ -65,6 +65,7 @@ route("post", "/auth/sync", () => ({ user: api.getMe() }));
 route("get", "/events", (_p, q) => ({ events: api.listEvents(q) }));
 route("post", "/events", (_p, _q, body) => ({ event: api.createEvent(body) }));
 route("get", "/events/:id/checkin-token", (p) => api.getCheckInToken(p.id));
+route("post", "/events/:id/checkin-code", (p, _q, body) => api.setCheckInCode(p.id, body.code));
 route("get", "/events/:id/attendance", (p) => api.getEventRoster(p.id));
 route("get", "/events/:id", (p) => ({ event: api.getEvent(p.id) }));
 route("post", "/events/:id/rsvp", (p, _q, body) => {
