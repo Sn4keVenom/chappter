@@ -216,12 +216,33 @@ export interface MockMessage {
 
 // ── Semester ─────────────────────────────────────────────────────────────
 
-export const semester: MockSemester = {
+// `let`, not `const` — api.ts createSemester() reassigns this wholesale
+// when starting a new one (after archiving the old value into
+// pastSemesters below), so every one of the ~16 call sites elsewhere that
+// read db.semester.* keeps resolving to whichever one is current without
+// needing to know a new semester ever started.
+export let semester: MockSemester = {
   id: "sem_fall2026",
   label: "Fall 2026",
   startDate: daysFromNow(-40, 0, 0),
   endDate: daysFromNow(90, 0, 0),
 };
+
+// Closed-out semesters — see api.ts createSemester(). Empty until someone
+// actually starts a new semester in this demo session; a genuinely past
+// one (with real historical ledger entries to show) isn't part of the
+// seed data, so viewing one here mostly demonstrates the picker itself
+// rather than rich history — this app's real backend is where a chapter's
+// actual past semesters accumulate.
+export const pastSemesters: MockSemester[] = [];
+
+// A namespace import (`import * as db from "./seed"`) can't reassign
+// db.semester directly — only this module can rebind its own `let`. This
+// is the one way to swap which semester is "current."
+export function setCurrentSemester(next: MockSemester): void {
+  pastSemesters.push(semester);
+  semester = next;
+}
 
 // ── Teams ────────────────────────────────────────────────────────────────
 // Gamification-only groupings — NOT committees, no leaders. Defined ahead
@@ -680,6 +701,15 @@ export const moduleConfigs: ModuleConfig[] = [
 
 export function findModule(key: string): ModuleConfig | undefined {
   return moduleConfigs.find((m) => m.key === key);
+}
+
+// ── Brother of the Week ──────────────────────────────────────────────────
+// Exactly one holder at a time, or none — see api.ts's award/clear
+// functions. `let`, not `const`, for the same reason as `semester` above:
+// only this module can rebind its own binding.
+export let brotherOfWeekUserId: string | null = null;
+export function setBrotherOfWeek(userId: string | null): void {
+  brotherOfWeekUserId = userId;
 }
 
 // ── Chapter Settings (mutable single record) ────────────────────────────

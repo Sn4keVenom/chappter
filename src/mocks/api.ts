@@ -330,8 +330,8 @@ interface PointsBreakdown {
 // Individual point totals come primarily from attendance/event
 // participation (Feature 1) — this breaks the ledger down by type so the
 // leaderboard can show "how" someone earned their points, not just the sum.
-function userPointsBreakdown(userId: string): PointsBreakdown {
-  const entries = db.ledgerEntries.filter((l) => l.userId === userId && l.semesterId === db.semester.id);
+function userPointsBreakdown(userId: string, semesterId: string): PointsBreakdown {
+  const entries = db.ledgerEntries.filter((l) => l.userId === userId && l.semesterId === semesterId);
   let total = 0;
   let attendanceCount = 0;
   let attendancePoints = 0;
@@ -351,11 +351,11 @@ function userPointsBreakdown(userId: string): PointsBreakdown {
   return { total, attendanceCount, attendancePoints, bonusPoints, penaltyPoints };
 }
 
-function leaderboardRows(): LeaderboardEntry[] {
+function leaderboardRows(semesterId: string): LeaderboardEntry[] {
   const userId = getCurrentDemoUserId();
   const scored = db.users
     .filter((u) => u.status === "ACTIVE" || u.status === "PNM")
-    .map((u) => ({ u, breakdown: userPointsBreakdown(u.id) }))
+    .map((u) => ({ u, breakdown: userPointsBreakdown(u.id, semesterId) }))
     .sort((a, b) => b.breakdown.total - a.breakdown.total);
   return scored.map(({ u, breakdown }, i) => ({
     rank: i + 1,
@@ -382,7 +382,7 @@ export function getDashboard(): DashboardData {
     .map((e) => toEventSummary(e, userId));
 
   const dues = db.findDuesRecord(userId, db.semester.id);
-  const board = leaderboardRows();
+  const board = leaderboardRows(db.semester.id);
   const me = board.find((b) => b.userId === userId);
 
   const pinned = db.messages
@@ -954,8 +954,56 @@ export function reviewJoinRequest(joinRequestId: string, approve: boolean): db.M
   return request;
 }
 
-export function getLeaderboard(): { leaderboard: LeaderboardEntry[]; semesterId: string; semesterLabel: string | null } {
-  return { leaderboard: leaderboardRows(), semesterId: db.semester.id, semesterLabel: db.semester.label };
+/** Resolves a semesterId to its {id,label}, checking the current semester
+ * first and then any closed-out ones — see seed.ts's pastSemesters. */
+function resolveSemester(semesterId?: string): { id: string; label: string } {
+  if (!semesterId || semesterId === db.semester.id) return { id: db.semester.id, label: db.semester.label };
+  const past = db.pastSemesters.find((s) => s.id === semesterId);
+  return past ? { id: past.id, label: past.label } : { id: db.semester.id, label: db.semester.label };
+}
+
+export function getLeaderboard(params: {
+  semesterId?: string;
+} = {}): { leaderboard: LeaderboardEntry[]; semesterId: string; semesterLabel: string | null } {
+  const resolved = resolveSemester(params.semesterId);
+  return { leaderboard: leaderboardRows(resolved.id), semesterId: resolved.id, semesterLabel: resolved.label };
+}
+
+export function listSemesters(): {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+}[] {
+  const all = [db.semester, ...db.pastSemesters];
+  return all
+    .slice()
+    .sort((a, b) => b.startDate.localeCompare(a.startDate))
+    .map((s) => ({ ...s, isCurrent: s.id === db.semester.id }));
+}
+
+/** "Reset all points": closes out the current semester (archived into
+ * pastSemesters, dates untouched — its ledger entries stay exactly as
+ * they were) and makes the new one current. Mirrors the real
+ * POST /semesters. */
+export function createSemester(payload: { label: string; startDate: string; endDate: string }): {
+  id: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  isCurrent: boolean;
+} {
+  if (!can(getCurrentDemoUserId(), "semesters.manage")) {
+    throw new DemoApiError(403, "Not authorized to start a new semester");
+  }
+  const label = payload.label.trim();
+  if (!label) throw new DemoApiError(400, "Give the semester a label.");
+  if (label.toLowerCase() === db.semester.label.toLowerCase() || db.pastSemesters.some((s) => s.label.toLowerCase() === label.toLowerCase())) {
+    throw new DemoApiError(409, `A semester named "${label}" already exists.`);
+  }
+  db.setCurrentSemester({ id: db.nextId("sem"), label, startDate: payload.startDate, endDate: payload.endDate });
+  return { ...db.semester, isCurrent: true };
 }
 
 export function getPointsLedger(
@@ -1182,6 +1230,81 @@ function getMemberAttendanceHistoryPaged(
 export function getMemberAttendanceHistory(userId: string): { records: AttendanceRecord[] } {
   const { records } = getMemberAttendanceHistoryPaged(userId, { limit: 100 });
   return { records };
+}
+
+export function getBrotherOfWeek(): { id: string; firstName: string; lastName: string; avatarUrl: string | null } | null {
+  if (!db.brotherOfWeekUserId) return null;
+  const u = db.findUser(db.brotherOfWeekUserId);
+  if (!u) return null;
+  return { id: u.id, firstName: u.firstName, lastName: u.lastName, avatarUrl: u.avatarUrl ?? null };
+}
+
+/** Awarding it to someone new clears the previous holder automatically —
+ * reassigning the single holder field IS that removal, same as the real
+ * Chapter.brotherOfWeekUserId FK. Open to Super Admin, Regent/Vice Regent
+ * (brotherOfWeek.award), or the CURRENT holder passing the title on —
+ * mirrors the real route's data-dependent check that a flat permission
+ * can't express alone. */
+export function awardBrotherOfWeek(userId: string) {
+  const actorId = getCurrentDemoUserId();
+  const isCurrentHolder = db.brotherOfWeekUserId === actorId;
+  if (!can(actorId, "brotherOfWeek.award") && !isCurrentHolder) {
+    throw new DemoApiError(403, "Only Super Admin, Regent/Vice Regent, or the current holder can award this.");
+  }
+  if (!db.findUser(userId)) throw new DemoApiError(404, "That person isn't in your chapter");
+  db.setBrotherOfWeek(userId);
+  return getBrotherOfWeek();
+}
+
+export function clearBrotherOfWeek(): void {
+  const actorId = getCurrentDemoUserId();
+  const isCurrentHolder = db.brotherOfWeekUserId === actorId;
+  if (!can(actorId, "brotherOfWeek.award") && !isCurrentHolder) {
+    throw new DemoApiError(403, "Only Super Admin, Regent/Vice Regent, or the current holder can clear this.");
+  }
+  db.setBrotherOfWeek(null);
+}
+
+const ATTENDANCE_REPORT_CATEGORIES = ["BROTHERHOOD", "SERVICE", "PROFESSIONAL", "RUSH", "ADMIN"] as const;
+
+/** Mirrors the real GET /attendance/category-report — counts only, scoped
+ * by event start time falling inside the semester's date range (not
+ * PointsLedger, since a 0-point event still counts and never gets a
+ * ledger entry — see the real route's doc comment). */
+export function getAttendanceCategoryReport(semesterId?: string): {
+  semesterLabel: string | null;
+  categories: readonly string[];
+  members: { userId: string; firstName: string; lastName: string; counts: Record<string, number> }[];
+} {
+  if (!can(getCurrentDemoUserId(), "attendance.viewReport")) {
+    throw new DemoApiError(403, "Not authorized to view the attendance report");
+  }
+  const resolved = resolveSemester(semesterId);
+  const semester = resolved.id === db.semester.id ? db.semester : db.pastSemesters.find((s) => s.id === resolved.id);
+  const members = db.users.filter((u) => u.status === "ACTIVE" || u.status === "PNM");
+
+  const counts = new Map<string, Record<string, number>>();
+  for (const m of members) {
+    counts.set(m.id, Object.fromEntries(ATTENDANCE_REPORT_CATEGORIES.map((c) => [c, 0])));
+  }
+  if (semester) {
+    for (const a of db.attendances) {
+      const row = counts.get(a.userId);
+      const event = db.findEvent(a.eventId);
+      if (!row || !event) continue;
+      if (event.startTime < semester.startDate || event.startTime > semester.endDate) continue;
+      row[event.category] = (row[event.category] ?? 0) + 1;
+    }
+  }
+
+  return {
+    semesterLabel: resolved.label,
+    categories: ATTENDANCE_REPORT_CATEGORIES,
+    members: members
+      .slice()
+      .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+      .map((m) => ({ userId: m.id, firstName: m.firstName, lastName: m.lastName, counts: counts.get(m.id)! })),
+  };
 }
 
 const activeCheckInTokens = new Map<string, { eventId: string; expiresAt: number }>();
@@ -1497,6 +1620,21 @@ export function createTeam(payload: { name: string; color?: string | null }): Te
   }
   const team: db.MockTeam = { id: db.nextId("team"), name, color: payload.color?.trim() || "#5B6CC0" };
   db.teams.push(team);
+  return toTeam(team);
+}
+
+/** Regent, Vice Regent, or Super Admin only — narrower than create/delete,
+ * same as the real PATCH /teams/:id. */
+export function renameTeam(id: string, name: string): Team {
+  if (!can(getCurrentDemoUserId(), "teams.rename")) throw new DemoApiError(403, "Not authorized to rename teams");
+  const team = db.findTeam(id);
+  if (!team) throw new DemoApiError(404, "Team not found");
+  const trimmed = name.trim();
+  if (!trimmed) throw new DemoApiError(400, "Give the team a name.");
+  if (db.teams.some((t) => t.id !== id && t.name.toLowerCase() === trimmed.toLowerCase())) {
+    throw new DemoApiError(409, "A team with that name already exists");
+  }
+  team.name = trimmed;
   return toTeam(team);
 }
 

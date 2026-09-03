@@ -93,19 +93,23 @@ route("get", "/users", (_p, q) => api.getRoster(q));
 route("patch", "/users/:id/role", (p, _q, body) => ({ user: api.updateUserRole(p.id, body.role) }));
 route("patch", "/users/:id", (p, _q, body) => ({ user: api.updateUserFields(p.id, body) }));
 route("delete", "/users/:id", (p) => api.deleteMemberAccount(p.id));
-route("get", "/points/leaderboard", (_p, q) => api.getLeaderboard());
+route("get", "/points/leaderboard", (_p, q) => api.getLeaderboard(q));
+route("get", "/semesters", () => ({ semesters: api.listSemesters() }));
+route("post", "/semesters", (_p, _q, body) => ({ semester: api.createSemester(body) }));
 route("get", "/points/ledger/:userId", (p, q) => api.getPointsLedger(p.userId, q));
 route("post", "/points/adjust", (_p, _q, body) => ({ entry: api.adjustPoints(body) }));
 
 // Attendance
 route("get", "/attendance/history/:userId", (p) => api.getMemberAttendanceHistory(p.userId));
 route("get", "/attendance/history", (_p, q) => api.getMyAttendanceHistory(q));
+route("get", "/attendance/category-report", (_p, q) => api.getAttendanceCategoryReport(q.semesterId));
 
 // Teams (Feature 2 — gamification groupings, not committees)
 route("get", "/teams/leaderboard", () => api.getTeamLeaderboard());
 route("get", "/teams", () => ({ teams: api.listTeams() }));
 route("post", "/teams", (_p, _q, body) => ({ team: api.createTeam(body) }));
 route("get", "/teams/:id", (p) => ({ team: api.getTeam(p.id) }));
+route("patch", "/teams/:id", (p, _q, body) => ({ team: api.renameTeam(p.id, body.name) }));
 route("delete", "/teams/:id", (p) => {
   api.deleteTeam(p.id);
   return { deleted: true };
@@ -144,6 +148,14 @@ route("post", "/achievements/reset", () => ({ achievements: api.resetAchievement
 route("post", "/achievements", (_p, _q, body) => ({ achievement: api.createAchievement(body) }));
 route("patch", "/achievements/:id", (p, _q, body) => ({ achievement: api.updateAchievement(p.id, body) }));
 route("delete", "/achievements/:id", (p) => api.deleteAchievement(p.id));
+
+// Brother of the Week
+route("get", "/brother-of-week", () => ({ user: api.getBrotherOfWeek() }));
+route("post", "/brother-of-week", (_p, _q, body) => ({ user: api.awardBrotherOfWeek(body.userId) }));
+route("delete", "/brother-of-week", () => {
+  api.clearBrotherOfWeek();
+  return { user: null };
+});
 
 // Dues
 route("get", "/dues/me", () => ({ records: api.getMyDues() }));
