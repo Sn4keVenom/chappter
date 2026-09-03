@@ -1354,10 +1354,16 @@ export function deleteCommittee(id: string): { deleted: true } {
 export function updateCommittee(id: string, payload: { name?: string; description?: string }): Committee {
   const c = db.committees.find((x) => x.id === id);
   if (!c) throw new DemoApiError(404, "Committee not found");
-  if (!can(getCurrentDemoUserId(), "committees.manage") && !committeeManageAccess(getCurrentDemoUserId(), id)) {
+  const isExecOrAbove = can(getCurrentDemoUserId(), "committees.manage");
+  if (!isExecOrAbove && !committeeManageAccess(getCurrentDemoUserId(), id)) {
     throw new DemoApiError(403, "Not authorized to edit this committee");
   }
-  if (payload.name !== undefined) c.name = payload.name;
+  // Renaming is exec-only — see the same guard on the real PATCH
+  // /committees/:id. A chair can still edit description/members.
+  if (payload.name !== undefined) {
+    if (!isExecOrAbove) throw new DemoApiError(403, "Renaming a committee is Exec-only.");
+    c.name = payload.name;
+  }
   if (payload.description !== undefined) c.description = payload.description;
   return toCommittee(c);
 }

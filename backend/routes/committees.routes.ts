@@ -170,9 +170,20 @@ router.patch(
     const parsed = updateCommitteeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+    // requireCommitteeScope above lets a chair through for the day-to-day
+    // stuff (description, members) — renaming touches the committee's
+    // channel handle and how it's referenced chapter-wide, so it stays
+    // exec-territory specifically, not just "whoever can edit this committee."
+    if (parsed.data.name !== undefined && !isAtLeast(req.user!.role, "EXEC")) {
+      return res.status(403).json({ error: "Renaming a committee is Exec-only." });
+    }
+
     const before = await prisma.committee.findUnique({ where: { id: req.params.id } });
     if (!before) return res.status(404).json({ error: "Committee not found" });
 
+    // Committee.name has no unique constraint (just an index, for lookup
+    // speed), so there's no conflict case to guard here the way invite
+    // codes or team names do.
     const updated = await prisma.committee.update({
       where: { id: req.params.id },
       data: parsed.data,

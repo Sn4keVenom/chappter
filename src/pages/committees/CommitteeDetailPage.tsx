@@ -43,6 +43,7 @@ export default function CommitteeDetailPage() {
   }, [committeeId]);
 
   const [editOpen, setEditOpen] = useState(false);
+  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -107,6 +108,7 @@ export default function CommitteeDetailPage() {
               <Button
                 variant="secondary"
                 onClick={() => {
+                  setName(committee.name);
                   setDescription(committee.description ?? "");
                   setEditOpen(true);
                 }}
@@ -245,10 +247,15 @@ export default function CommitteeDetailPage() {
             <Button
               variant="primary"
               busy={busy}
+              disabled={isExecOrAbove && !name.trim()}
               onClick={async () => {
                 setEditOpen(false);
                 await mutate(
-                  () => updateCommittee(committeeId, { description: description.trim() || undefined }),
+                  () =>
+                    updateCommittee(committeeId, {
+                      ...(isExecOrAbove ? { name: name.trim() } : {}),
+                      description: description.trim() || undefined,
+                    }),
                   "Couldn't save the committee."
                 );
               }}
@@ -258,6 +265,13 @@ export default function CommitteeDetailPage() {
           </>
         }
       >
+        {/* Renaming is Exec+ only — a chair can run their committee day to
+            day (description, members) but a name change touches the
+            committee's channel handle and how it's referenced chapter-wide,
+            which stays exec-territory. */}
+        {isExecOrAbove ? (
+          <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Committee name" />
+        ) : null}
         <Textarea
           label="Description"
           value={description}
