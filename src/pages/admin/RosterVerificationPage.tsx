@@ -31,8 +31,13 @@ import { ChoiceList, Input, Textarea, type Choice } from "../../components/ui/Fo
 import { DataTable, type Column } from "../../components/ui/DataTable";
 import { EmptyState, ErrorBanner, LoadingState } from "../../components/ui/Feedback";
 
-const STATUS_OPTIONS: Choice<"ACTIVE" | "ALUMNI">[] = [
+const STATUS_OPTIONS: Choice<"ACTIVE" | "INACTIVE" | "ALUMNI">[] = [
   { value: "ACTIVE", label: "Active" },
+  // Signup only offers Active/Alumni (see SignUpPage.tsx), so an Inactive
+  // row won't be matched by that self-service claim — it's exec-managed
+  // record-keeping, or gets claimed some other way (invite code, join
+  // request) that doesn't check status at all.
+  { value: "INACTIVE", label: "Inactive", hint: "Not selectable at signup — record-keeping only" },
   { value: "ALUMNI", label: "Alumni" },
 ];
 
@@ -145,7 +150,7 @@ function parseBulkRows(text: string): { rows: RosterEntryInput[]; malformed: num
       !lastName ||
       !Number.isInteger(roleNumber) ||
       roleNumber <= 0 ||
-      (status !== "ACTIVE" && status !== "ALUMNI")
+      (status !== "ACTIVE" && status !== "INACTIVE" && status !== "ALUMNI")
     ) {
       malformed.push(index);
       return;
@@ -204,7 +209,7 @@ function BulkImportDialog({
         onClose();
       }}
       title="Bulk import"
-      subtitle="One row per line: first name, last name, role number, status (Active or Alumni) — separated by a comma or tab."
+      subtitle="One row per line: first name, last name, role number, status (Active, Inactive, or Alumni) — separated by a comma or tab."
       wide
       footer={
         <>
@@ -232,7 +237,7 @@ function BulkImportDialog({
         rows={8}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={"Jordan, Smith, 214, Active\nCasey, Lee, 88, Alumni"}
+        placeholder={"Jordan, Smith, 214, Active\nRiley, Chen, 201, Inactive\nCasey, Lee, 88, Alumni"}
         style={{ fontFamily: "var(--font-mono)" }}
       />
       <p style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>

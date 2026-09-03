@@ -11,7 +11,7 @@ export interface RosterEntryInput {
   firstName: string;
   lastName: string;
   roleNumber: number;
-  status: "ACTIVE" | "ALUMNI";
+  status: "ACTIVE" | "INACTIVE" | "ALUMNI";
 }
 
 export async function listRosterEntries(chapterId: string): Promise<ChapterRosterEntry[]> {

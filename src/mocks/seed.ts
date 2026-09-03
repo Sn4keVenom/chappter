@@ -965,7 +965,7 @@ export interface MockChapterRosterEntry {
   firstName: string;
   lastName: string;
   roleNumber: number;
-  status: "ACTIVE" | "ALUMNI";
+  status: "ACTIVE" | "INACTIVE" | "ALUMNI";
   claimedByUserId: string | null;
   createdAt: string;
 }

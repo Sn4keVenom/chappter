@@ -814,7 +814,7 @@ type RosterEntryPayload = {
   firstName: string;
   lastName: string;
   roleNumber: number;
-  status: "ACTIVE" | "ALUMNI";
+  status: "ACTIVE" | "INACTIVE" | "ALUMNI";
 };
 
 function validateRosterEntryPayload(payload: RosterEntryPayload, chapterId: string, existingId?: string): void {

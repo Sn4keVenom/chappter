@@ -477,8 +477,8 @@ export interface ChapterRosterEntry {
   firstName: string;
   lastName: string;
   roleNumber: number;
-  /** Only ACTIVE or ALUMNI — a PNM never has a role number. */
-  status: Extract<MemberStatus, "ACTIVE" | "ALUMNI">;
+  /** ACTIVE, INACTIVE, or ALUMNI — a PNM never has a role number. */
+  status: Extract<MemberStatus, "ACTIVE" | "INACTIVE" | "ALUMNI">;
   /** Set once a signup successfully matches and claims this row. */
   claimedByUserId?: string | null;
   createdAt: string;

@@ -535,12 +535,19 @@ router.post(
 // Independent of ChapterMembership.roleNumber, which is only assigned to
 // someone AFTER they already have an account — see schema.prisma doc comment
 // on ChapterRosterEntry.
-
+//
+// Status here is ACTIVE/INACTIVE/ALUMNI (not PNM — a PNM never has a role
+// number) but claimRoleNumberSchema below stays ACTIVE/ALUMNI-only: that's
+// what a brand-new signup can self-select (see SignUpPage.tsx), so an
+// INACTIVE entry is a real record but isn't self-claimable through signup
+// today — it's exec-managed data, matched by other paths (see
+// reconcileRosterClaims in lib/rosterClaim.ts, which doesn't check status
+// at all).
 const rosterEntrySchema = z.object({
   firstName: z.string().min(1).max(100),
   lastName: z.string().min(1).max(100),
   roleNumber: z.number().int().positive(),
-  status: z.enum(["ACTIVE", "ALUMNI"]),
+  status: z.enum(["ACTIVE", "INACTIVE", "ALUMNI"]),
 });
 
 router.get(

@@ -503,7 +503,7 @@ model ChapterRosterEntry {
   firstName       String
   lastName        String
   roleNumber      Int
-  status          MemberStatus // ACTIVE | ALUMNI only — PNMs never have a role number
+  status          MemberStatus // ACTIVE | INACTIVE | ALUMNI only — PNMs never have a role number
   claimedByUserId String?      @unique
   createdById     String
   createdAt       DateTime     @default(now())
