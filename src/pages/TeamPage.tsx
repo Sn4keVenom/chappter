@@ -7,7 +7,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { addTeamMember, deleteTeam, getTeam, removeTeamMember } from "../api/teams";
+import { addTeamMember, deleteTeam, getTeam, removeTeamMember, renameTeam } from "../api/teams";
 import { getRoster } from "../api/users";
 import { useAsync } from "../hooks/useAsync";
 import { usePermissions } from "../hooks/usePermissions";
@@ -22,12 +22,15 @@ import profileStyles from "./profile/ProfilePage.module.css";
 export default function TeamPage() {
   const { teamId = "" } = useParams();
   const navigate = useNavigate();
-  const { isExecOrAbove } = usePermissions();
+  const { isExecOrAbove, can } = usePermissions();
+  const canRename = can("teams.rename");
   const { data: team, loading, error, reload } = useAsync(() => getTeam(teamId), [teamId]);
 
   const [addOpen, setAddOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [nameInput, setNameInput] = useState("");
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -53,11 +56,12 @@ export default function TeamPage() {
     );
   }
 
-  async function mutate(action: () => Promise<unknown>, failure: string) {
+  async function mutate(action: () => Promise<unknown>, failure: string, onDone?: () => void) {
     setBusy(true);
     setActionError(null);
     try {
       await action();
+      onDone?.();
       await reload({ silent: true });
     } catch (e: any) {
       setActionError(e?.message ?? failure);
@@ -85,11 +89,25 @@ export default function TeamPage() {
         backTo="/points?view=team"
         backLabel="Team standings"
         actions={
-          isExecOrAbove ? (
-            <Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}>
-              Delete team
-            </Button>
-          ) : undefined
+          <>
+            {canRename ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setNameInput(team.name);
+                  setRenameOpen(true);
+                }}
+              >
+                Rename
+              </Button>
+            ) : null}
+            {isExecOrAbove ? (
+              <Button size="sm" variant="danger" onClick={() => setDeleteOpen(true)}>
+                Delete team
+              </Button>
+            ) : null}
+          </>
         }
       />
 
@@ -199,6 +217,33 @@ export default function TeamPage() {
         destructive
         busy={deleting}
       />
+
+      <Dialog
+        open={renameOpen}
+        onClose={() => setRenameOpen(false)}
+        title="Rename team"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRenameOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              busy={busy}
+              disabled={!nameInput.trim()}
+              onClick={() =>
+                mutate(() => renameTeam(teamId, nameInput.trim()), "Couldn't rename the team.", () =>
+                  setRenameOpen(false)
+                )
+              }
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <Input label="Team name" value={nameInput} onChange={(e) => setNameInput(e.target.value)} autoFocus />
+      </Dialog>
     </div>
   );
 }

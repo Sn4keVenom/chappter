@@ -23,6 +23,12 @@ export async function deleteTeam(id: string): Promise<void> {
   await apiClient.delete(`/teams/${id}`);
 }
 
+/** Regent, Vice Regent, or Super Admin only — narrower than create/delete. */
+export async function renameTeam(id: string, name: string): Promise<Team> {
+  const { data } = await apiClient.patch<{ team: Team }>(`/teams/${id}`, { name });
+  return data.team;
+}
+
 export async function getTeam(id: string): Promise<Team> {
   const { data } = await apiClient.get<{ team: Team }>(`/teams/${id}`);
   return data.team;

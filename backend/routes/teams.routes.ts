@@ -33,7 +33,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
-import { AuthedRequest, requireRole, writeAuditLog } from "../middleware/rbac";
+import { AuthedRequest, requireRole, requirePermission, writeAuditLog } from "../middleware/rbac";
 
 const router = Router();
 
@@ -138,6 +138,50 @@ router.post(
     });
 
     res.status(201).json({ team: await loadTeamDetail(team, await currentSemesterId()) });
+  })
+);
+
+// ── PATCH /teams/:id — Regent, Vice Regent, or Super Admin ─────────────────
+// Narrower than create/delete (Exec+, via requireRole above): renaming an
+// existing team is explicitly scoped to the two offices that speak for the
+// chapter, per teams.rename's grant in permissionDefaults.ts.
+const renameTeamSchema = z.object({ name: z.string().min(1).max(60) });
+
+router.patch(
+  "/teams/:id",
+  requirePermission("teams.rename"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = renameTeamSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const team = await prisma.team.findFirst({
+      where: { id: req.params.id, chapterId: req.user!.chapterId },
+    });
+    if (!team) return res.status(404).json({ error: "Team not found" });
+
+    let updated;
+    try {
+      updated = await prisma.team.update({
+        where: { id: team.id },
+        data: { name: parsed.data.name.trim() },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return res.status(409).json({ error: "A team with that name already exists" });
+      }
+      throw err;
+    }
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "TEAM_RENAME",
+      entityType: "Team",
+      entityId: team.id,
+      before: { name: team.name },
+      after: { name: updated.name },
+    });
+
+    res.json({ team: await loadTeamDetail(updated, await currentSemesterId()) });
   })
 );
 
