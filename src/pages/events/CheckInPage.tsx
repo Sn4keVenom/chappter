@@ -42,7 +42,20 @@ function checkInLink(eventId: string, token: string): string {
   return `${window.location.origin}/events/${eventId}/check-in?token=${encodeURIComponent(token)}`;
 }
 
-function OrganizerView({ eventId }: { eventId: string }) {
+function OrganizerView({
+  eventId,
+  initialAttendance,
+}: {
+  eventId: string;
+  // "Exec/event creators should also be able to check in to events even
+  // if they can manage events." Before this, isOrganizer routed to ONLY
+  // OrganizerView (display code) with no path back to MemberView's
+  // self-check-in form — a manager attending their own event had no way
+  // to check themselves in from this page at all. Initial value from the
+  // event the parent already fetched, so a manager who's already checked
+  // in doesn't see the button at all on first render.
+  initialAttendance: { pointsAwarded: number; late: boolean } | null;
+}) {
   // token drives the QR (a camera reads it, nobody types it — length is
   // irrelevant there) and keeps rotating every 55s; code is the short,
   // human-typeable alternative shown as text underneath, for "read it off
@@ -60,6 +73,9 @@ function OrganizerView({ eventId }: { eventId: string }) {
   const [editingCode, setEditingCode] = useState(false);
   const [codeInput, setCodeInput] = useState("");
   const [savingCode, setSavingCode] = useState(false);
+  const [myAttendance, setMyAttendance] = useState(initialAttendance);
+  const [selfChecking, setSelfChecking] = useState(false);
+  const [selfCheckError, setSelfCheckError] = useState<string | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -97,6 +113,24 @@ function OrganizerView({ eventId }: { eventId: string }) {
       if (mounted.current) setError(e?.message ?? "Couldn't set that code.");
     } finally {
       if (mounted.current) setSavingCode(false);
+    }
+  }
+
+  // Uses the token already on screen — the organizer is looking straight
+  // at a currently-valid one, so there's no reason to make them re-scan or
+  // re-type anything to check themselves in.
+  async function checkMyselfIn() {
+    if (!token) return;
+    setSelfChecking(true);
+    setSelfCheckError(null);
+    try {
+      const response = await selfCheckIn(eventId, { token });
+      if (!mounted.current) return;
+      setMyAttendance({ pointsAwarded: response.attendance.pointsAwarded, late: response.attendance.late });
+    } catch (e: any) {
+      if (mounted.current) setSelfCheckError(e?.message ?? "Couldn't check you in.");
+    } finally {
+      if (mounted.current) setSelfChecking(false);
     }
   }
 
@@ -200,6 +234,25 @@ function OrganizerView({ eventId }: { eventId: string }) {
         <CardLabel>Checked in</CardLabel>
         <p className={styles.counter}>{checkedIn ?? "—"}</p>
         <p className={styles.counterLabel}>Updates every 10 seconds</p>
+      </Card>
+
+      <Card style={{ width: "min(320px, 100%)" }}>
+        <CardLabel>You're managing this event</CardLabel>
+        {myAttendance ? (
+          <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
+            You're checked in — +{myAttendance.pointsAwarded} points{myAttendance.late ? " (late)" : ""}.
+          </p>
+        ) : (
+          <>
+            {selfCheckError ? <ErrorBanner message={selfCheckError} /> : null}
+            <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)", marginBottom: "var(--space-2)" }}>
+              Displaying the code doesn't check you in — attending too? Use the code above like anyone else would.
+            </p>
+            <Button variant="secondary" size="sm" busy={selfChecking} disabled={!token} onClick={checkMyselfIn}>
+              Check myself in too
+            </Button>
+          </>
+        )}
       </Card>
     </div>
   );
@@ -354,7 +407,11 @@ export default function CheckInPage() {
         backTo={`/events/${eventId}`}
         backLabel="Event"
       />
-      {isOrganizer ? <OrganizerView eventId={eventId} /> : <MemberView eventId={eventId} />}
+      {isOrganizer ? (
+        <OrganizerView eventId={eventId} initialAttendance={event.myAttendance} />
+      ) : (
+        <MemberView eventId={eventId} />
+      )}
     </div>
   );
 }
