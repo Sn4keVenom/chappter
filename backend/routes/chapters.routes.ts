@@ -970,60 +970,103 @@ router.patch(
     const parsed = reviewSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const reviewed = await tx.chapterJoinRequest.update({
-        where: { id: joinRequest.id },
-        data: {
-          status: parsed.data.approve ? "APPROVED" : "DENIED",
-          reviewedById: req.user!.membershipId,
-          reviewedAt: new Date(),
-        },
+    // Pre-checks for the two ways approving this can collide with an
+    // existing ChapterMembership row (@@unique([chapterId, userId]) and
+    // @@unique([chapterId, roleNumber]) in schema.prisma) — without these,
+    // either collision threw an uncaught P2002 out of the transaction
+    // below, which the global error handler (server.ts) turns into a bare
+    // 500 "Internal server error" with no indication of what actually went
+    // wrong. Genuinely reachable: a second, stale join request for someone
+    // who already joined another way (invite code, an earlier approval),
+    // or a role number that got assigned to someone else in the meantime.
+    if (parsed.data.approve) {
+      const alreadyMember = await prisma.chapterMembership.findUnique({
+        where: { chapterId_userId: { chapterId: joinRequest.chapterId, userId: joinRequest.userId } },
       });
-
-      if (parsed.data.approve) {
-        const membership = await tx.chapterMembership.create({
-          data: {
-            userId: joinRequest.userId,
-            chapterId: joinRequest.chapterId,
-            invitedById: req.user!.membershipId,
-            // memberStatus is set either by claim-role-number (roster-
-            // verified signup) or by a plain join request that carried the
-            // status the person picked at sign-up (see joinRequestSchema
-            // above) — either way, it's what they actually chose, so it
-            // drives both role and status here. Left unset only for a
-            // request with no status signal at all (e.g. someone who just
-            // browsed the chapter list with no prior sign-up context), which
-            // keeps the schema defaults: role MEMBER, status PNM.
-            ...(joinRequest.memberStatus
-              ? {
-                  role:
-                    joinRequest.memberStatus === "ALUMNI"
-                      ? "ALUMNI"
-                      : joinRequest.memberStatus === "PNM"
-                        ? "PNM"
-                        : "MEMBER",
-                  status: joinRequest.memberStatus,
-                  roleNumber: joinRequest.roleNumber,
-                }
-              : {}),
-          },
+      if (alreadyMember) {
+        return res.status(409).json({ error: "This person is already a member of this chapter." });
+      }
+      if (joinRequest.roleNumber != null) {
+        const roleNumberTaken = await prisma.chapterMembership.findUnique({
+          where: { chapterId_roleNumber: { chapterId: joinRequest.chapterId, roleNumber: joinRequest.roleNumber } },
         });
-        const user = await tx.user.findUniqueOrThrow({ where: { id: joinRequest.userId } });
-        if (!user.activeChapterId) {
-          await tx.user.update({
-            where: { id: user.id },
-            data: { activeChapterId: joinRequest.chapterId },
+        if (roleNumberTaken) {
+          return res.status(409).json({
+            error: `Role number ${joinRequest.roleNumber} is already assigned to another member — deny this request or have them correct it.`,
           });
         }
-        // The new membership may match a roster entry — claim it now (and
-        // fill in a role number if the match was by name), rather than
-        // leaving it until someone opens the roster screen.
-        await reconcileRosterClaims(tx, joinRequest.chapterId);
-
-        return { reviewed, membership };
       }
-      return { reviewed, membership: null };
-    });
+    }
+
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
+        const reviewed = await tx.chapterJoinRequest.update({
+          where: { id: joinRequest.id },
+          data: {
+            status: parsed.data.approve ? "APPROVED" : "DENIED",
+            reviewedById: req.user!.membershipId,
+            reviewedAt: new Date(),
+          },
+        });
+
+        if (parsed.data.approve) {
+          const membership = await tx.chapterMembership.create({
+            data: {
+              userId: joinRequest.userId,
+              chapterId: joinRequest.chapterId,
+              invitedById: req.user!.membershipId,
+              // memberStatus is set either by claim-role-number (roster-
+              // verified signup) or by a plain join request that carried the
+              // status the person picked at sign-up (see joinRequestSchema
+              // above) — either way, it's what they actually chose, so it
+              // drives both role and status here. Left unset only for a
+              // request with no status signal at all (e.g. someone who just
+              // browsed the chapter list with no prior sign-up context), which
+              // keeps the schema defaults: role MEMBER, status PNM.
+              ...(joinRequest.memberStatus
+                ? {
+                    role:
+                      joinRequest.memberStatus === "ALUMNI"
+                        ? "ALUMNI"
+                        : joinRequest.memberStatus === "PNM"
+                          ? "PNM"
+                          : "MEMBER",
+                    status: joinRequest.memberStatus,
+                    roleNumber: joinRequest.roleNumber,
+                  }
+                : {}),
+            },
+          });
+          const user = await tx.user.findUniqueOrThrow({ where: { id: joinRequest.userId } });
+          if (!user.activeChapterId) {
+            await tx.user.update({
+              where: { id: user.id },
+              data: { activeChapterId: joinRequest.chapterId },
+            });
+          }
+          // The new membership may match a roster entry — claim it now (and
+          // fill in a role number if the match was by name), rather than
+          // leaving it until someone opens the roster screen.
+          await reconcileRosterClaims(tx, joinRequest.chapterId);
+
+          return { reviewed, membership };
+        }
+        return { reviewed, membership: null };
+      });
+    } catch (err) {
+      // Belt-and-suspenders for the same two collisions, in case another
+      // approval raced this one between the pre-checks above and this
+      // transaction committing.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        const target = Array.isArray(err.meta?.target) ? (err.meta!.target as string[]) : [];
+        if (target.includes("roleNumber")) {
+          return res.status(409).json({ error: "That role number was just assigned to someone else — deny this request or have them correct it." });
+        }
+        return res.status(409).json({ error: "This person is already a member of this chapter." });
+      }
+      throw err;
+    }
 
     await writeAuditLog({
       actorId: req.user!.id,
