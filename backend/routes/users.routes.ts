@@ -217,10 +217,17 @@ router.get(
     const [upcomingEvents, duesRecord, pointsData, pinnedAnnouncement] =
       await Promise.all([
         // 1. Upcoming published events with user's RSVP status
+        // "Ongoing events can't be managed during the event... keep it in
+        // upcoming until it's over" — an event already underway (startTime
+        // in the past) still belongs here as long as it hasn't ENDED yet;
+        // startTime alone would drop it from this widget the moment it
+        // started. endTime >= now catches that; startTime <= weekOut still
+        // keeps genuinely-distant events out of "this week."
         prisma.event.findMany({
           where: {
             status: "PUBLISHED",
-            startTime: { gte: now, lte: weekOut },
+            endTime: { gte: now },
+            startTime: { lte: weekOut },
           },
           orderBy: { startTime: "asc" },
           take: 5,

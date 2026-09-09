@@ -56,9 +56,19 @@ router.get(
     const events = await prisma.event.findMany({
       where: {
         status: "PUBLISHED",
+        // "Ongoing events can't be managed during the event... keep it in
+        // upcoming until it's over." EventsPage.tsx calls this with
+        // ?from=now for its Upcoming tab and ?to=now for Past, never both
+        // together — filtering on startTime meant an event that already
+        // started but hasn't ended yet failed `startTime >= from` (dropped
+        // from Upcoming) while still passing `startTime <= to` (showed up
+        // in Past, mid-event). endTime is what actually answers "is this
+        // over" — Demo Mode's mock (listEvents) already filtered on it
+        // correctly; only the real query was wrong. EventCard's own
+        // upcoming/past split (EventsPage.tsx) already assumed endTime too.
         ...(from || to
           ? {
-              startTime: {
+              endTime: {
                 ...(from ? { gte: new Date(String(from)) } : {}),
                 ...(to ? { lte: new Date(String(to)) } : {}),
               },

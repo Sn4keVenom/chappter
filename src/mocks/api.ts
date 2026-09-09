@@ -470,8 +470,13 @@ export function getDashboard(): DashboardData {
   const userId = getCurrentDemoUserId();
   const now = new Date().toISOString();
   const weekOut = new Date(Date.now() + 7 * 86_400_000).toISOString();
+  // "Ongoing events can't be managed during the event... keep it in
+  // upcoming until it's over" — an event already underway (startTime in
+  // the past) still belongs here as long as it hasn't ENDED yet. Mirrors
+  // the real GET /users/me/dashboard fix; listEvents() above already got
+  // this right, this widget's own filter hadn't.
   const upcomingEvents = db.events
-    .filter((e) => e.status === "PUBLISHED" && e.startTime >= now && e.startTime <= weekOut)
+    .filter((e) => e.status === "PUBLISHED" && e.endTime >= now && e.startTime <= weekOut)
     .sort((a, b) => a.startTime.localeCompare(b.startTime))
     .map((e) => toEventSummary(e, userId));
 
