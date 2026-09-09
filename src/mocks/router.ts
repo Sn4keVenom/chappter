@@ -98,6 +98,8 @@ route("get", "/semesters", () => ({ semesters: api.listSemesters() }));
 route("post", "/semesters", (_p, _q, body) => ({ semester: api.createSemester(body) }));
 route("get", "/points/ledger/:userId", (p, q) => api.getPointsLedger(p.userId, q));
 route("post", "/points/adjust", (_p, _q, body) => ({ entry: api.adjustPoints(body) }));
+route("post", "/points/reset", () => ({ reset: api.resetPoints() }));
+route("get", "/points/resets", (_p, q) => ({ resets: api.listPointsResets(q.semesterId) }));
 
 // Attendance
 route("get", "/attendance/history/:userId", (p) => api.getMemberAttendanceHistory(p.userId));

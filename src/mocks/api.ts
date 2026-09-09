@@ -313,9 +313,14 @@ export function getMe(): User {
   return toFullUser(getCurrentDemoUser());
 }
 
+// archivedInResetId undefined/null always means "since the most recent
+// points.reset of this semester" — same reasoning as the real backend's
+// PointsLedger.archivedInResetId. Team totals always want the CURRENT
+// period, so this has no resetId param (unlike userPointsBreakdown below,
+// which the leaderboard's history picker does need to override).
 function userTotalPoints(userId: string): number {
   return db.ledgerEntries
-    .filter((l) => l.userId === userId && l.semesterId === db.semester.id)
+    .filter((l) => l.userId === userId && l.semesterId === db.semester.id && l.archivedInResetId == null)
     .reduce((sum, l) => sum + l.amount, 0);
 }
 
@@ -330,8 +335,15 @@ interface PointsBreakdown {
 // Individual point totals come primarily from attendance/event
 // participation (Feature 1) — this breaks the ledger down by type so the
 // leaderboard can show "how" someone earned their points, not just the sum.
-function userPointsBreakdown(userId: string, semesterId: string): PointsBreakdown {
-  const entries = db.ledgerEntries.filter((l) => l.userId === userId && l.semesterId === semesterId);
+// resetId picks a specific past points.reset period instead of "current"
+// (undefined) — see leaderboardRows/getLeaderboard below.
+function userPointsBreakdown(userId: string, semesterId: string, resetId?: string): PointsBreakdown {
+  const entries = db.ledgerEntries.filter(
+    (l) =>
+      l.userId === userId &&
+      l.semesterId === semesterId &&
+      (resetId ? l.archivedInResetId === resetId : l.archivedInResetId == null)
+  );
   let total = 0;
   let attendanceCount = 0;
   let attendancePoints = 0;
@@ -351,11 +363,11 @@ function userPointsBreakdown(userId: string, semesterId: string): PointsBreakdow
   return { total, attendanceCount, attendancePoints, bonusPoints, penaltyPoints };
 }
 
-function leaderboardRows(semesterId: string): LeaderboardEntry[] {
+function leaderboardRows(semesterId: string, resetId?: string): LeaderboardEntry[] {
   const userId = getCurrentDemoUserId();
   const scored = db.users
     .filter((u) => u.status === "ACTIVE" || u.status === "PNM")
-    .map((u) => ({ u, breakdown: userPointsBreakdown(u.id, semesterId) }))
+    .map((u) => ({ u, breakdown: userPointsBreakdown(u.id, semesterId, resetId) }))
     .sort((a, b) => b.breakdown.total - a.breakdown.total);
   return scored.map(({ u, breakdown }, i) => ({
     rank: i + 1,
@@ -964,9 +976,25 @@ function resolveSemester(semesterId?: string): { id: string; label: string } {
 
 export function getLeaderboard(params: {
   semesterId?: string;
-} = {}): { leaderboard: LeaderboardEntry[]; semesterId: string; semesterLabel: string | null } {
+  resetId?: string;
+} = {}): { leaderboard: LeaderboardEntry[]; semesterId: string; semesterLabel: string | null; resetId: string | null } {
+  // A resetId names its own semester — same reasoning as the real
+  // GET /points/leaderboard, so the frontend never needs to keep the two in
+  // sync itself (see PointsPage.tsx's parsePointsSelection).
+  if (params.resetId) {
+    const reset = db.pointsResets.find((r) => r.id === params.resetId);
+    if (reset) {
+      const resolved = resolveSemester(reset.semesterId);
+      return {
+        leaderboard: leaderboardRows(resolved.id, reset.id),
+        semesterId: resolved.id,
+        semesterLabel: resolved.label,
+        resetId: reset.id,
+      };
+    }
+  }
   const resolved = resolveSemester(params.semesterId);
-  return { leaderboard: leaderboardRows(resolved.id), semesterId: resolved.id, semesterLabel: resolved.label };
+  return { leaderboard: leaderboardRows(resolved.id), semesterId: resolved.id, semesterLabel: resolved.label, resetId: null };
 }
 
 export function listSemesters(): {
@@ -1004,6 +1032,54 @@ export function createSemester(payload: { label: string; startDate: string; endD
   }
   db.setCurrentSemester({ id: db.nextId("sem"), label, startDate: payload.startDate, endDate: payload.endDate });
   return { ...db.semester, isCurrent: true };
+}
+
+/** "Reset team and personal points... without altering attendance
+ * tracking. This is different from the semester reset." — the OTHER
+ * reset: keeps the current semester exactly as it is, only tags every
+ * currently-unarchived ledger row with a new PointsReset id so
+ * leaderboardRows(semesterId) with no resetId reads them as 0 going
+ * forward, while the frozen period stays fully queryable by that id (see
+ * getLeaderboard's resetId branch). Mirrors the real POST /points/reset. */
+export function resetPoints(): db.MockPointsReset {
+  if (!can(getCurrentDemoUserId(), "points.reset")) {
+    throw new DemoApiError(403, "Not authorized to reset points");
+  }
+  const reset: db.MockPointsReset = {
+    id: db.nextId("preset"),
+    semesterId: db.semester.id,
+    resetAt: new Date().toISOString(),
+    resetById: getCurrentDemoUserId(),
+  };
+  db.pointsResets.push(reset);
+  for (const l of db.ledgerEntries) {
+    if (l.semesterId === db.semester.id && l.archivedInResetId == null) {
+      l.archivedInResetId = reset.id;
+    }
+  }
+  return reset;
+}
+
+export function listPointsResets(semesterId?: string): {
+  id: string;
+  semesterId: string;
+  resetAt: string;
+  resetByName: string | null;
+}[] {
+  const id = semesterId ?? db.semester.id;
+  return db.pointsResets
+    .filter((r) => r.semesterId === id)
+    .slice()
+    .sort((a, b) => b.resetAt.localeCompare(a.resetAt))
+    .map((r) => {
+      const resetBy = db.findUser(r.resetById);
+      return {
+        id: r.id,
+        semesterId: r.semesterId,
+        resetAt: r.resetAt,
+        resetByName: resetBy ? `${resetBy.firstName} ${resetBy.lastName}` : null,
+      };
+    });
 }
 
 export function getPointsLedger(

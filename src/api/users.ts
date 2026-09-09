@@ -4,7 +4,7 @@
 
 import { apiClient } from "./client";
 import type {
-  User, UserSummary, DashboardData, LeaderboardResult, LedgerEntry, ExecOffice, MemberStatus, UserRole
+  User, UserSummary, DashboardData, LeaderboardResult, LedgerEntry, ExecOffice, MemberStatus, UserRole, PointsReset
 } from "../types";
 
 export async function getMe(): Promise<User> {
@@ -95,9 +95,24 @@ export async function updateMyProfile(payload: {
   return data.user;
 }
 
-export async function getLeaderboard(params?: { semesterId?: string }): Promise<LeaderboardResult> {
+export async function getLeaderboard(params?: { semesterId?: string; resetId?: string }): Promise<LeaderboardResult> {
   const { data } = await apiClient.get("/points/leaderboard", { params });
   return data;
+}
+
+/** "Reset team and personal points... without altering attendance
+ * tracking. This is different from the semester reset." — keeps the
+ * current Semester exactly as it is; only tags PointsLedger rows so the
+ * leaderboard reads 0 going forward. See listPointsResets() for the
+ * resulting period's place in the history picker. */
+export async function resetPoints(): Promise<PointsReset> {
+  const { data } = await apiClient.post<{ reset: PointsReset }>("/points/reset");
+  return data.reset;
+}
+
+export async function listPointsResets(semesterId?: string): Promise<PointsReset[]> {
+  const { data } = await apiClient.get<{ resets: PointsReset[] }>("/points/resets", { params: { semesterId } });
+  return data.resets;
 }
 
 export async function getPointsLedger(

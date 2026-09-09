@@ -163,7 +163,23 @@ export interface MockLedgerEntry {
   reason?: string | null;
   awardedById?: string | null;
   createdAt: string;
+  // Set by "reset points, keep the semester" (api.ts resetPoints()) — never
+  // deleted, just tagged. Undefined/null means "since the most recent reset
+  // of this semester" — see backend/prisma/schema.prisma PointsLedger's
+  // matching field for the full reasoning.
+  archivedInResetId?: string | null;
 }
+
+/** One "reset points, keep the semester" event — see api.ts resetPoints()
+ * and PointsReset in schema.prisma. */
+export interface MockPointsReset {
+  id: string;
+  semesterId: string;
+  resetAt: string;
+  resetById: string;
+}
+
+export const pointsResets: MockPointsReset[] = [];
 
 export interface MockDuesRecord {
   id: string;

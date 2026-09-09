@@ -108,6 +108,12 @@ export const ALL_PERMISSIONS = [
   // 0 for everyone while every past semester's ranking stays queryable,
   // with nothing about Attendance (which isn't semester-scoped) touched.
   "semesters.manage",
+  // The OTHER points reset: "reset team and personal points... without
+  // altering attendance tracking. This is different from the semester
+  // reset" — zeros the leaderboard within the CURRENT semester (no new
+  // Semester created, Attendance untouched either way). See
+  // PointsReset/PointsLedger.archivedInResetId in schema.prisma.
+  "points.reset",
   "feedback.view",
   "feedback.manage",
   "users.manage",
@@ -631,6 +637,21 @@ export interface LeaderboardResult {
   leaderboard: LeaderboardEntry[];
   semesterId: string | null;
   semesterLabel: string | null;
+  // Set when the board being shown is a specific past points.reset period
+  // rather than the semester's current (post-latest-reset) standings — see
+  // PointsReset below.
+  resetId?: string | null;
+}
+
+/** One "reset points, keep the semester" event (item 52) — a period
+ * boundary within a single Semester, distinct from starting a new one
+ * (item 47, which also closes out attendance tracking). Listed via
+ * GET /points/resets for PointsPage.tsx's history picker. */
+export interface PointsReset {
+  id: string;
+  semesterId: string;
+  resetAt: string;
+  resetByName: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

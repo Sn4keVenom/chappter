@@ -34,6 +34,7 @@ export const DEFAULT_PRESETS: Record<(typeof EDITABLE_ROLES)[number], string[]> 
     "teams.manage",
     "attendance.viewReport",
     "semesters.manage",
+    "points.reset",
     "feedback.view", "feedback.manage",
     "users.manage",
     "chapters.manageInvites", "membership.manageRelationships",

@@ -1,27 +1,40 @@
 // src/pages/admin/SemestersPage.tsx
 //
-// "Need an easy way to reset all points for everyone. When points reset,
-// previous ranking should be saved somewhere for future reference. This
-// should NOT alter semester category attendance log for scribe."
+// Two different "reset the points" actions live on this page, because they
+// turned out to be two different asks:
 //
-// Starting a new semester IS the reset: the leaderboard already reads
-// per-semester (Points -> Individual/Teams), so a new one shows 0 for
-// everyone while every past semester stays queryable exactly as it was —
-// see the semester picker on PointsPage.tsx. Nothing here touches
-// Attendance at all, which isn't semester-scoped in the first place.
+//   1. Start a new semester — closes out the CURRENT semester (dates
+//      untouched, ledger untouched) and makes a new one current. Since
+//      Attendance is scoped by an event's start time falling inside a
+//      semester's date range (not a semesterId column), this is also what
+//      resets the scribe's per-category attendance tracking — the two are
+//      inherently linked here, not a design choice.
+//   2. Reset points, same semester — "reset team and personal points...
+//      without altering attendance tracking. This is different from the
+//      semester reset... specifically for the team and personal point
+//      tracking as the fun game." Keeps the current semester exactly as it
+//      is; only tags PointsLedger rows (PointsReset model) so the
+//      leaderboard reads 0 going forward while every past period — this
+//      semester's included — stays queryable via the picker on
+//      PointsPage.tsx, same derived-not-stored approach as #1.
+//
+// Both are non-destructive: nothing is ever deleted, just scoped by a new
+// boundary (a new Semester row, or a new PointsReset row).
 
 import { useState } from "react";
 
 import { createSemester, listSemesters } from "../../api/semesters";
+import { listPointsResets, resetPoints } from "../../api/users";
 import { useAsync } from "../../hooks/useAsync";
+import { usePermissions } from "../../hooks/usePermissions";
 import { PageHeader, Section } from "../../components/PageHeader";
 import { Card } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
-import { Dialog } from "../../components/ui/Dialog";
+import { Dialog, ConfirmDialog } from "../../components/ui/Dialog";
 import { Input } from "../../components/ui/Form";
 import { EmptyState, ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
-import { formatFullDate } from "../../utils/format";
+import { formatFullDate, formatDateTime } from "../../utils/format";
 import profileStyles from "../profile/ProfilePage.module.css";
 
 function defaultDates(): { start: string; end: string } {
@@ -32,6 +45,7 @@ function defaultDates(): { start: string; end: string } {
 }
 
 export default function SemestersPage() {
+  const { can } = usePermissions();
   const { data, loading, error, reload } = useAsync(() => listSemesters(), []);
 
   const [open, setOpen] = useState(false);
@@ -42,6 +56,15 @@ export default function SemestersPage() {
 
   const semesters = data ?? [];
   const current = semesters.find((s) => s.isCurrent);
+
+  const {
+    data: resets,
+    reload: reloadResets,
+  } = useAsync(() => (current ? listPointsResets(current.id) : Promise.resolve([])), [current?.id]);
+
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   function openDialog() {
     setLabel("");
@@ -68,6 +91,20 @@ export default function SemestersPage() {
     }
   }
 
+  async function confirmResetPoints() {
+    setResetting(true);
+    setResetError(null);
+    try {
+      await resetPoints();
+      setResetConfirmOpen(false);
+      await reloadResets({ silent: true });
+    } catch (e: any) {
+      setResetError(e?.message ?? "Couldn't reset points.");
+    } finally {
+      setResetting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="page">
@@ -88,7 +125,7 @@ export default function SemestersPage() {
     <div className="page page-narrow">
       <PageHeader
         title="Semesters"
-        subtitle="Starting a new one resets the points leaderboard — past semesters stay exactly as they were."
+        subtitle="Two different resets live here — starting a new semester, and resetting points within the current one."
       />
 
       <Section
@@ -108,11 +145,44 @@ export default function SemestersPage() {
                 new one starts.
               </>
             ) : null}
-            {" "}Attendance records aren't affected at all — this only changes which semester new points are logged
-            against.
+            {" "}This also resets the scribe's category attendance tracking, since it's scoped to the semester's
+            dates — use this for an actual new academic semester, not just to refresh the scoreboard.
           </p>
         </Card>
       </Section>
+
+      {can("points.reset") ? (
+        <Section
+          title="Reset points"
+          actions={
+            <Button size="sm" variant="secondary" onClick={() => setResetConfirmOpen(true)} disabled={!current}>
+              Reset points
+            </Button>
+          }
+        >
+          <Card>
+            {resetError ? <ErrorBanner message={resetError} /> : null}
+            <p style={{ fontSize: "var(--text-sm)", lineHeight: 1.55, color: "var(--color-text-muted)" }}>
+              Zeros the team and individual leaderboards for the fun-game score —{" "}
+              {current ? <strong>{current.label}</strong> : "the current semester"} itself, and the scribe's
+              attendance tracking, stay exactly as they are. Nobody's history is deleted; past standings stay
+              viewable from the leaderboard's own picker.
+            </p>
+            {resets && resets.length > 0 ? (
+              <div style={{ marginTop: "var(--space-3)" }}>
+                {resets.map((r) => (
+                  <div key={r.id} className={profileStyles.row}>
+                    <span className={profileStyles.rowBody}>
+                      <span className={profileStyles.rowTitle}>Reset on {formatDateTime(r.resetAt)}</span>
+                      {r.resetByName ? <span className={profileStyles.rowMeta}>by {r.resetByName}</span> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </Card>
+        </Section>
+      ) : null}
 
       <Section title="All semesters">
         <Card>
@@ -169,6 +239,21 @@ export default function SemestersPage() {
           onChange={(e) => setDates((d) => ({ ...d, end: e.target.value }))}
         />
       </Dialog>
+
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onClose={() => setResetConfirmOpen(false)}
+        onConfirm={confirmResetPoints}
+        title="Reset points?"
+        body={
+          current
+            ? `Everyone's team and individual points go back to 0 for ${current.label}. This does NOT start a new semester and does NOT touch attendance tracking — only the fun-game score. Past standings stay viewable from the leaderboard's picker.`
+            : "Everyone's team and individual points go back to 0. This does NOT start a new semester and does NOT touch attendance tracking."
+        }
+        confirmLabel="Reset points"
+        destructive
+        busy={resetting}
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { getLeaderboard } from "../api/users";
+import { getLeaderboard, listPointsResets } from "../api/users";
 import { createTeam, getTeamLeaderboard } from "../api/teams";
 import { listSemesters, type Semester } from "../api/semesters";
 import { useAsync } from "../hooks/useAsync";
@@ -24,8 +24,20 @@ import { Dialog } from "../components/ui/Dialog";
 import { Input, Select, SegmentedControl } from "../components/ui/Form";
 import { DataTable, type Column } from "../components/ui/DataTable";
 import { EmptyState, ErrorBanner, ErrorState, LoadingState } from "../components/ui/Feedback";
+import { formatShortDate } from "../utils/format";
 import type { LeaderboardEntry, TeamLeaderboardEntry } from "../types";
 import styles from "./PointsPage.module.css";
+
+/** The <Select>'s value encodes which of three things is being viewed:
+ * "" (current), a bare semesterId (a past whole semester), or
+ * `reset:<id>` (a past points.reset period WITHIN the current semester —
+ * see PointsReset in schema.prisma / SemestersPage.tsx's "Reset points"
+ * section). Parsed back into the resetId/semesterId params
+ * GET /points/leaderboard actually takes. */
+function parsePointsSelection(selection: string): { semesterId?: string; resetId?: string } {
+  if (selection.startsWith("reset:")) return { resetId: selection.slice("reset:".length) };
+  return { semesterId: selection || undefined };
+}
 
 /** A handful of on-brand-adjacent swatches to pick from — matches the seeded
  * demo teams' palette rather than a raw color picker, which is more choice
@@ -49,9 +61,13 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 function IndividualBoard() {
-  const [semesterId, setSemesterId] = useState<string | undefined>(undefined);
+  const [selection, setSelection] = useState<string>("");
   const { data: semesters } = useAsync(() => listSemesters(), []);
-  const { data, loading, error, reload } = useAsync(() => getLeaderboard({ semesterId }), [semesterId]);
+  // Always the CURRENT semester's resets — a past semester resetting mid-
+  // life is an edge case not worth a second level of picker for.
+  const { data: resets } = useAsync(() => listPointsResets(), []);
+  const params = parsePointsSelection(selection);
+  const { data, loading, error, reload } = useAsync(() => getLeaderboard(params), [selection]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState title="Couldn't load the leaderboard" body={error} onRetry={() => reload()} />;
@@ -97,25 +113,31 @@ function IndividualBoard() {
     },
   ];
 
+  const hasHistory = (semesters && semesters.length > 1) || (resets && resets.length > 0);
+
   return (
     <>
-      {semesters && semesters.length > 1 ? (
+      {hasHistory ? (
         <div style={{ marginBottom: "var(--space-4)", maxWidth: 260 }}>
-          <Select
-            label="Semester"
-            value={semesterId ?? ""}
-            onChange={(e) => setSemesterId(e.target.value || undefined)}
-          >
+          <Select label="Semester" value={selection} onChange={(e) => setSelection(e.target.value)}>
             {/* This option's own label always names the TRUE current
                 semester, not whichever one happens to be selected/viewed —
                 data.semesterLabel would follow the selection instead once
                 a past semester is picked, which read as if "current" had
                 changed to match. */}
             <option value="">
-              Current{semesters.find((s) => s.isCurrent) ? ` (${semesters.find((s) => s.isCurrent)!.label})` : ""}
+              Current{semesters?.find((s) => s.isCurrent) ? ` (${semesters.find((s) => s.isCurrent)!.label})` : ""}
             </option>
+            {/* Points-reset periods WITHIN the current semester — see
+                parsePointsSelection's doc comment. Newest first, matching
+                the order GET /points/resets already returns them in. */}
+            {resets?.map((r) => (
+              <option key={r.id} value={`reset:${r.id}`}>
+                Before {formatShortDate(r.resetAt)} reset
+              </option>
+            ))}
             {semesters
-              .filter((s) => !s.isCurrent)
+              ?.filter((s) => !s.isCurrent)
               .map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
@@ -125,7 +147,7 @@ function IndividualBoard() {
         </div>
       ) : null}
       <DataTable
-        caption={`Individual points leaderboard${data?.semesterLabel ? ` for ${data.semesterLabel}` : ""}`}
+        caption={`Individual points leaderboard${data?.semesterLabel ? ` for ${data.semesterLabel}` : ""}${data?.resetId ? " (a past points-reset period)" : ""}`}
         rows={rows}
         columns={columns}
         rowKey={(entry) => entry.userId}

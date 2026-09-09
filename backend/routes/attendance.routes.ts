@@ -15,6 +15,7 @@
 
 import { Router, Response } from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import {
@@ -313,21 +314,45 @@ router.get(
 
 // ── GET /points/leaderboard ───────────────────────────────────────────────
 // Aggregate per-user totals for the given semester; if omitted, uses current.
+//
+// Two independent axes of "which points": semesterId (whole semester —
+// starting a new one is the item-47 reset, see semesters.routes.ts) and
+// resetId (a period WITHIN one semester — see POST /points/reset below,
+// item 52's "reset points without touching the semester or attendance").
+// A resetId names its own semester, so it overrides any semesterId sent
+// alongside it rather than requiring the two to be kept in sync client-side.
 router.get(
   "/points/leaderboard",
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const now = new Date();
     let semesterId = req.query.semesterId ? String(req.query.semesterId) : null;
+    const resetId = req.query.resetId ? String(req.query.resetId) : null;
+
+    if (resetId) {
+      const reset = await prisma.pointsReset.findUnique({ where: { id: resetId } });
+      if (!reset) return res.status(404).json({ error: "That reset no longer exists." });
+      semesterId = reset.semesterId;
+    }
 
     if (!semesterId) {
       const sem = await prisma.semester.findFirst({
         where: { startDate: { lte: now }, endDate: { gte: now } },
       });
-      if (!sem) return res.json({ leaderboard: [], semesterId: null, semesterLabel: null });
+      if (!sem) return res.json({ leaderboard: [], semesterId: null, semesterLabel: null, resetId: null });
       semesterId = sem.id;
     }
 
     const semester = await prisma.semester.findUnique({ where: { id: semesterId } });
+
+    // NULL always means "since the most recent reset of THIS semester" (or
+    // since it started, if it's never been reset) — every ledger row gets
+    // tagged with whichever reset first archives it, so an untagged row is
+    // always the current period regardless of how many resets came before
+    // it. Picking a specific past resetId instead shows exactly that frozen
+    // period — same derived-not-stored approach as the semester picker.
+    const archivedFilter = resetId
+      ? Prisma.sql`pl."archivedInResetId" = ${resetId}`
+      : Prisma.sql`pl."archivedInResetId" IS NULL`;
 
     // Raw aggregation with rank via window function. Safe from SQL injection:
     // this is Prisma's tagged-template $queryRaw form, which parameterizes
@@ -339,20 +364,39 @@ router.get(
     // ChapterMembership.status ACTIVE (see lib/deleteUser.ts), so without this
     // a deleted member keeps their rank, and a re-signup shows up twice. Same
     // filter the roster list uses (GET /users in users.routes.ts).
+    //
+    // attendanceCount/attendancePoints/bonusPoints/penaltyPoints round out
+    // `total` into the same breakdown PointsPage.tsx has always rendered —
+    // this route just hadn't computed them yet (Demo Mode's mock has, via
+    // userPointsBreakdown, since long before this route existed for real).
     const rows = await prisma.$queryRaw<
-      { userId: string; total: bigint; firstName: string; lastName: string; avatarUrl: string | null }[]
+      {
+        userId: string;
+        total: bigint;
+        firstName: string;
+        lastName: string;
+        avatarUrl: string | null;
+        attendanceCount: bigint;
+        attendancePoints: bigint;
+        bonusPoints: bigint;
+        penaltyPoints: bigint;
+      }[]
     >`
       SELECT
         u.id AS "userId",
         u."firstName",
         u."lastName",
         u."avatarUrl",
-        COALESCE(SUM(pl.amount), 0)::int AS total
+        COALESCE(SUM(pl.amount), 0)::int AS total,
+        COALESCE(SUM(CASE WHEN pl.type = 'ATTENDANCE' THEN 1 ELSE 0 END), 0)::int AS "attendanceCount",
+        COALESCE(SUM(CASE WHEN pl.type = 'ATTENDANCE' THEN pl.amount ELSE 0 END), 0)::int AS "attendancePoints",
+        COALESCE(SUM(CASE WHEN pl.type = 'BONUS' THEN pl.amount ELSE 0 END), 0)::int AS "bonusPoints",
+        COALESCE(SUM(CASE WHEN pl.type = 'PENALTY' THEN pl.amount ELSE 0 END), 0)::int AS "penaltyPoints"
       FROM "User" u
       INNER JOIN "ChapterMembership" cm
         ON cm."userId" = u.id AND cm."chapterId" = ${req.user!.chapterId}
       LEFT JOIN "PointsLedger" pl
-        ON pl."userId" = u.id AND pl."semesterId" = ${semesterId}
+        ON pl."userId" = u.id AND pl."semesterId" = ${semesterId} AND ${archivedFilter}
       WHERE cm.status IN ('ACTIVE', 'PNM') AND u."deletedAt" IS NULL
       GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl"
       ORDER BY total DESC
@@ -366,6 +410,10 @@ router.get(
       avatarUrl: row.avatarUrl,
       total: Number(row.total),
       isMe: row.userId === req.user!.id,
+      attendanceCount: Number(row.attendanceCount),
+      attendancePoints: Number(row.attendancePoints),
+      bonusPoints: Number(row.bonusPoints),
+      penaltyPoints: Number(row.penaltyPoints),
     }));
 
     // semesterId is echoed back so callers that resolved "current semester"
@@ -374,7 +422,87 @@ router.get(
     // points adjustment and has no other permission-appropriate way to learn
     // it (GET /dues, the other place a semester id is exposed, needs
     // dues.manage — a plain Exec adjusting points may not have that office).
-    res.json({ leaderboard, semesterId, semesterLabel: semester?.label ?? null });
+    res.json({ leaderboard, semesterId, semesterLabel: semester?.label ?? null, resetId: resetId ?? null });
+  })
+);
+
+// ── POST /points/reset — points.reset — zero the board, keep the semester ──
+// "Need the ability to reset team and personal points for everyone without
+// altering attendance tracking. This is different from the semester
+// reset... The score reset is specifically for the team and personal point
+// tracking as the fun game." Distinct from POST /semesters (item 47): that
+// closes out the semester (and with it, the scribe's attendance-category
+// window); this only tags PointsLedger rows for the CURRENT semester —
+// nothing about the semester or Attendance changes. See
+// PointsLedger.archivedInResetId's doc comment for how "current" then
+// derives from this without deleting anything.
+router.post(
+  "/points/reset",
+  requirePermission("points.reset"),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const now = new Date();
+    const semester = await prisma.semester.findFirst({
+      where: { startDate: { lte: now }, endDate: { gte: now } },
+    });
+    if (!semester) return res.status(400).json({ error: "There's no current semester to reset points for." });
+
+    const reset = await prisma.$transaction(async (tx) => {
+      const created = await tx.pointsReset.create({
+        data: { semesterId: semester.id, resetById: req.user!.id },
+      });
+      // Only rows not already archived by an earlier reset — a row is
+      // tagged exactly once, by whichever reset first archives it.
+      await tx.pointsLedger.updateMany({
+        where: { semesterId: semester.id, archivedInResetId: null },
+        data: { archivedInResetId: created.id },
+      });
+      return created;
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "POINTS_RESET",
+      entityType: "PointsReset",
+      entityId: reset.id,
+      after: { semesterId: semester.id, resetAt: reset.resetAt },
+    });
+
+    res.status(201).json({ reset: { id: reset.id, semesterId: reset.semesterId, resetAt: reset.resetAt } });
+  })
+);
+
+// ── GET /points/resets — any authenticated user ──────────────────────────
+// Past reset events for a semester (defaults to current) — the picker on
+// PointsPage.tsx uses this to list periods within the current semester,
+// the same way GET /semesters lists whole semesters. Metadata, not
+// sensitive, same reasoning as GET /semesters.
+router.get(
+  "/points/resets",
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    let semesterId = req.query.semesterId ? String(req.query.semesterId) : null;
+    if (!semesterId) {
+      const now = new Date();
+      const sem = await prisma.semester.findFirst({
+        where: { startDate: { lte: now }, endDate: { gte: now } },
+      });
+      if (!sem) return res.json({ resets: [] });
+      semesterId = sem.id;
+    }
+
+    const resets = await prisma.pointsReset.findMany({
+      where: { semesterId },
+      orderBy: { resetAt: "desc" },
+      include: { resetBy: { select: { firstName: true, lastName: true } } },
+    });
+
+    res.json({
+      resets: resets.map((r) => ({
+        id: r.id,
+        semesterId: r.semesterId,
+        resetAt: r.resetAt,
+        resetByName: r.resetBy ? `${r.resetBy.firstName} ${r.resetBy.lastName}` : null,
+      })),
+    });
   })
 );
 

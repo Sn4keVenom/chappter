@@ -63,7 +63,11 @@ async function loadTeamDetail(team: TeamRow, semesterId: string | null) {
   if (semesterId && memberships.length > 0) {
     const totals = await prisma.pointsLedger.groupBy({
       by: ["userId"],
-      where: { semesterId, userId: { in: memberships.map((m) => m.userId) } },
+      // archivedInResetId: null — same "since the most recent points.reset"
+      // scoping GET /points/leaderboard uses, so the team and individual
+      // boards never disagree about what "this semester" currently means.
+      // See PointsLedger.archivedInResetId's doc comment.
+      where: { semesterId, archivedInResetId: null, userId: { in: memberships.map((m) => m.userId) } },
       _sum: { amount: true },
     });
     for (const t of totals) pointsByUser.set(t.userId, t._sum.amount ?? 0);
