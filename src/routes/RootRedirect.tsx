@@ -45,11 +45,26 @@ export function RequireOnboarding() {
   return <Outlet />;
 }
 
-/** Signed-out routes. A signed-in user visiting /login is sent onward. */
+/** Signed-out routes. A signed-in user visiting /login or /signup is sent
+ * onward — except that "onward" used to mean straight into the app with no
+ * way back, which is exactly wrong for /signup: "I just tried to have a
+ * bunch of people sign up at once and now it's telling everyone 'You're
+ * already signed in.'" On a shared device (a laptop passed around at a
+ * table), the FIRST person's session is still alive when the SECOND person
+ * opens /signup — this app only keeps one session per browser — so they'd
+ * get silently dumped into the first person's dashboard with no obvious way
+ * to sign out and actually reach the form they came for. /switch-account
+ * (below) replaces that dead end with an explicit "sign out and continue"
+ * step, while still preserving the normal, good case (a signed-in user who
+ * bookmarked /login gets taken straight into the app) — see its own doc
+ * comment for why it isn't a redirect loop. */
 export function RequireSignedOut() {
   const { user, isLoading } = useAuthStore();
+  const location = useLocation();
 
   if (isLoading) return <LoadingState label="Restoring your session…" />;
-  if (user) return <Navigate to={user.hasChapter ? "/" : "/join"} replace />;
+  if (user && location.pathname !== "/switch-account") {
+    return <Navigate to="/switch-account" replace state={{ from: location }} />;
+  }
   return <Outlet />;
 }

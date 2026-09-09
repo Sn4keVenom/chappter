@@ -3,8 +3,12 @@
 // Shared field and layout pieces for the auth screens — Login, SignUp,
 // VerifyEmail, ForgotPassword, ResetPassword — all backed by
 // @clerk/clerk-react (see App.tsx's ClerkProvider, gated by DEMO_MODE).
-// Demo Mode never reaches these: RequireSignedOut redirects away from every
-// route under this layout as soon as the demo session bootstraps.
+// Demo Mode never reaches the Clerk-backed ones: RequireSignedOut
+// (routes/RootRedirect.tsx) redirects away from every route under this
+// layout as soon as the demo session bootstraps. The one exception is
+// SwitchAccountPage — reached via that same redirect instead of straight
+// into the app — which uses AuthBanner/AuthSubmit/AuthLinks below but none
+// of the Clerk hooks, so it renders fine in Demo Mode.
 
 import { useId } from "react";
 import styles from "./AuthForm.module.css";

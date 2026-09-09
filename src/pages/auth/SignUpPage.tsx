@@ -18,10 +18,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useSignUp } from "@clerk/clerk-react";
+import { useAuth, useSignUp, useUser } from "@clerk/clerk-react";
 
 import { lookupRoleNumber, verifyRoleNumber } from "../../api/auth";
 import { stashPendingSignup } from "../../auth/pendingSignup";
+import { useAppAuth } from "../../auth/useAppAuth";
 import { ChoiceList, type Choice } from "../../components/ui/Form";
 import { clerkErrorMessage } from "../../auth/clerkError";
 import { AuthBanner, AuthField, AuthLinks, AuthSubmit } from "./AuthForm";
@@ -37,6 +38,19 @@ const STATUS_OPTIONS: Choice<"PNM" | "ACTIVE" | "ALUMNI">[] = [
 
 export default function SignUpPage() {
   const { isLoaded, signUp } = useSignUp();
+  // "A bunch of people sign up at once" on one shared device (a laptop
+  // passed around at a table) each get told "You're already signed in" —
+  // that's Clerk's own session_exists error out of signUp.create(),
+  // because this instance only allows a single session and the PREVIOUS
+  // person's is still active in this browser. Nothing here redirected
+  // away from /signup while signed in, so the form rendered normally and
+  // just failed on submit with a raw Clerk error instead of a helpful
+  // one. Detecting it up front and offering a one-tap sign-out avoids the
+  // dead end entirely — the actual fix this device-passing workflow needs.
+  const { isSignedIn } = useAuth();
+  const { user: signedInUser } = useUser();
+  const { signOut } = useAppAuth();
+  const [signingOut, setSigningOut] = useState(false);
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
@@ -157,6 +171,41 @@ export default function SignUpPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function handleSignOutAndContinue() {
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      // No navigate() needed either way — isSignedIn flips to false once
+      // Clerk's own session teardown completes, and this component
+      // re-renders straight into the normal sign-up form below.
+      setSigningOut(false);
+    }
+  }
+
+  if (isSignedIn) {
+    return (
+      <div>
+        <h2 style={{ marginBottom: "var(--space-5)", fontSize: "var(--text-lg)" }}>Already signed in</h2>
+        <AuthBanner>
+          {signedInUser
+            ? `You're currently signed in as ${signedInUser.firstName || signedInUser.username || "another account"} on this device.`
+            : "You're currently signed in on this device."}{" "}
+          Sign out first to create a new account — this app only keeps one session active per device, so passing a
+          laptop around for a bunch of people to sign up needs a sign-out between each one.
+        </AuthBanner>
+        <AuthSubmit type="button" disabled={signingOut} onClick={handleSignOutAndContinue}>
+          {signingOut ? "Signing out…" : "Sign out and create a new account"}
+        </AuthSubmit>
+        <AuthLinks>
+          <span>
+            Meant to sign in as this account elsewhere? <Link to="/">Go to the app</Link>
+          </span>
+        </AuthLinks>
+      </div>
+    );
   }
 
   return (

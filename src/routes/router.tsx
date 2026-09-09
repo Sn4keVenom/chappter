@@ -160,6 +160,7 @@ export const router = createBrowserRouter([
               { path: "verify-email", lazy: page(() => import("../pages/auth/VerifyEmailPage")) },
               { path: "forgot-password", lazy: page(() => import("../pages/auth/ForgotPasswordPage")) },
               { path: "reset-password", lazy: page(() => import("../pages/auth/ResetPasswordPage")) },
+              { path: "switch-account", lazy: page(() => import("../pages/auth/SwitchAccountPage")) },
             ],
           },
         ],
