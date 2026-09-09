@@ -5,6 +5,41 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [2.2.0] — 2026-09-09
+
+### Added
+- **Points-only reset** — reset team/individual points without starting
+  a new semester or touching attendance tracking, distinct from the
+  full semester reset. New "Reset points" section on the Semesters page.
+- Super Admin can now edit **office-level permissions** (Regent, Vice
+  Regent, Scribe, Treasurer, ...) from Settings → Permissions, not just
+  role-tier permissions — the backend and store already supported this,
+  it just had no screen.
+
+### Fixed
+- **Ongoing events dropped out of "Upcoming"** the moment they started,
+  and out of the Home dashboard's "Upcoming this week" widget too —
+  both queries filtered on `startTime` instead of `endTime`, so an event
+  already underway (but not yet over) looked like it had vanished. Now
+  stays in Upcoming until it actually ends.
+- **A check-in delegate got 403'd from the exact screen they were added
+  to** — `GET /events/:id/checkin-token` and `POST /events/:id/
+  checkin-code` never checked `EventDelegate` (or Scribe by office),
+  only committee-chair/Exec. Demo Mode's mock already had this right;
+  only the real backend was missing it.
+- **No way to update or delete an event after creating it** —
+  `PATCH /events/:id` and `DELETE /events/:id` didn't exist at all.
+  Delete is blocked once attendance has actually been recorded, so
+  that history can't be silently lost.
+- **An event manager couldn't check themselves in** without leaving the
+  code-display screen — added a "Check myself in too" button that uses
+  the token already on screen.
+- **"Internal Server Error" approving a join request** — a real,
+  reachable unique-constraint collision (duplicate membership, or a
+  role number already taken) was going uncaught into a bare 500.
+- **Roster verification** now accepts Inactive status, not just
+  Active/Alumni, for both single-add and bulk import.
+
 ## [2.1.0] — 2026-09-02
 
 ### Added
