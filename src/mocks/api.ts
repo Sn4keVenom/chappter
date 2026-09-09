@@ -242,6 +242,88 @@ export function createEvent(payload: {
   return toEventDetail(event, userId);
 }
 
+/** "No route for PATCH /api/v1/events/:id when trying to update an
+ * event." Same scope as create, but read from the event's CURRENT
+ * committee rather than the request body — an edit doesn't necessarily
+ * touch committeeId at all. Mirrors the real PATCH /events/:id. */
+export function updateEvent(
+  eventId: string,
+  payload: Partial<{
+    title: string;
+    description: string | null;
+    location: string | null;
+    category: string;
+    startTime: string;
+    endTime: string;
+    attendanceRequired: boolean;
+    pointValue: number;
+    committeeId: string | null;
+  }>
+): EventDetail {
+  const userId = getCurrentDemoUserId();
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+
+  if (!can(userId, "events.create")) {
+    if (!event.committeeId || !committeeManageAccess(userId, event.committeeId)) {
+      throw new DemoApiError(403, "Not permitted");
+    }
+  }
+  // Reassigning to a DIFFERENT committee needs scope over that one too —
+  // the check above only verified the event's CURRENT committee.
+  if (payload.committeeId !== undefined && payload.committeeId !== event.committeeId && !can(userId, "events.create")) {
+    if (!payload.committeeId || !committeeManageAccess(userId, payload.committeeId)) {
+      throw new DemoApiError(403, "Not permitted to move this event to that committee.");
+    }
+  }
+
+  const nextStartTime = payload.startTime ?? event.startTime;
+  const nextEndTime = payload.endTime ?? event.endTime;
+  if (new Date(nextEndTime) <= new Date(nextStartTime)) {
+    throw new DemoApiError(400, "End time must be after the start time.");
+  }
+
+  if (payload.title !== undefined) event.title = payload.title;
+  if (payload.description !== undefined) event.description = payload.description;
+  if (payload.location !== undefined) event.location = payload.location;
+  if (payload.category !== undefined) event.category = payload.category as db.MockEvent["category"];
+  if (payload.startTime !== undefined) event.startTime = payload.startTime;
+  if (payload.endTime !== undefined) event.endTime = payload.endTime;
+  if (payload.attendanceRequired !== undefined) event.attendanceRequired = payload.attendanceRequired;
+  if (payload.pointValue !== undefined) event.pointValue = payload.pointValue;
+  if (payload.committeeId !== undefined) event.committeeId = payload.committeeId;
+
+  return toEventDetail(event, userId);
+}
+
+/** "Add ability for event creators (and all standard managers) to delete
+ * event." Same scope as update; blocked once attendance has actually
+ * been recorded, matching the real DELETE /events/:id (Attendance rows
+ * CASCADE-delete with their Event there, which would silently lose that
+ * history — this mirrors the same refusal in Demo Mode rather than
+ * actually deleting it). */
+export function deleteEvent(eventId: string): void {
+  const userId = getCurrentDemoUserId();
+  const event = db.findEvent(eventId);
+  if (!event) throw new DemoApiError(404, "Event not found");
+
+  if (!can(userId, "events.create")) {
+    if (!event.committeeId || !committeeManageAccess(userId, event.committeeId)) {
+      throw new DemoApiError(403, "Not permitted");
+    }
+  }
+
+  if (db.attendances.some((a) => a.eventId === eventId)) {
+    throw new DemoApiError(
+      400,
+      "This event already has recorded attendance and can't be deleted — that history would be lost."
+    );
+  }
+
+  const idx = db.events.findIndex((e) => e.id === eventId);
+  if (idx >= 0) db.events.splice(idx, 1);
+}
+
 export function setRsvp(eventId: string, status: RsvpStatus): void {
   const userId = getCurrentDemoUserId();
   if (!db.findEvent(eventId)) throw new DemoApiError(404, "Event not found");

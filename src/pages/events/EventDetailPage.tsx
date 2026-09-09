@@ -14,6 +14,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import {
   addEventDelegate,
+  deleteEvent,
   getEvent,
   removeEventDelegate,
   setRsvp,
@@ -31,7 +32,7 @@ import { PageHeader, Section } from "../../components/PageHeader";
 import { Card, CardLabel } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button, ButtonLink, ExternalButtonLink } from "../../components/ui/Button";
-import { Dialog } from "../../components/ui/Dialog";
+import { Dialog, ConfirmDialog } from "../../components/ui/Dialog";
 import { Input } from "../../components/ui/Form";
 import { ErrorBanner, ErrorState, LoadingState } from "../../components/ui/Feedback";
 import { eventCategoryColor } from "../../theme/semantic";
@@ -118,6 +119,9 @@ export default function EventDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [delegateOpen, setDelegateOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -157,6 +161,22 @@ export default function EventDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!event) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteEvent(event.id);
+      navigate("/events", { replace: true });
+    } catch (e: any) {
+      // The backend blocks this once attendance is recorded (a real,
+      // expected outcome, not a bug) — surface its message rather than a
+      // generic one so that reads clearly instead of as a failure.
+      setDeleteError(e?.message ?? "Couldn't delete this event.");
+      setDeleting(false);
+    }
+  }
+
   const calendarInput = eventToCalendarInput(event);
 
   return (
@@ -167,9 +187,14 @@ export default function EventDetailPage() {
         backLabel="Events"
         actions={
           canManage ? (
-            <ButtonLink to={`/events/${event.id}/edit`} variant="secondary">
-              Edit
-            </ButtonLink>
+            <>
+              <ButtonLink to={`/events/${event.id}/edit`} variant="secondary">
+                Edit
+              </ButtonLink>
+              <Button variant="danger" onClick={() => setDeleteOpen(true)}>
+                Delete
+              </Button>
+            </>
           ) : undefined
         }
       />
@@ -381,6 +406,23 @@ export default function EventDetailPage() {
             setActionError(e?.message ?? "Couldn't add delegate.");
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onClose={() => {
+          setDeleteOpen(false);
+          setDeleteError(null);
+        }}
+        onConfirm={handleDelete}
+        title="Delete this event?"
+        body={
+          deleteError ??
+          `"${event.title}" will be permanently removed. This can't be undone, and only works while nobody has checked in yet.`
+        }
+        confirmLabel="Delete"
+        destructive
+        busy={deleting}
       />
     </div>
   );

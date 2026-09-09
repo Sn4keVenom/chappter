@@ -13,8 +13,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { apiClient } from "../../api/client";
-import { getEvent } from "../../api/events";
+import { createEvent, getEvent, updateEvent } from "../../api/events";
 import { listCommittees } from "../../api/committees";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
@@ -156,13 +155,10 @@ export default function EventFormPage() {
     };
 
     try {
-      if (isEditing) {
-        // The backend exposes creation only; editing reuses the same shape so
-        // the form is ready the moment PATCH /events/:id ships. Until then an
-        // edit surfaces the API's own error rather than silently no-op'ing.
-        await apiClient.patch(`/events/${eventId}`, payload);
+      if (isEditing && eventId) {
+        await updateEvent(eventId, payload);
       } else {
-        await apiClient.post("/events", payload);
+        await createEvent(payload);
       }
       navigate(isEditing ? `/events/${eventId}` : "/events", { replace: true });
     } catch (e: any) {

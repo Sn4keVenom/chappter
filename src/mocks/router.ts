@@ -64,6 +64,11 @@ route("post", "/auth/sync", () => ({ user: api.getMe() }));
 // Events
 route("get", "/events", (_p, q) => ({ events: api.listEvents(q) }));
 route("post", "/events", (_p, _q, body) => ({ event: api.createEvent(body) }));
+route("patch", "/events/:id", (p, _q, body) => ({ event: api.updateEvent(p.id, body) }));
+route("delete", "/events/:id", (p) => {
+  api.deleteEvent(p.id);
+  return { deleted: true };
+});
 route("get", "/events/:id/checkin-token", (p) => api.getCheckInToken(p.id));
 route("post", "/events/:id/checkin-code", (p, _q, body) => api.setCheckInCode(p.id, body.code));
 route("get", "/events/:id/attendance", (p) => api.getEventRoster(p.id));

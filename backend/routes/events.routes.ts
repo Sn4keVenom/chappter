@@ -5,7 +5,7 @@
 // RBAC middleware → validation → Prisma call (transactional where it writes
 // more than one table) → audit log on mutations → typed JSON response.
 
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import crypto from "crypto";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -206,6 +206,142 @@ router.post(
   })
 );
 
+// ── PATCH /events/:id — same scope as create (Exec+, or chair of the
+// event's own committee) ─────────────────────────────────────────────────
+// "No route for PATCH /api/v1/events/:id when trying to update an event
+// (specifically making it required after creating it)" — genuinely
+// missing; EventFormPage.tsx already called this route (its own comment
+// said as much: "ready the moment PATCH /events/:id ships"), it just
+// 404'd every time. Every field is optional — the frontend always resends
+// the whole form, but a future partial-update caller shouldn't have to.
+const updateEventSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  category: z.enum(["BROTHERHOOD", "SERVICE", "PROFESSIONAL", "RUSH", "ADMIN"]).optional(),
+  startTime: z.string().datetime().optional(),
+  endTime: z.string().datetime().optional(),
+  attendanceRequired: z.boolean().optional(),
+  pointValue: z.number().int().min(0).optional(),
+  committeeId: z.string().nullable().optional(),
+});
+
+router.patch(
+  "/events/:id",
+  // Scoped to the event's CURRENT committee (or none) — same shape as
+  // create's requireCommitteeScope, just reading from the existing row
+  // instead of the request body, since an edit doesn't necessarily touch
+  // committeeId at all.
+  requireCommitteeScope(async (req) => {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    return event?.committeeId ?? null;
+  }),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const parsed = updateEventSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const data = parsed.data;
+
+    const existing = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: "Event not found" });
+
+    // Reassigning to a DIFFERENT committee needs scope over that committee
+    // too — the requireCommitteeScope check above only verified the
+    // event's CURRENT committee (or Exec+), so without this a chair could
+    // move their own event into a committee they don't actually chair.
+    if (
+      data.committeeId !== undefined &&
+      data.committeeId !== existing.committeeId &&
+      !isAtLeast(req.user!.role, "EXEC")
+    ) {
+      const targetMembership = data.committeeId
+        ? await prisma.committeeMembership.findUnique({
+            where: { committeeId_userId: { committeeId: data.committeeId, userId: req.user!.id } },
+          })
+        : null;
+      if (!targetMembership || targetMembership.role !== "CHAIR") {
+        return res.status(403).json({ error: "Not permitted to move this event to that committee." });
+      }
+    }
+
+    // Merge before validating so a partial update (only startTime, say)
+    // can't silently produce endTime <= startTime.
+    const nextStartTime = data.startTime !== undefined ? new Date(data.startTime) : existing.startTime;
+    const nextEndTime = data.endTime !== undefined ? new Date(data.endTime) : existing.endTime;
+    if (nextEndTime <= nextStartTime) {
+      return res.status(400).json({ error: "End time must be after the start time." });
+    }
+
+    const event = await prisma.event.update({
+      where: { id: existing.id },
+      data: {
+        ...(data.title !== undefined ? { title: data.title } : {}),
+        ...(data.description !== undefined ? { description: data.description } : {}),
+        ...(data.location !== undefined ? { location: data.location } : {}),
+        ...(data.category !== undefined ? { category: data.category as any } : {}),
+        ...(data.startTime !== undefined ? { startTime: nextStartTime } : {}),
+        ...(data.endTime !== undefined ? { endTime: nextEndTime } : {}),
+        ...(data.attendanceRequired !== undefined ? { attendanceRequired: data.attendanceRequired } : {}),
+        ...(data.pointValue !== undefined ? { pointValue: data.pointValue } : {}),
+        ...(data.committeeId !== undefined ? { committeeId: data.committeeId } : {}),
+      },
+    });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "EVENT_UPDATE",
+      entityType: "Event",
+      entityId: event.id,
+      before: existing,
+      after: event,
+    });
+
+    res.json({ event });
+  })
+);
+
+// ── DELETE /events/:id — same scope as create/update ─────────────────────
+// "Add ability for event creators (and all standard managers) to delete
+// event." Blocked once attendance has actually been recorded — Attendance
+// rows CASCADE-delete with their Event (schema.prisma), and those carry
+// real history (pointsAwarded snapshot, late flag, the scribe's category
+// tracking); PointsLedger itself survives either way (ON DELETE SET NULL,
+// so nobody's earned points vanish), but silently wiping the attendance
+// record isn't something to allow from a plain delete button. An event
+// with nobody checked in yet (the overwhelmingly common "made a mistake,
+// remove it" case) deletes cleanly.
+router.delete(
+  "/events/:id",
+  requireCommitteeScope(async (req) => {
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    return event?.committeeId ?? null;
+  }),
+  asyncHandler(async (req: AuthedRequest, res: Response) => {
+    const event = await prisma.event.findUnique({
+      where: { id: req.params.id },
+      include: { _count: { select: { attendances: true } } },
+    });
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    if (event._count.attendances > 0) {
+      return res.status(400).json({
+        error: "This event already has recorded attendance and can't be deleted — that history would be lost.",
+      });
+    }
+
+    await prisma.event.delete({ where: { id: event.id } });
+
+    await writeAuditLog({
+      actorId: req.user!.id,
+      action: "EVENT_DELETE",
+      entityType: "Event",
+      entityId: event.id,
+      before: event,
+    });
+
+    res.status(204).end();
+  })
+);
+
 // ── POST /events/:id/rsvp ────────────────────────────────────────────────
 
 const rsvpSchema = z.object({
@@ -256,12 +392,44 @@ function checkInCodeExpiry(event: { checkInWindowEnd: Date | null; endTime: Date
   return event.checkInWindowEnd ?? event.endTime;
 }
 
+// "Delegate does not have access to event check in code." The frontend's
+// canGenerateCheckIn (usePermissions.ts) already grants access to Exec+,
+// Scribe (by office — attendance is chapter-wide their job, not scoped to
+// one committee), the event's own committee chair, AND anyone added as
+// this event's check-in delegate (POST /events/:id/delegates, below) —
+// but these two routes were gated with plain requireCommitteeScope, which
+// only covers the first and third of those. requireCommitteeScope has no
+// notion of EventDelegate (or Scribe) at all, so a delegate — the exact
+// feature these routes exist for — got 403'd from the screen they were
+// just granted access to. Demo Mode's mock (canAccessCheckIn) already had
+// this right; only the real backend was missing it.
+function requireEventCheckInAccess() {
+  return async (req: AuthedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+    if (isAtLeast(req.user.role, "EXEC") || req.user.office === "SCRIBE") return next();
+
+    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    if (event.committeeId) {
+      const membership = await prisma.committeeMembership.findUnique({
+        where: { committeeId_userId: { committeeId: event.committeeId, userId: req.user.id } },
+      });
+      if (membership?.role === "CHAIR") return next();
+    }
+
+    const delegate = await prisma.eventDelegate.findUnique({
+      where: { eventId_userId: { eventId: event.id, userId: req.user.id } },
+    });
+    if (delegate) return next();
+
+    return res.status(403).json({ error: "Not permitted" });
+  };
+}
+
 router.get(
   "/events/:id/checkin-token",
-  requireCommitteeScope(async (req) => {
-    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
-    return event?.committeeId ?? null;
-  }),
+  requireEventCheckInAccess(),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const event = await prisma.event.findUnique({ where: { id: req.params.id } });
     if (!event) return res.status(404).json({ error: "Event not found" });
@@ -317,10 +485,7 @@ const setCheckInCodeSchema = z.object({
 
 router.post(
   "/events/:id/checkin-code",
-  requireCommitteeScope(async (req) => {
-    const event = await prisma.event.findUnique({ where: { id: req.params.id } });
-    return event?.committeeId ?? null;
-  }),
+  requireEventCheckInAccess(),
   asyncHandler(async (req: AuthedRequest, res: Response) => {
     const parsed = setCheckInCodeSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
