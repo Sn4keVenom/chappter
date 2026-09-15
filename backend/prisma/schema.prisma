@@ -259,6 +259,7 @@ model User {
   uploadedDocuments       Document[]                @relation("DocumentUploadedBy")
   eventDelegations        EventDelegate[]
   feedbackReports         FeedbackReport[]          @relation("FeedbackSubmittedBy")
+  pushSubscriptions       PushSubscription[]
 
   @@index([activeChapterId])
   @@index([deletedAt])
@@ -1127,4 +1128,30 @@ model Achievement {
 
   @@unique([chapterId, key])
   @@index([chapterId, sortOrder])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Push notifications
+//
+// "Add push notifications (mobile and desktop)." Web Push, not a native
+// push service (no App Store/Play Store wrapper exists here — see the PWA
+// manifest work, commit 18e1ba2, this piggybacks on) — one row per
+// browser/device subscription, since the same person can enable it on their
+// phone AND their laptop. endpoint is the fields the Push API's own
+// PushSubscription object provides; sending later needs all three (see
+// lib/push.ts). A dead/expired subscription (410 Gone from the push
+// service) is deleted rather than retried — see lib/push.ts.
+// ─────────────────────────────────────────────────────────────────────────
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

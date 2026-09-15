@@ -25,6 +25,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { AuthedRequest, requirePermission, writeAuditLog, ROLE_RANK, isAtLeast } from "../middleware/rbac";
+import { sendPushToChapter } from "../lib/push";
 
 const router = Router();
 
@@ -307,6 +308,24 @@ router.patch(
       entityId: message.id,
       after: { pinned, channelId: message.channelId },
     });
+
+    // "Add push notifications (mobile and desktop)" — v1's one trigger:
+    // this IS the chapter announcement (see the doc comment above), so it's
+    // the one thing chapter-wide that's unambiguously worth interrupting
+    // someone's phone for. Fire-and-forget: a push failure (or the whole
+    // feature being unconfigured — sendPushToChapter no-ops then) should
+    // never fail the pin itself.
+    if (pinned && message.channel.type === "GENERAL" && req.user!.chapterId) {
+      sendPushToChapter(
+        req.user!.chapterId,
+        {
+          title: "New chapter announcement",
+          body: message.content.length > 120 ? `${message.content.slice(0, 117)}...` : message.content,
+          url: "/",
+        },
+        req.user!.id
+      ).catch((err) => console.error("[Chappter] push send failed:", err));
+    }
 
     res.json({ message: updated });
   })

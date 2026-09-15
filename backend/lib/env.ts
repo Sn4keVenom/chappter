@@ -39,3 +39,12 @@ if (!process.env.CLERK_WEBHOOK_SIGNING_SECRET) {
       "(Clerk Dashboard → Webhooks → your endpoint → Signing Secret)."
   );
 }
+
+if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+  console.warn(
+    "[Chappter] VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY not set — push " +
+      "notifications are disabled until both are configured. Generate a " +
+      "pair with `npx web-push generate-vapid-keys` and add them (plus " +
+      "VAPID_SUBJECT, a mailto: link) to .env — see lib/push.ts."
+  );
+}

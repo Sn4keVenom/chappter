@@ -8,10 +8,13 @@ import { Link } from "react-router-dom";
 
 import { getChapterSettings } from "../../api/settings";
 import { deleteMyAccount } from "../../api/users";
+import { getPushConfig } from "../../api/push";
+import { enablePush, disablePush, getExistingSubscription, isPushSupported } from "../../push/registerPush";
 import { useAsync } from "../../hooks/useAsync";
 import { PageHeader, Section } from "../../components/PageHeader";
 import { Card } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
+import { Switch } from "../../components/ui/Form";
 import { ErrorBanner } from "../../components/ui/Feedback";
 import { ConfirmDialog } from "../../components/ui/Dialog";
 import { useVisibleSettingsSections } from "../../layouts/SettingsLayout";
@@ -22,7 +25,7 @@ import { useAppAuth } from "../../auth/useAppAuth";
 import { DEMO_MODE } from "../../config/demo";
 import { DEMO_DEFAULT_USER_ID } from "../../mocks/identity";
 import { switchDemoUser } from "../../mocks/bootstrap";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styles from "./SettingsHomePage.module.css";
 
 const APP_VERSION = "2.2.0";
@@ -32,6 +35,59 @@ const MODE_LABEL: Record<string, string> = {
   light: "Light",
   dark: "Dark",
 };
+
+/** "Add push notifications (mobile and desktop)." Not offered at all in
+ * Demo Mode (no real backend to subscribe against) or when the server
+ * hasn't configured VAPID keys yet (lib/push.ts) — rather than a toggle
+ * that would just fail the moment it's touched. Reads the CURRENT browser's
+ * own subscription state as the source of truth for on/off, not anything
+ * server-side, since a subscription can silently expire client-side. */
+function NotificationsSection() {
+  const { data: config } = useAsync(() => (DEMO_MODE ? Promise.resolve(null) : getPushConfig()), []);
+  const [enabled, setEnabled] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (DEMO_MODE) return;
+    getExistingSubscription()
+      .then((sub) => setEnabled(!!sub))
+      .finally(() => setReady(true));
+  }, []);
+
+  if (DEMO_MODE || !config?.enabled || !isPushSupported()) return null;
+
+  async function toggle(next: boolean) {
+    if (!config?.publicKey) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (next) await enablePush(config.publicKey);
+      else await disablePush();
+      setEnabled(next);
+    } catch (e: any) {
+      setError(e?.message ?? "Couldn't update notification settings.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Section title="Notifications">
+      <Card>
+        {error ? <ErrorBanner message={error} /> : null}
+        <Switch
+          checked={enabled}
+          disabled={busy || !ready}
+          onChange={toggle}
+          label="Push notifications"
+          hint="Get notified on this device when a chapter-wide announcement is posted."
+        />
+      </Card>
+    </Section>
+  );
+}
 
 function Row({
   to,
@@ -181,6 +237,8 @@ export default function SettingsHomePage() {
           ) : null}
         </div>
       </Section>
+
+      <NotificationsSection />
 
       <Section title="About">
         <Card>

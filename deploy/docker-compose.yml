@@ -60,6 +60,11 @@ services:
       CLERK_WEBHOOK_SIGNING_SECRET: ${CLERK_WEBHOOK_SIGNING_SECRET:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # Genuinely optional (lib/env.ts warns, doesn't refuse to boot) — see
+      # backend/.env.example for how to generate a pair.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:admin@example.com}
       # server.ts refuses to boot in production without this.
       CORS_ORIGIN: https://${APP_HOSTNAME}
       NODE_ENV: production
