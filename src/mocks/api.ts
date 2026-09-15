@@ -353,6 +353,7 @@ function toUserSummary(u: db.MockUser): UserSummary {
     status: u.status,
     roleNumber: u.roleNumber ?? null,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
+    squadLabel: u.squadLabel ?? null,
     committeeNames: db.committeeMemberships
       .filter((cm) => cm.userId === u.id)
       .map((cm) => db.committees.find((c) => c.id === cm.committeeId)?.name)
@@ -386,6 +387,7 @@ function toFullUser(u: db.MockUser): User {
     status: u.status,
     roleNumber: u.roleNumber ?? null,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
+    squadLabel: u.squadLabel ?? null,
     major: u.major ?? null,
     graduationYear: u.graduationYear ?? null,
     committeeChairOf: committeeChairOf(u.id),
@@ -612,6 +614,7 @@ export function updateUserFields(
     office?: ExecOffice | null;
     status?: MemberStatus;
     pledgeClassLabel?: string | null;
+    squadLabel?: string | null;
     major?: string | null;
     graduationYear?: number | null;
   }
@@ -625,6 +628,7 @@ export function updateUserFields(
   if (payload.office !== undefined) u.office = payload.office;
   if (payload.status !== undefined) u.status = payload.status;
   if (payload.pledgeClassLabel !== undefined) u.pledgeClassLabel = payload.pledgeClassLabel;
+  if (payload.squadLabel !== undefined) u.squadLabel = payload.squadLabel;
   if (payload.major !== undefined) u.major = payload.major;
   if (payload.graduationYear !== undefined) u.graduationYear = payload.graduationYear;
   return toFullUser(u);

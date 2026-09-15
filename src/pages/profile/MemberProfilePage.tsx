@@ -70,6 +70,8 @@ export default function MemberProfilePage() {
   const [bigOpen, setBigOpen] = useState(false);
   const [roleNumberOpen, setRoleNumberOpen] = useState(false);
   const [roleNumberValue, setRoleNumberValue] = useState("");
+  const [squadOpen, setSquadOpen] = useState(false);
+  const [squadValue, setSquadValue] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -116,6 +118,24 @@ export default function MemberProfilePage() {
       await reload({ silent: true });
     } catch (e: any) {
       setActionError(e?.message ?? "Couldn't save the role number.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // "Replace pledge class with squad in the roster" — same free-text,
+  // dialog-based edit pattern as role number above, since neither
+  // pledgeClassLabel nor squadLabel is a fixed set of choices (unlike
+  // Role/Office/Status below, which use an immediate-save Select).
+  async function saveSquadLabel(value: string | null) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await updateUserFields(userId, { squadLabel: value });
+      setSquadOpen(false);
+      await reload({ silent: true });
+    } catch (e: any) {
+      setActionError(e?.message ?? "Couldn't save the squad.");
     } finally {
       setBusy(false);
     }
@@ -244,6 +264,19 @@ export default function MemberProfilePage() {
                     Set role number
                   </Button>
                 </>
+              ) : null}
+
+              {isSuperAdmin ? (
+                <Button
+                  variant="secondary"
+                  block
+                  onClick={() => {
+                    setSquadValue(member.squadLabel ?? "");
+                    setSquadOpen(true);
+                  }}
+                >
+                  {member.squadLabel ? `Squad: ${member.squadLabel}` : "Set squad"}
+                </Button>
               ) : null}
 
               {isSuperAdmin ? (
@@ -397,6 +430,41 @@ export default function MemberProfilePage() {
           value={roleNumberValue}
           onChange={(e) => setRoleNumberValue(e.target.value)}
           placeholder="e.g. 214"
+          autoFocus
+        />
+      </Dialog>
+
+      <Dialog
+        open={squadOpen}
+        onClose={() => setSquadOpen(false)}
+        title="Squad"
+        subtitle="A free-text grouping label, shown on the roster."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setSquadOpen(false)} disabled={busy}>
+              Cancel
+            </Button>
+            {member.squadLabel ? (
+              <Button variant="danger" onClick={() => saveSquadLabel(null)} disabled={busy}>
+                Clear
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              onClick={() => saveSquadLabel(squadValue.trim())}
+              busy={busy}
+              disabled={!squadValue.trim()}
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Squad"
+          value={squadValue}
+          onChange={(e) => setSquadValue(e.target.value)}
+          placeholder="e.g. Blue Squad"
           autoFocus
         />
       </Dialog>

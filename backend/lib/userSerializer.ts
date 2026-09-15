@@ -26,6 +26,7 @@ export interface FlattenableMembership {
   status: MemberStatus;
   roleNumber: number | null;
   pledgeClassLabel: string | null;
+  squadLabel: string | null;
   major: string | null;
   graduationYear: number | null;
 }
@@ -50,6 +51,7 @@ export function flattenUser(
     status: membership?.status,
     roleNumber: membership?.roleNumber ?? null,
     pledgeClassLabel: membership?.pledgeClassLabel ?? null,
+    squadLabel: membership?.squadLabel ?? null,
     major: membership?.major ?? null,
     graduationYear: membership?.graduationYear ?? null,
     committeeChairOf,

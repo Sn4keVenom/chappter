@@ -401,6 +401,7 @@ router.get(
         status: m.status,
         roleNumber: m.roleNumber,
         pledgeClassLabel: m.pledgeClassLabel,
+        squadLabel: m.squadLabel,
         committeeNames: committeesByUser.get(m.userId) ?? [],
       })),
       total,
@@ -557,6 +558,7 @@ const userFieldsSchema = z.object({
     .optional(),
   status: z.enum(["ACTIVE", "PNM", "ALUMNI", "INACTIVE"]).optional(),
   pledgeClassLabel: z.string().max(50).nullable().optional(),
+  squadLabel: z.string().max(50).nullable().optional(),
   major: z.string().max(100).nullable().optional(),
   graduationYear: z.number().int().min(1900).max(2200).nullable().optional(),
 });
@@ -593,6 +595,7 @@ router.patch(
         office: before.office,
         status: before.status,
         pledgeClassLabel: before.pledgeClassLabel,
+        squadLabel: before.squadLabel,
         major: before.major,
         graduationYear: before.graduationYear,
       },

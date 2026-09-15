@@ -114,9 +114,12 @@ export default function RosterPage() {
       render: (user) => (user.roleNumber != null ? user.roleNumber : "—"),
     },
     {
-      key: "pledgeClass",
-      header: "Pledge class",
-      render: (user) => user.pledgeClassLabel ?? "—",
+      // "Replace pledge class with squad in the roster. You can keep
+      // pledge class data, but no need to display it here." pledgeClassLabel
+      // stays on the model/API — it's just not rendered on this table anymore.
+      key: "squad",
+      header: "Squad",
+      render: (user) => user.squadLabel ?? "—",
     },
     {
       key: "committees",
