@@ -5,6 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [2.3.1] — 2026-09-14
+
+### Changed
+- Roster: **Squad** column replaces Pledge Class (pledge class data is
+  kept, just no longer shown here). Set a member's squad from their
+  profile page (Manage Member → Set squad).
+
 ## [2.3.0] — 2026-09-14
 
 ### Added
