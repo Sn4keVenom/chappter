@@ -365,6 +365,30 @@ router.get(
       prisma.chapterMembership.count({ where }),
     ]);
 
+    // "Maybe instead of pledge class in the roster, it should be
+    // committee." Added alongside pledgeClassLabel rather than replacing
+    // it — pledge class is a fixed historical fact per member and is used
+    // elsewhere (profile pages), while committee membership can be
+    // several at once and change over time; RosterPage.tsx shows both.
+    // Separate query, not a nested include on the membership fetch above:
+    // CommitteeMembership joins through User.id, not ChapterMembership.id,
+    // and a member can chair or belong to more than one.
+    const committeesByUser = new Map<string, string[]>();
+    if (memberships.length > 0) {
+      // Committee isn't chapter-scoped in the schema (this app is one
+      // chapter per deployment, same as Semester/PointsReset) — no extra
+      // filter needed beyond which users are on this page.
+      const committeeMemberships = await prisma.committeeMembership.findMany({
+        where: { userId: { in: memberships.map((m) => m.userId) } },
+        include: { committee: { select: { name: true } } },
+      });
+      for (const cm of committeeMemberships) {
+        const list = committeesByUser.get(cm.userId) ?? [];
+        list.push(cm.committee.name);
+        committeesByUser.set(cm.userId, list);
+      }
+    }
+
     res.json({
       users: memberships.map((m) => ({
         id: m.user.id,
@@ -377,6 +401,7 @@ router.get(
         status: m.status,
         roleNumber: m.roleNumber,
         pledgeClassLabel: m.pledgeClassLabel,
+        committeeNames: committeesByUser.get(m.userId) ?? [],
       })),
       total,
       page: pageNum,

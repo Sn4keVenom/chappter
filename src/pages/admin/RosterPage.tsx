@@ -118,6 +118,11 @@ export default function RosterPage() {
       header: "Pledge class",
       render: (user) => user.pledgeClassLabel ?? "—",
     },
+    {
+      key: "committees",
+      header: "Committees",
+      render: (user) => (user.committeeNames && user.committeeNames.length > 0 ? user.committeeNames.join(", ") : "—"),
+    },
   ];
 
   return (

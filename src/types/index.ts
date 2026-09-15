@@ -361,6 +361,11 @@ export interface UserSummary {
   status?: MemberStatus;
   roleNumber?: number | null;
   pledgeClassLabel?: string | null;
+  /** "Maybe instead of pledge class in the roster, it should be
+   * committee." — added alongside pledgeClassLabel (RosterPage.tsx shows
+   * both) rather than replacing it. A member can belong to more than one
+   * committee at once. */
+  committeeNames?: string[];
 }
 
 // Lightweight reference to a family relation (Big or a Little) — enough to

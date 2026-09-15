@@ -353,6 +353,10 @@ function toUserSummary(u: db.MockUser): UserSummary {
     status: u.status,
     roleNumber: u.roleNumber ?? null,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
+    committeeNames: db.committeeMemberships
+      .filter((cm) => cm.userId === u.id)
+      .map((cm) => db.committees.find((c) => c.id === cm.committeeId)?.name)
+      .filter((name): name is string => !!name),
   };
 }
 
