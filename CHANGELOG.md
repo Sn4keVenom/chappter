@@ -5,6 +5,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [2.3.0] — 2026-09-14
+
+### Added
+- **Push notifications** — enable them from Settings to get notified on
+  this device when a chapter-wide announcement is posted. Web Push, works
+  the same on a phone with the app added to its home screen and a laptop
+  with the site open in the background. Needs VAPID keys configured
+  server-side (optional — the toggle just doesn't appear until then).
+- **Committees column on the roster**, alongside pledge class.
+
+### Fixed
+- **A failed roster claim at signup silently dropped the role number** —
+  it now carries through to the fallback join request (editable, in case
+  a typo was why the claim failed) instead of an exec having to notice
+  and set it by hand afterward. The reviewing exec sees it's unconfirmed
+  rather than it looking as trustworthy as a real roster-verified claim.
+- **"You're already signed in" no longer dead-ends a bulk signup session**
+  on one shared device (a laptop passed around at a table) — signing in
+  as one person no longer silently blocks the next person from reaching
+  the signup form at all; a new screen offers to sign out and continue
+  right where they were headed.
+
 ## [2.2.0] — 2026-09-09
 
 ### Added
