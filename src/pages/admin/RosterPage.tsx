@@ -116,10 +116,18 @@ export default function RosterPage() {
     {
       // "Replace pledge class with squad in the roster. You can keep
       // pledge class data, but no need to display it here." pledgeClassLabel
-      // stays on the model/API — it's just not rendered on this table anymore.
+      // stays on the model/API — it's just not rendered on this table
+      // anymore. "The squads are supposed to be the same thing as the team
+      // in the point system" — this reads Team (Gear Cup gamification
+      // groupings), not a separate label; assign one from a member's
+      // profile page, same as before.
       key: "squad",
       header: "Squad",
-      render: (user) => user.squadLabel ?? "—",
+      // Plain text, not a link to the team page — rowHref already wraps
+      // the whole row on mobile (DataTable.tsx), and nesting a second <a>
+      // inside that one is invalid HTML. Consistent with every other
+      // column here anyway.
+      render: (user) => user.teamName ?? "—",
     },
     {
       key: "committees",

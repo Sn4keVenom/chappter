@@ -837,6 +837,9 @@ router.post(
             status: invite.status,
             invitedById: invite.createdById,
           },
+          // A brand-new membership never has a team assigned yet, but
+          // flattenUser (FlattenableMembership) needs the shape either way.
+          include: { team: { select: { name: true } } },
         });
         await tx.chapterInviteRedemption.create({
           data: { inviteId: invite.id, userId: user.id },

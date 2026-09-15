@@ -26,9 +26,17 @@ export interface FlattenableMembership {
   status: MemberStatus;
   roleNumber: number | null;
   pledgeClassLabel: string | null;
-  squadLabel: string | null;
   major: string | null;
   graduationYear: number | null;
+  // "The squads are supposed to be the same thing as the team in the
+  // point system" — Team (Gear Cup gamification groupings) is the ONE
+  // concept, not two; the roster's "Squad" column reads this, not a
+  // separate label. Callers must `include: { team: { select: { name:
+  // true } } }` on the ChapterMembership fetch they pass in — team is a
+  // relation, not a scalar column, so it doesn't come along for free the
+  // way pledgeClassLabel etc. do on a plain findUnique.
+  teamId: string | null;
+  team: { name: string } | null;
 }
 
 export function flattenUser(
@@ -51,9 +59,10 @@ export function flattenUser(
     status: membership?.status,
     roleNumber: membership?.roleNumber ?? null,
     pledgeClassLabel: membership?.pledgeClassLabel ?? null,
-    squadLabel: membership?.squadLabel ?? null,
     major: membership?.major ?? null,
     graduationYear: membership?.graduationYear ?? null,
+    teamId: membership?.teamId ?? null,
+    teamName: membership?.team?.name ?? null,
     committeeChairOf,
   };
 }

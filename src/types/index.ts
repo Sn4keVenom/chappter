@@ -341,10 +341,6 @@ export interface User {
   status?: MemberStatus;
   roleNumber?: number | null;
   pledgeClassLabel?: string | null;
-  /** "Replace pledge class with squad in the roster" — a second,
-   * independent free-text grouping label (same shape as
-   * pledgeClassLabel), not the stateless Squad Randomizer. */
-  squadLabel?: string | null;
   big?: FamilyMemberSummary | null;
   littles?: FamilyMemberSummary[];
   committeeChairOf: string[];
@@ -365,15 +361,15 @@ export interface UserSummary {
   status?: MemberStatus;
   roleNumber?: number | null;
   pledgeClassLabel?: string | null;
-  /** "Replace pledge class with squad in the roster." RosterPage.tsx
-   * displays this instead of pledgeClassLabel now, though the latter is
-   * still returned here (and still set-able) for anything else that wants
-   * it. Not the stateless Squad Randomizer. */
-  squadLabel?: string | null;
+  /** "The squads are supposed to be the same thing as the team in the
+   * point system." RosterPage.tsx's Squad column reads this — Team is the
+   * one concept (Gear Cup gamification groupings), not a second,
+   * independent label. */
+  teamId?: string | null;
+  teamName?: string | null;
   /** "Maybe instead of pledge class in the roster, it should be
-   * committee." — added alongside pledgeClassLabel/squadLabel rather than
-   * replacing either. A member can belong to more than one committee at
-   * once. */
+   * committee." — added alongside pledgeClassLabel rather than replacing
+   * it. A member can belong to more than one committee at once. */
   committeeNames?: string[];
 }
 

@@ -212,6 +212,7 @@ router.post(
     const membership = user.activeChapterId
       ? await prisma.chapterMembership.findUnique({
           where: { chapterId_userId: { chapterId: user.activeChapterId, userId: user.id } },
+          include: { team: { select: { name: true } } },
         })
       : null;
 

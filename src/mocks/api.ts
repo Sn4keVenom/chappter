@@ -339,6 +339,9 @@ export function setRsvp(eventId: string, status: RsvpStatus): void {
 // ── Users / Dashboard / Points ──────────────────────────────────────────
 
 function toUserSummary(u: db.MockUser): UserSummary {
+  // "The squads are supposed to be the same thing as the team in the
+  // point system" — Squad on the roster is Team, same as toFullUser below.
+  const team = u.teamId ? db.findTeam(u.teamId) : undefined;
   return {
     id: u.id,
     // MockUser predates username (added with the real account system) —
@@ -353,7 +356,8 @@ function toUserSummary(u: db.MockUser): UserSummary {
     status: u.status,
     roleNumber: u.roleNumber ?? null,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
-    squadLabel: u.squadLabel ?? null,
+    teamId: u.teamId ?? null,
+    teamName: team?.name ?? null,
     committeeNames: db.committeeMemberships
       .filter((cm) => cm.userId === u.id)
       .map((cm) => db.committees.find((c) => c.id === cm.committeeId)?.name)
@@ -387,7 +391,6 @@ function toFullUser(u: db.MockUser): User {
     status: u.status,
     roleNumber: u.roleNumber ?? null,
     pledgeClassLabel: u.pledgeClassLabel ?? null,
-    squadLabel: u.squadLabel ?? null,
     major: u.major ?? null,
     graduationYear: u.graduationYear ?? null,
     committeeChairOf: committeeChairOf(u.id),
@@ -614,7 +617,6 @@ export function updateUserFields(
     office?: ExecOffice | null;
     status?: MemberStatus;
     pledgeClassLabel?: string | null;
-    squadLabel?: string | null;
     major?: string | null;
     graduationYear?: number | null;
   }
@@ -628,7 +630,6 @@ export function updateUserFields(
   if (payload.office !== undefined) u.office = payload.office;
   if (payload.status !== undefined) u.status = payload.status;
   if (payload.pledgeClassLabel !== undefined) u.pledgeClassLabel = payload.pledgeClassLabel;
-  if (payload.squadLabel !== undefined) u.squadLabel = payload.squadLabel;
   if (payload.major !== undefined) u.major = payload.major;
   if (payload.graduationYear !== undefined) u.graduationYear = payload.graduationYear;
   return toFullUser(u);

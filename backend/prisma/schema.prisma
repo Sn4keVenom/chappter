@@ -343,14 +343,6 @@ model ChapterMembership {
   // a real assignment.
   roleNumber       Int?
   pledgeClassLabel String? // e.g. "Fall 2024" — free text by design, cosmetic only
-  // "Replace pledge class with squad in the roster. You can keep pledge
-  // class data, but no need to display it here." A second, independent
-  // free-text grouping label — same shape as pledgeClassLabel (cosmetic,
-  // admin-set), not derived from or replacing it at the data level. Not
-  // the stateless Squad Randomizer (SquadsPage.tsx) — that generates a
-  // fresh, non-persisted grouping each time; this is a lasting per-member
-  // label an exec sets once, the same way pledge class already worked.
-  squadLabel       String?
   major            String?
   graduationYear   Int?
   initiationDate   DateTime?

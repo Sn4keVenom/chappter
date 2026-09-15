@@ -14,6 +14,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { getMemberProfile, updateUserRole, updateUserFields, deleteMemberAccount } from "../../api/users";
 import { getMemberAttendanceHistory } from "../../api/attendance";
 import { getFamily, setBig, setRoleNumber } from "../../api/membership";
+import { listTeams, addTeamMember, removeTeamMember } from "../../api/teams";
 import { useAsync } from "../../hooks/useAsync";
 import { usePermissions } from "../../hooks/usePermissions";
 import { useAuthStore } from "../../store/useAuthStore";
@@ -70,8 +71,11 @@ export default function MemberProfilePage() {
   const [bigOpen, setBigOpen] = useState(false);
   const [roleNumberOpen, setRoleNumberOpen] = useState(false);
   const [roleNumberValue, setRoleNumberValue] = useState("");
-  const [squadOpen, setSquadOpen] = useState(false);
-  const [squadValue, setSquadValue] = useState("");
+  // "The squads are supposed to be the same thing as the team in the
+  // point system" — squad assignment reuses the existing Team model
+  // (POST/DELETE /teams/:id/members), same infra PointsPage.tsx and
+  // TeamPage.tsx already use, rather than a separate label.
+  const { data: teams } = useAsync(() => listTeams(), []);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -123,19 +127,22 @@ export default function MemberProfilePage() {
     }
   }
 
-  // "Replace pledge class with squad in the roster" — same free-text,
-  // dialog-based edit pattern as role number above, since neither
-  // pledgeClassLabel nor squadLabel is a fixed set of choices (unlike
-  // Role/Office/Status below, which use an immediate-save Select).
-  async function saveSquadLabel(value: string | null) {
+  // Immediate-save, same pattern as Role/Office/Status below — reassigning
+  // REPLACES whatever team the member was already on (one team per
+  // member; see teams.routes.ts POST /teams/:id/members's own doc
+  // comment), so there's no separate "clear first" step needed.
+  async function saveTeam(teamId: string) {
     setBusy(true);
     setActionError(null);
     try {
-      await updateUserFields(userId, { squadLabel: value });
-      setSquadOpen(false);
+      if (teamId) {
+        await addTeamMember(teamId, userId);
+      } else if (member.teamId) {
+        await removeTeamMember(member.teamId, userId);
+      }
       await reload({ silent: true });
     } catch (e: any) {
-      setActionError(e?.message ?? "Couldn't save the squad.");
+      setActionError(e?.message ?? "Couldn't change the squad.");
     } finally {
       setBusy(false);
     }
@@ -266,17 +273,21 @@ export default function MemberProfilePage() {
                 </>
               ) : null}
 
-              {isSuperAdmin ? (
-                <Button
-                  variant="secondary"
-                  block
-                  onClick={() => {
-                    setSquadValue(member.squadLabel ?? "");
-                    setSquadOpen(true);
-                  }}
+              {isExecOrAbove && teams && teams.length > 0 ? (
+                <Select
+                  label="Squad"
+                  hint="Same teams as the points leaderboard's Team standings — reassigning replaces whatever squad they were already on."
+                  value={member.teamId ?? ""}
+                  onChange={(e) => saveTeam(e.target.value)}
+                  disabled={busy}
                 >
-                  {member.squadLabel ? `Squad: ${member.squadLabel}` : "Set squad"}
-                </Button>
+                  <option value="">No squad</option>
+                  {teams.map((team) => (
+                    <option key={team.id} value={team.id}>
+                      {team.name}
+                    </option>
+                  ))}
+                </Select>
               ) : null}
 
               {isSuperAdmin ? (
@@ -430,41 +441,6 @@ export default function MemberProfilePage() {
           value={roleNumberValue}
           onChange={(e) => setRoleNumberValue(e.target.value)}
           placeholder="e.g. 214"
-          autoFocus
-        />
-      </Dialog>
-
-      <Dialog
-        open={squadOpen}
-        onClose={() => setSquadOpen(false)}
-        title="Squad"
-        subtitle="A free-text grouping label, shown on the roster."
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setSquadOpen(false)} disabled={busy}>
-              Cancel
-            </Button>
-            {member.squadLabel ? (
-              <Button variant="danger" onClick={() => saveSquadLabel(null)} disabled={busy}>
-                Clear
-              </Button>
-            ) : null}
-            <Button
-              variant="primary"
-              onClick={() => saveSquadLabel(squadValue.trim())}
-              busy={busy}
-              disabled={!squadValue.trim()}
-            >
-              Save
-            </Button>
-          </>
-        }
-      >
-        <Input
-          label="Squad"
-          value={squadValue}
-          onChange={(e) => setSquadValue(e.target.value)}
-          placeholder="e.g. Blue Squad"
           autoFocus
         />
       </Dialog>

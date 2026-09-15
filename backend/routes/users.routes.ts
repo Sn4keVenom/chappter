@@ -40,6 +40,7 @@ async function loadFullUser(userId: string, chapterId: string) {
     prisma.user.findUnique({ where: { id: userId } }),
     prisma.chapterMembership.findUnique({
       where: { chapterId_userId: { chapterId, userId } },
+      include: { team: { select: { name: true } } },
     }),
     prisma.committeeMembership.findMany({
       where: { userId },
@@ -71,6 +72,7 @@ router.get(
       user.activeChapterId
         ? prisma.chapterMembership.findUnique({
             where: { chapterId_userId: { chapterId: user.activeChapterId, userId: user.id } },
+            include: { team: { select: { name: true } } },
           })
         : Promise.resolve(null),
       prisma.committeeMembership.findMany({
@@ -144,6 +146,7 @@ router.patch(
       req.user!.chapterId
         ? prisma.chapterMembership.findUnique({
             where: { chapterId_userId: { chapterId: req.user!.chapterId, userId: req.user!.id } },
+            include: { team: { select: { name: true } } },
           })
         : Promise.resolve(null),
       prisma.committeeMembership.findMany({
@@ -360,6 +363,10 @@ router.get(
           user: {
             select: { id: true, firstName: true, lastName: true, email: true, avatarUrl: true },
           },
+          // "The squads are supposed to be the same thing as the team in
+          // the point system" — Squad on the roster reads Team (Gear Cup
+          // gamification groupings), not a separate label.
+          team: { select: { name: true } },
         },
       }),
       prisma.chapterMembership.count({ where }),
@@ -401,7 +408,8 @@ router.get(
         status: m.status,
         roleNumber: m.roleNumber,
         pledgeClassLabel: m.pledgeClassLabel,
-        squadLabel: m.squadLabel,
+        teamId: m.teamId,
+        teamName: m.team?.name ?? null,
         committeeNames: committeesByUser.get(m.userId) ?? [],
       })),
       total,
@@ -558,7 +566,6 @@ const userFieldsSchema = z.object({
     .optional(),
   status: z.enum(["ACTIVE", "PNM", "ALUMNI", "INACTIVE"]).optional(),
   pledgeClassLabel: z.string().max(50).nullable().optional(),
-  squadLabel: z.string().max(50).nullable().optional(),
   major: z.string().max(100).nullable().optional(),
   graduationYear: z.number().int().min(1900).max(2200).nullable().optional(),
 });
@@ -595,7 +602,6 @@ router.patch(
         office: before.office,
         status: before.status,
         pledgeClassLabel: before.pledgeClassLabel,
-        squadLabel: before.squadLabel,
         major: before.major,
         graduationYear: before.graduationYear,
       },

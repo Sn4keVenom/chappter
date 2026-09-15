@@ -73,7 +73,6 @@ export async function updateUserFields(
     office?: ExecOffice | null;
     status?: MemberStatus;
     pledgeClassLabel?: string | null;
-    squadLabel?: string | null;
     major?: string | null;
     graduationYear?: number | null;
   }

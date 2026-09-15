@@ -80,10 +80,10 @@ export interface MockUser {
   office?: ExecOffice | null;
   status: MemberStatus;
   pledgeClassLabel?: string | null;
-  // "Replace pledge class with squad in the roster." Same shape as
-  // pledgeClassLabel, independent of it — not the stateless Squad
-  // Randomizer (SquadsPage.tsx), which never persists anything.
-  squadLabel?: string | null;
+  // "The squads are supposed to be the same thing as the team in the
+  // point system" — Squad (RosterPage.tsx) reads this, the same
+  // gamification team the points leaderboard's Team standings use, not a
+  // separate concept.
   teamId?: string | null; // gamification team — see MockTeam below
   // Permanent, assigned post-initiation, unique across the roster — never
   // set for PNMs (see account-system spec §6). Mirrors
@@ -308,13 +308,13 @@ export const users: MockUser[] = [
   { id: "u2", firstName: "Sofia", lastName: "Nguyen", email: "sofia.nguyen@thetatau.demo", role: "EXEC", office: "VICE_REGENT", status: "ACTIVE", pledgeClassLabel: "Fall 2023", phone: "555-0102", teamId: "team_b", roleNumber: 215, bigId: "u14", major: "Civil Engineering", graduationYear: 2027 },
   { id: "u3", firstName: "Jordan", lastName: "Blake", email: "jordan.blake@thetatau.demo", role: "EXEC", office: "TREASURER", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0103", teamId: "team_c", roleNumber: 227, bigId: "u1", major: "Finance", graduationYear: 2027 },
   { id: "u15", firstName: "Emma", lastName: "Chavez", email: "emma.chavez@thetatau.demo", role: "EXEC", office: "SCRIBE", status: "ACTIVE", pledgeClassLabel: "Spring 2024", phone: "555-0115", teamId: "team_c", roleNumber: 228, bigId: "u2", major: "Biomedical Engineering", graduationYear: 2027 },
-  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", squadLabel: "Blue Squad", teamId: "team_d", roleNumber: 241, bigId: "u3", major: "Industrial Engineering", graduationYear: 2028 },
-  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", squadLabel: "Red Squad", teamId: "team_a", roleNumber: 242, bigId: "u1", major: "Electrical Engineering", graduationYear: 2028 },
-  { id: "u7", firstName: "Noah", lastName: "Bennett", email: "noah.bennett@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", squadLabel: "Blue Squad", teamId: "team_c", roleNumber: 243, bigId: "u2", major: "Computer Engineering", graduationYear: 2028 },
+  { id: "u4", firstName: "Priya", lastName: "Patel", email: "priya.patel@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_d", roleNumber: 241, bigId: "u3", major: "Industrial Engineering", graduationYear: 2028 },
+  { id: "u5", firstName: "Ethan", lastName: "Walsh", email: "ethan.walsh@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_a", roleNumber: 242, bigId: "u1", major: "Electrical Engineering", graduationYear: 2028 },
+  { id: "u7", firstName: "Noah", lastName: "Bennett", email: "noah.bennett@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2024", teamId: "team_c", roleNumber: 243, bigId: "u2", major: "Computer Engineering", graduationYear: 2028 },
   { id: "u13", firstName: "Ryan", lastName: "O'Connell", email: "ryan.oconnell@thetatau.demo", role: "MEMBER", status: "INACTIVE", pledgeClassLabel: "Fall 2024", roleNumber: 244, bigId: "u15", major: "Chemical Engineering", graduationYear: 2028 },
-  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", squadLabel: "Green Squad", teamId: "team_b", roleNumber: 255, bigId: "u15", major: "Environmental Engineering", graduationYear: 2028 },
-  { id: "u8", firstName: "Ava", lastName: "Torres", email: "ava.torres@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", squadLabel: "Red Squad", teamId: "team_d", roleNumber: 256, bigId: "u5", major: "Materials Science", graduationYear: 2029 },
-  { id: "u9", firstName: "Liam", lastName: "Osei", email: "liam.osei@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", squadLabel: "Green Squad", teamId: "team_a", roleNumber: 257, bigId: "u3", major: "Aerospace Engineering", graduationYear: 2029 },
+  { id: "u6", firstName: "Grace", lastName: "Kim", email: "grace.kim@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_b", roleNumber: 255, bigId: "u15", major: "Environmental Engineering", graduationYear: 2028 },
+  { id: "u8", firstName: "Ava", lastName: "Torres", email: "ava.torres@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_d", roleNumber: 256, bigId: "u5", major: "Materials Science", graduationYear: 2029 },
+  { id: "u9", firstName: "Liam", lastName: "Osei", email: "liam.osei@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Spring 2025", teamId: "team_a", roleNumber: 257, bigId: "u3", major: "Aerospace Engineering", graduationYear: 2029 },
   { id: "u10", firstName: "Chloe", lastName: "Martinez", email: "chloe.martinez@thetatau.demo", role: "MEMBER", status: "ACTIVE", pledgeClassLabel: "Fall 2025", teamId: "team_b", roleNumber: 268, bigId: "u6", major: "Computer Science", graduationYear: 2029 },
   { id: "u11", firstName: "Dylan", lastName: "Foster", email: "dylan.foster@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_c", roleNumber: null, bigId: null },
   { id: "u12", firstName: "Maya", lastName: "Singh", email: "maya.singh@thetatau.demo", role: "PNM", status: "PNM", pledgeClassLabel: "Fall 2026", teamId: "team_a", roleNumber: null, bigId: null },
