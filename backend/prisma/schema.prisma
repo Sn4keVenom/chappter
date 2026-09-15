@@ -462,23 +462,37 @@ model ChapterInviteRedemption {
 // chapters.routes.ts is a fast-path UX nicety, this index is the actual
 // guarantee (see the P2002 handling there for the race it closes).
 model ChapterJoinRequest {
-  id           String            @id @default(cuid())
-  chapterId    String
-  userId       String
-  message      String?
-  status       JoinRequestStatus @default(PENDING)
-  // Set only when this request was auto-filed by POST /chapters/claim-role-number
-  // (roster-verified signup) — derived server-side from the matched
-  // ChapterRosterEntry, never from client input. Null for ordinary
-  // browse-chapter/invite-adjacent requests. On approval, chapters.routes.ts
-  // seeds ChapterMembership.role/status/roleNumber from these instead of
-  // leaving them at schema defaults. Named memberStatus (not `status`) to
-  // avoid colliding with this model's own request-lifecycle status above.
-  roleNumber   Int?
-  memberStatus MemberStatus?
-  reviewedById String?
-  reviewedAt   DateTime?
-  createdAt    DateTime          @default(now())
+  id                 String            @id @default(cuid())
+  chapterId          String
+  userId             String
+  message            String?
+  status             JoinRequestStatus @default(PENDING)
+  // Set either by POST /chapters/claim-role-number (roster-verified signup
+  // — derived server-side from the matched ChapterRosterEntry) or, since
+  // "role numbers need to autofill... there's no point having it on sign
+  // up if they just have to put it in again," carried through from a
+  // FAILED roster claim onto the generic browse-chapter fallback request
+  // instead of being silently dropped (see JoinChapterPage.tsx). Null for
+  // an ordinary request with no prior sign-up context at all. On approval,
+  // chapters.routes.ts seeds ChapterMembership.role/status/roleNumber from
+  // these instead of leaving them at schema defaults. Named memberStatus
+  // (not `status`) to avoid colliding with this model's own
+  // request-lifecycle status above.
+  roleNumber         Int?
+  memberStatus       MemberStatus?
+  // True for the roster-claim path (checked server-side against
+  // ChapterRosterEntry — trustworthy); false when roleNumber is simply
+  // what the person typed on the fallback screen after that claim failed
+  // (name mismatch, already claimed, etc.) — carried through so it isn't
+  // lost, but NOT confirmed against anything yet. JoinRequestsPage.tsx
+  // shows the reviewing exec which is which rather than both reading as
+  // equally trustworthy; the approval route's own P2002 handling (see its
+  // doc comment) still guards against it colliding with someone else's
+  // number regardless of source.
+  roleNumberVerified Boolean           @default(true)
+  reviewedById       String?
+  reviewedAt         DateTime?
+  createdAt          DateTime          @default(now())
 
   chapter    Chapter            @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)

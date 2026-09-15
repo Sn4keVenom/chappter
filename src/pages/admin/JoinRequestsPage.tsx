@@ -91,11 +91,25 @@ export default function JoinRequestsPage() {
               <p style={{ fontSize: "var(--text-sm)", color: "var(--color-text-muted)" }}>
                 {request.user?.email} · requested {formatFullDate(request.createdAt)}
               </p>
-              {request.roleNumber != null && request.memberStatus ? (
+              {request.memberStatus ? (
                 <div style={{ marginTop: "var(--space-2)" }}>
-                  <Badge tone="success" uppercase>
-                    Verified: {MEMBER_STATUS_LABEL[request.memberStatus] ?? request.memberStatus} · Role #{request.roleNumber}
-                  </Badge>
+                  {request.roleNumber != null ? (
+                    request.roleNumberVerified !== false ? (
+                      <Badge tone="success" uppercase>
+                        Verified: {MEMBER_STATUS_LABEL[request.memberStatus] ?? request.memberStatus} · Role #
+                        {request.roleNumber}
+                      </Badge>
+                    ) : (
+                      <Badge tone="warning" uppercase>
+                        Unconfirmed: {MEMBER_STATUS_LABEL[request.memberStatus] ?? request.memberStatus} · Role #
+                        {request.roleNumber} — check before approving
+                      </Badge>
+                    )
+                  ) : (
+                    <Badge tone="neutral" uppercase>
+                      {MEMBER_STATUS_LABEL[request.memberStatus] ?? request.memberStatus} · no role number given
+                    </Badge>
+                  )}
                 </div>
               ) : null}
               {request.message ? (

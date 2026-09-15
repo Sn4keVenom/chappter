@@ -71,10 +71,17 @@ export default function VerifyEmailPage() {
           navigate("/pending");
           return;
         } catch (e: any) {
+          // "Role numbers need to autofill... there's no point having it on
+          // sign up if they just have to put it in again" — roleNumber
+          // rides along here too now, not just status, so a failed roster
+          // claim (wrong digit, already claimed, name mismatch) doesn't
+          // silently throw away what they already typed. JoinChapterPage.tsx
+          // carries it into the fallback request as unverified.
           navigate("/join", {
             state: {
               error: e?.message ?? "That role number was just claimed by someone else — you can still request to join below.",
               status: pending.status,
+              roleNumber: pending.roleNumber,
             },
           });
           return;

@@ -458,13 +458,20 @@ export interface ChapterJoinRequest {
   message?: string | null;
   status: "PENDING" | "APPROVED" | "DENIED";
   /**
-   * Set only when this request was auto-filed by claiming a verified roster
-   * entry (see api/roster.ts claimRoleNumber) — the backend derives these
-   * from the matched ChapterRosterEntry, never from client input. Null for
-   * an ordinary browse-chapter/invite-adjacent request.
+   * Set either by claiming a verified roster entry (api/roster.ts
+   * claimRoleNumber — the backend derives these from the matched
+   * ChapterRosterEntry) or carried through from a FAILED roster claim onto
+   * the generic browse-chapter fallback request (see roleNumberVerified
+   * below) rather than being silently dropped. Null for a request with no
+   * prior sign-up context at all.
    */
   roleNumber?: number | null;
   memberStatus?: MemberStatus | null;
+  /** True when roleNumber was checked against the roster server-side;
+   * false when it's simply what the person typed on the fallback screen —
+   * not yet confirmed against anything. Always true for older requests
+   * (created before this field existed, all roster-claimed). */
+  roleNumberVerified?: boolean;
   createdAt: string;
   user?: { id: string; firstName: string; lastName: string; email: string };
 }

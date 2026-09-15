@@ -746,6 +746,7 @@ router.post(
             message,
             roleNumber: match.roleNumber,
             memberStatus: match.status,
+            roleNumberVerified: true,
           },
         });
       });
@@ -876,6 +877,14 @@ const joinRequestSchema = z.object({
   // nothing to go on and fell back to the schema defaults (role MEMBER,
   // status PNM) regardless of what was actually picked.
   status: z.enum(["ACTIVE", "ALUMNI", "PNM"]).optional(),
+  // "Role numbers need to autofill... there's no point having it on sign
+  // up if they just have to put it in again." Same fallback-from-a-failed-
+  // claim story as `status` above — carried through rather than silently
+  // dropped. UNVERIFIED (never checked against ChapterRosterEntry, unlike
+  // claim-role-number's own roleNumber) — see roleNumberVerified on
+  // ChapterJoinRequest in schema.prisma for how the reviewing exec is
+  // told the two apart.
+  roleNumber: z.number().int().positive().optional(),
 });
 
 router.post(
@@ -917,6 +926,11 @@ router.post(
           userId: req.user!.id,
           message: parsed.data.message,
           memberStatus: parsed.data.status,
+          // PNM never has a role number (same rule reconcileRosterClaims
+          // enforces elsewhere) — ignore one if it's somehow sent alongside
+          // PNM rather than trusting the client not to.
+          roleNumber: parsed.data.status !== "PNM" ? parsed.data.roleNumber : undefined,
+          roleNumberVerified: false,
         },
       });
     } catch (err) {

@@ -29,7 +29,9 @@ export default function JoinChapterPage() {
 
   const [code, setCode] = useState(params.get("code")?.toUpperCase() ?? "");
   const [busy, setBusy] = useState(false);
-  const locationState = location.state as { error?: string; status?: "ACTIVE" | "ALUMNI" | "PNM" } | null;
+  const locationState = location.state as
+    | { error?: string; status?: "ACTIVE" | "ALUMNI" | "PNM"; roleNumber?: number }
+    | null;
   const [error, setError] = useState<string | null>(locationState?.error ?? null);
   const [requested, setRequested] = useState<string | null>(null);
   // The status picked at sign-up (VerifyEmailPage forwards it here when a
@@ -39,6 +41,14 @@ export default function JoinChapterPage() {
   // with no prior sign-up context, which is the one case that's supposed to
   // land as PNM by default.
   const pendingStatus = locationState?.status;
+  // Same story for the role number a failed roster claim couldn't confirm —
+  // "there's no point having it on sign up if they just have to put it in
+  // again." Editable here (a typo is exactly why the claim might have
+  // failed) rather than only ever carried through verbatim; an exec sees
+  // it's unverified either way (JoinRequestsPage.tsx) before approving.
+  const [roleNumber, setRoleNumber] = useState(
+    locationState?.roleNumber != null ? String(locationState.roleNumber) : ""
+  );
 
   const { data: chapters, loading } = useAsync(() => listChapters().catch(() => []), []);
 
@@ -84,7 +94,11 @@ export default function JoinChapterPage() {
     setBusy(true);
     setError(null);
     try {
-      await requestToJoinChapter(chapterId, undefined, pendingStatus);
+      const n = Number(roleNumber);
+      const parsedRoleNumber = pendingStatus && pendingStatus !== "PNM" && roleNumber.trim() && Number.isInteger(n) && n > 0
+        ? n
+        : undefined;
+      await requestToJoinChapter(chapterId, undefined, pendingStatus, parsedRoleNumber);
       setRequested(chapterId);
     } catch (e: any) {
       setError(e?.message ?? "Couldn't send your request. Please try again.");
@@ -127,10 +141,20 @@ export default function JoinChapterPage() {
         Or request to join
       </h3>
       {pendingStatus && pendingStatus !== "PNM" ? (
-        <p style={{ fontSize: "var(--text-xs)", opacity: 0.8, marginBottom: "var(--space-3)" }}>
-          Requesting as {pendingStatus === "ALUMNI" ? "an alumni member" : "an active member"}, as you picked at
-          sign-up.
-        </p>
+        <>
+          <p style={{ fontSize: "var(--text-xs)", opacity: 0.8, marginBottom: "var(--space-3)" }}>
+            Requesting as {pendingStatus === "ALUMNI" ? "an alumni member" : "an active member"}, as you picked at
+            sign-up.
+          </p>
+          <AuthField
+            label="Role number"
+            type="number"
+            inputMode="numeric"
+            value={roleNumber}
+            onChange={(e) => setRoleNumber(e.target.value)}
+            hint="Optional — an officer will confirm it when reviewing your request."
+          />
+        </>
       ) : null}
 
       {loading ? (

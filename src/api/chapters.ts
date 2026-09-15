@@ -21,11 +21,15 @@ export async function requestToJoinChapter(
   // The status picked at sign-up, forwarded through when this is a
   // fallback from a roster-claim that didn't go through — see
   // JoinChapterPage.tsx. Omitted for a genuinely cold "browse and request".
-  status?: "ACTIVE" | "ALUMNI" | "PNM"
+  status?: "ACTIVE" | "ALUMNI" | "PNM",
+  // Same fallback story, for the role number the roster claim couldn't
+  // confirm — carried through rather than lost, but unverified (backend
+  // marks it roleNumberVerified: false).
+  roleNumber?: number
 ): Promise<ChapterJoinRequest> {
   const { data } = await apiClient.post<{ joinRequest: ChapterJoinRequest }>(
     `/chapters/${chapterId}/join-requests`,
-    { message, status }
+    { message, status, roleNumber }
   );
   return data.joinRequest;
 }
