@@ -16,7 +16,7 @@ import type { User } from "../types";
 // @clerk/types isn't a direct dependency (clerk-react re-exports its shape
 // without publishing the package standalone at the version pinned here);
 // this is just the handful of fields finishAuthSync actually reads off it.
-interface ClerkUserLike {
+export interface ClerkUserLike {
   firstName: string | null;
   lastName: string | null;
   username: string | null;

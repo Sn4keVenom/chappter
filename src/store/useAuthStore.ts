@@ -36,11 +36,24 @@ interface AuthState {
   // there and RootRedirect (routes/RootRedirect.tsx) shows a spinner instead
   // of flashing /login for an already-signed-in returning user.
   isLoading: boolean;
+  // True when Clerk confirms a live session but /auth/sync couldn't be
+  // confirmed after retrying (backend unreachable/overloaded, not a bad
+  // token) — see SessionRestore.tsx. Deliberately distinct from `user: null`
+  // (genuinely signed out): RootRedirect must never treat this as signed-out
+  // and fall through to /login, because Clerk really does still have an
+  // active session there — landing on the plain sign-in form would fail
+  // immediately with Clerk's own "You're already signed in" the moment they
+  // tried to sign in again, with no way back to the working /switch-account
+  // recovery screen.
+  syncError: boolean;
   setUser: (user: AppUser | null) => void;
+  setSyncError: (syncError: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isLoading: !DEMO_MODE,
-  setUser: (user) => set({ user, isLoading: false }),
+  syncError: false,
+  setUser: (user) => set({ user, isLoading: false, syncError: false }),
+  setSyncError: (syncError) => set({ syncError, isLoading: false }),
 }));
