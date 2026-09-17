@@ -961,7 +961,11 @@ router.get(
     const status = statusParam as (typeof VALID_STATUSES)[number];
 
     const joinRequests = await prisma.chapterJoinRequest.findMany({
-      where: { chapterId: req.params.id, status },
+      // user.deletedAt: null — a soft-deleted account can leave a dangling
+      // request behind (deletion never touches ChapterJoinRequest's own
+      // status; see lib/deleteUser.ts), which would otherwise sit in this
+      // list forever with no way to act on it.
+      where: { chapterId: req.params.id, status, user: { deletedAt: null } },
       orderBy: { createdAt: "asc" },
       include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } },
     });

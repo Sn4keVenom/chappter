@@ -41,7 +41,11 @@ router.get(
     const committees = await prisma.committee.findMany({
       orderBy: { name: "asc" },
       include: {
+        // user.deletedAt: null — deletion never touches CommitteeMembership
+        // (see lib/deleteUser.ts), so a soft-deleted member's row otherwise
+        // keeps showing up in every committee's member list forever.
         memberships: {
+          where: { user: { deletedAt: null } },
           include: { user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true } } },
         },
         channel: { select: { id: true } },

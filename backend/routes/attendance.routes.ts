@@ -46,9 +46,16 @@ router.get(
 
     // status/pledgeClassLabel live on ChapterMembership now, not User (see
     // schema.prisma doc comment) — query memberships in the caller's own
-    // chapter, joining the User row for name/email.
+    // chapter, joining the User row for name/email. user.deletedAt: null —
+    // deletion is a soft delete that deliberately leaves ChapterMembership
+    // ACTIVE (see lib/deleteUser.ts), so without this a deleted member's
+    // ghost keeps showing up on the check-in roster of every event forever.
     const memberships = await prisma.chapterMembership.findMany({
-      where: { chapterId: req.user!.chapterId!, status: { in: ["ACTIVE", "PNM"] } },
+      where: {
+        chapterId: req.user!.chapterId!,
+        status: { in: ["ACTIVE", "PNM"] },
+        user: { deletedAt: null },
+      },
       select: {
         pledgeClassLabel: true,
         user: {

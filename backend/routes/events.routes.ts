@@ -666,7 +666,10 @@ router.post(
 
 async function eventDelegateResponse(eventId: string) {
   const delegates = await prisma.eventDelegate.findMany({
-    where: { eventId },
+    // user.deletedAt: null — deletion never touches EventDelegate (see
+    // lib/deleteUser.ts), so a soft-deleted member left as a delegate would
+    // otherwise keep showing up here indefinitely.
+    where: { eventId, user: { deletedAt: null } },
     include: { user: { select: { id: true, firstName: true, lastName: true } } },
     orderBy: { userId: "asc" },
   });

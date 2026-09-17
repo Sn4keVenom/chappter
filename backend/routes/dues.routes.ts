@@ -54,8 +54,10 @@ router.get(
     // DuesRecord has no chapterId column of its own (see schema.prisma's
     // multi-tenancy note), but it's always reachable through User.activeChapterId
     // — without this filter, any chapter's Exec+ could see every other
-    // chapter's dues records via this one endpoint.
-    const chapterFilter = { user: { activeChapterId: req.user!.chapterId! } };
+    // chapter's dues records via this one endpoint. deletedAt: null — deletion
+    // never touches DuesRecord (see lib/deleteUser.ts), so a soft-deleted
+    // member's record otherwise keeps showing up on this screen forever.
+    const chapterFilter = { user: { activeChapterId: req.user!.chapterId!, deletedAt: null } };
 
     const records = await prisma.duesRecord.findMany({
       where: {
@@ -146,7 +148,7 @@ router.post(
       // otherwise an Exec+ could bulk-create DuesRecords for arbitrary users
       // in other chapters (or nonexistent users entirely).
       const memberships = await prisma.chapterMembership.findMany({
-        where: { chapterId: req.user!.chapterId!, userId: { in: userIds } },
+        where: { chapterId: req.user!.chapterId!, userId: { in: userIds }, user: { deletedAt: null } },
         select: { userId: true },
       });
       const validIds = new Set(memberships.map((m) => m.userId));
@@ -158,7 +160,7 @@ router.post(
     } else {
       targetIds = (
         await prisma.chapterMembership.findMany({
-          where: { chapterId: req.user!.chapterId!, status: { in: ["ACTIVE", "PNM"] } },
+          where: { chapterId: req.user!.chapterId!, status: { in: ["ACTIVE", "PNM"] }, user: { deletedAt: null } },
           select: { userId: true },
         })
       ).map((m) => m.userId);
@@ -365,7 +367,7 @@ router.post(
       where: {
         semesterId,
         status: { in: ["UNPAID", "PARTIAL"] },
-        user: { activeChapterId: req.user!.chapterId! },
+        user: { activeChapterId: req.user!.chapterId!, deletedAt: null },
       },
       include: { user: { select: { id: true, email: true, firstName: true } } },
     });
