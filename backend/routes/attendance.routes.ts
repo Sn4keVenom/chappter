@@ -376,6 +376,24 @@ router.get(
     // `total` into the same breakdown PointsPage.tsx has always rendered —
     // this route just hadn't computed them yet (Demo Mode's mock has, via
     // userPointsBreakdown, since long before this route existed for real).
+    //
+    // attendanceCount/attendancePoints used to be a flat SUM/COUNT over rows
+    // where type = 'ATTENDANCE' — wrong the moment attendance is removed via
+    // the manual-override route above, which (per the append-only ledger:
+    // schema.prisma's PointsLedger doc comment) never touches the original
+    // ATTENDANCE row, only appends a negating MANUAL_ADJUSTMENT correction.
+    // `total` (a plain SUM over every row) already nets that correctly, but
+    // attendanceCount/attendancePoints ignored MANUAL_ADJUSTMENT entirely and
+    // kept counting/summing the reversed attendance as if it still stood —
+    // reported live as "35 points for 7 events" on the leaderboard's own
+    // total next to a stale "40 points" in the per-member breakdown. Fix:
+    // net every ledger row sharing an eventId (the ATTENDANCE credit and its
+    // correction both carry the same eventId — see the two creation sites
+    // above and events.routes.ts's QR check-in; POST /points/adjust's
+    // general BONUS/PENALTY/MANUAL_ADJUSTMENT entries never set eventId, so
+    // this can't misclassify an unrelated manual adjustment as attendance)
+    // per (user, event) BEFORE aggregating, so a fully-reversed attendance
+    // nets to zero and no longer counts as an attended event at all.
     const rows = await prisma.$queryRaw<
       {
         userId: string;
@@ -389,23 +407,42 @@ router.get(
         penaltyPoints: bigint;
       }[]
     >`
+      WITH ledger AS (
+        SELECT pl.*
+        FROM "PointsLedger" pl
+        WHERE pl."semesterId" = ${semesterId} AND ${archivedFilter}
+      ),
+      per_event AS (
+        SELECT "userId", "eventId", SUM(amount) AS net
+        FROM ledger
+        WHERE "eventId" IS NOT NULL
+        GROUP BY "userId", "eventId"
+      ),
+      attendance_totals AS (
+        SELECT
+          "userId",
+          COUNT(*) FILTER (WHERE net <> 0) AS attendance_count,
+          COALESCE(SUM(net) FILTER (WHERE net <> 0), 0) AS attendance_points
+        FROM per_event
+        GROUP BY "userId"
+      )
       SELECT
         u.id AS "userId",
         u."firstName",
         u."lastName",
         u."avatarUrl",
-        COALESCE(SUM(pl.amount), 0)::int AS total,
-        COALESCE(SUM(CASE WHEN pl.type = 'ATTENDANCE' THEN 1 ELSE 0 END), 0)::int AS "attendanceCount",
-        COALESCE(SUM(CASE WHEN pl.type = 'ATTENDANCE' THEN pl.amount ELSE 0 END), 0)::int AS "attendancePoints",
-        COALESCE(SUM(CASE WHEN pl.type = 'BONUS' THEN pl.amount ELSE 0 END), 0)::int AS "bonusPoints",
-        COALESCE(SUM(CASE WHEN pl.type = 'PENALTY' THEN pl.amount ELSE 0 END), 0)::int AS "penaltyPoints"
+        COALESCE(SUM(l.amount), 0)::int AS total,
+        COALESCE(at.attendance_count, 0)::int AS "attendanceCount",
+        COALESCE(at.attendance_points, 0)::int AS "attendancePoints",
+        COALESCE(SUM(CASE WHEN l.type = 'BONUS' THEN l.amount ELSE 0 END), 0)::int AS "bonusPoints",
+        COALESCE(SUM(CASE WHEN l.type = 'PENALTY' THEN l.amount ELSE 0 END), 0)::int AS "penaltyPoints"
       FROM "User" u
       INNER JOIN "ChapterMembership" cm
         ON cm."userId" = u.id AND cm."chapterId" = ${req.user!.chapterId}
-      LEFT JOIN "PointsLedger" pl
-        ON pl."userId" = u.id AND pl."semesterId" = ${semesterId} AND ${archivedFilter}
+      LEFT JOIN ledger l ON l."userId" = u.id
+      LEFT JOIN attendance_totals at ON at."userId" = u.id
       WHERE cm.status IN ('ACTIVE', 'PNM') AND u."deletedAt" IS NULL
-      GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl"
+      GROUP BY u.id, u."firstName", u."lastName", u."avatarUrl", at.attendance_count, at.attendance_points
       ORDER BY total DESC
     `;
 
