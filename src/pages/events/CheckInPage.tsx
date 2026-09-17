@@ -378,6 +378,15 @@ function MemberView({ eventId }: { eventId: string }) {
 
 export default function CheckInPage() {
   const { eventId = "" } = useParams();
+  const [params] = useSearchParams();
+  // Captured once, from whatever the URL held on first render — deliberately
+  // NOT re-derived from `params` on every render, matching MemberView's own
+  // `autoSubmitting` state below. MemberView strips the token from the URL
+  // almost immediately after reading it (so a refresh doesn't resubmit a
+  // stale one); reading `params` live here would otherwise flip this back
+  // to OrganizerView the instant that happens — mid check-in, before the
+  // "you're checked in" result ever got a chance to render.
+  const [hasScannedToken] = useState(() => params.get("token") != null);
   const { canGenerateCheckIn } = usePermissions();
   const { data: event, loading, error, reload } = useAsync(() => getEvent(eventId), [eventId]);
 
@@ -397,7 +406,19 @@ export default function CheckInPage() {
     );
   }
 
-  const isOrganizer = canGenerateCheckIn(event);
+  // Scanning the QR is how EVERYONE is supposed to check in, organizers
+  // included — see this file's own top comment: "a phone's own camera app
+  // already scans any QR system-wide." Gating purely on canGenerateCheckIn
+  // broke that promise for anyone who can also manage/edit events: scanning
+  // the projected code with their own phone landed them back on the
+  // code-generation screen instead of being checked in, because the token
+  // in the URL was never even read until MemberView did — reported live as
+  // "people with the ability to edit an event cannot check in." A scanned
+  // token always means "check this visit in," regardless of what else this
+  // person is allowed to do with the event; OrganizerView's own separate
+  // "Check myself in too" button still covers the no-token case (looking at
+  // the code on their own screen, no scan involved).
+  const isOrganizer = canGenerateCheckIn(event) && !hasScannedToken;
 
   return (
     <div className="page page-narrow">
